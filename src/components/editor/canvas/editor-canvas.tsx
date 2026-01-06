@@ -299,7 +299,7 @@ export function EditorCanvas() {
 
         {/* Cables (under pedals) */}
         {cablesVisible &&
-          cables.map((cable) => (
+          cables.map((cable, index) => (
             <CableRenderer
               key={cable.id}
               cable={cable}
@@ -307,6 +307,8 @@ export function EditorCanvas() {
               pedalsById={pedalsById}
               board={board}
               scale={INCHES_TO_PIXELS}
+              cableIndex={index}
+              totalCables={cables.length}
             />
           ))}
 

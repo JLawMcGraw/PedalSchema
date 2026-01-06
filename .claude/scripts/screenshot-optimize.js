@@ -28,10 +28,19 @@ async function main() {
 
   const outputPath = path.join(screenshotsDir, `optimize-${Date.now()}.png`);
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const context = await browser.newContext({
+    viewport: { width: 3200, height: 2400 },
+    deviceScaleFactor: 3
+  });
   const page = await context.newPage();
 
   try {
+    // Capture collision, path, and box messages
+    page.on('console', msg => {
+      const text = msg.text();
+      if (text.includes('COLLISION') || text.includes('PATH:') || text.includes('Box ') || text.includes('PEDAL BOXES') || text.includes('STRATEGY') || text.includes('DEBUG')) console.log(text);
+    });
+
     // Login
     await page.goto('http://localhost:3000/login');
     await page.waitForLoadState('networkidle');
@@ -51,11 +60,34 @@ async function main() {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
 
+    // Enable effects loop first
+    const routingTab = page.getByRole('tab', { name: /routing/i });
+    if (await routingTab.isVisible()) {
+      await routingTab.click();
+      await page.waitForTimeout(500);
+      const effectsLoopSwitch = page.locator('button[role="switch"]').first();
+      if (await effectsLoopSwitch.isVisible()) {
+        const isChecked = await effectsLoopSwitch.getAttribute('data-state');
+        if (isChecked !== 'checked') {
+          await effectsLoopSwitch.click();
+          await page.waitForTimeout(500);
+        }
+      }
+    }
+
     // Click Optimize Layout button
     const optimizeBtn = page.getByRole('button', { name: /optimize/i });
     await optimizeBtn.click();
-    await page.waitForTimeout(3000); // Wait longer for layout to update
+    await page.waitForTimeout(4000); // Wait for layout animation and re-render
 
+    // Zoom in a bit to see cables better
+    const zoomIn = page.locator('button:has-text("+")').first();
+    if (await zoomIn.isVisible()) {
+      await zoomIn.click();
+      await page.waitForTimeout(300);
+    }
+
+    // Take high-res screenshot
     await page.screenshot({ path: outputPath, fullPage: false });
     console.log(outputPath);
   } catch (error) {

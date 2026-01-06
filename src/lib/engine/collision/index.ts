@@ -65,13 +65,14 @@ export function detectCollisions(
   board: Board
 ): Collision[] {
   const collisions: Collision[] = [];
-  const boundingBoxes: Map<string, BoundingBox> = new Map();
+  const boundingBoxes: Map<string, BoundingBox & { name: string }> = new Map();
 
   // Calculate bounding boxes for all pedals
   for (const placed of placedPedals) {
     const pedal = pedalsById[placed.pedalId] || placed.pedal;
     if (pedal) {
-      boundingBoxes.set(placed.id, getPedalBoundingBox(placed, pedal));
+      const box = getPedalBoundingBox(placed, pedal);
+      boundingBoxes.set(placed.id, { ...box, name: pedal.name });
     }
   }
 
