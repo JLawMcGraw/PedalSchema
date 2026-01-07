@@ -4,6 +4,56 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-01-07 (Night)
+
+### Summary
+Set up BOSS pedal scraper and imported 41 pedals to Supabase database.
+
+### What Was Accomplished
+- [x] Reviewed scraper folder contents (boss_scraper.py, pedal.schema.json, import-pedals.js)
+- [x] Added scraper/ to .gitignore (contains local JSON data files)
+- [x] Fixed Python 3.9 compatibility in boss_scraper.py (Optional[] type hints)
+- [x] Ran BOSS scraper - collected 41 pedals with dimensions, power specs, and I/O info
+- [x] Created import-pedals.js to transform scraped data to database schema
+- [x] Fixed column name mismatch (supports_4_cable vs supports_4cable)
+- [x] Added SUPABASE_SERVICE_ROLE_KEY to bypass RLS for system pedal inserts
+- [x] Successfully imported 41 BOSS pedals to database
+
+### Key Changes
+| File | Change |
+|------|--------|
+| `.gitignore` | Added scraper/ to ignore local JSON data files |
+| `package.json` | Added dotenv dependency for import script |
+| `scraper/boss_scraper.py` | Fixed Python 3.9 compatibility (typing imports) |
+| `scraper/import-pedals.js` | Created import script with category mapping |
+| `scraper/boss_pedals.json` | Generated 41 BOSS pedals (not committed) |
+| `.env.local` | Added SUPABASE_SERVICE_ROLE_KEY |
+
+### Technical Decisions
+1. **Service role key for system pedals**: RLS policy prevents regular users from inserting `is_system=true` pedals. Service role bypasses RLS.
+2. **Category mapping**: Scraper types (chorus, flanger, phaser, vibrato, rotary) map to database `modulation` category
+3. **Scraper folder in gitignore**: JSON output files contain scraped data that shouldn't be in version control
+
+### Architecture Notes
+**RLS Policies for pedals table:**
+- SELECT: System pedals viewable by everyone (`is_system = true`)
+- SELECT: Users can view their own pedals (`auth.uid() = created_by`)
+- INSERT: Users can only create non-system pedals (`is_system = false`)
+- UPDATE/DELETE: Users can only modify their own non-system pedals
+
+**Import script flow:**
+1. Read scraped JSON
+2. Transform to database schema (dimensions, power, category mapping)
+3. Check for existing pedals by manufacturer + name
+4. Insert new / update existing
+
+### Next Tasks
+- [ ] Add more manufacturer scrapers (Strymon, EHX, MXR)
+- [ ] Add pedal jack positions (top-mounted vs side-mounted)
+- [ ] Consider adding pedal images to the UI
+
+---
+
 ## Session: 2026-01-07 (Evening)
 
 ### Summary
