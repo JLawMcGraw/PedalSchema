@@ -12,7 +12,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Menu } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
 interface HeaderProps {
@@ -22,6 +24,7 @@ interface HeaderProps {
 export function Header({ user }: HeaderProps) {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -38,42 +41,65 @@ export function Header({ user }: HeaderProps) {
     ? user.email.substring(0, 2).toUpperCase()
     : '?';
 
+  const navLinks = [
+    { href: '/dashboard', label: 'Dashboard' },
+    { href: '/pedals', label: 'Pedals' },
+    { href: '/boards', label: 'Boards' },
+    { href: '/amps', label: 'Amps' },
+  ];
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-14 items-center px-4">
-        <div className="mr-4 flex">
-          <Link href={user ? '/dashboard' : '/'} className="mr-6 flex items-center space-x-2">
+        {/* Mobile menu button */}
+        {user && (
+          <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="sm" className="mr-2 md:hidden px-2">
+                <Menu className="h-5 w-5" />
+                <span className="sr-only">Toggle menu</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-64 pt-12">
+              <nav className="flex flex-col gap-4">
+                {navLinks.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="text-lg font-medium transition-colors hover:text-foreground/80 text-foreground/60"
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </nav>
+            </SheetContent>
+          </Sheet>
+        )}
+
+        {/* Logo */}
+        <div className="mr-4 flex shrink-0">
+          <Link href={user ? '/dashboard' : '/'} className="flex items-center space-x-2">
             <span className="font-bold text-lg">PedalSchema</span>
           </Link>
-          {user && (
-            <nav className="flex items-center gap-4 text-sm">
-              <Link
-                href="/dashboard"
-                className="transition-colors hover:text-foreground/80 text-foreground/60"
-              >
-                Dashboard
-              </Link>
-              <Link
-                href="/pedals"
-                className="transition-colors hover:text-foreground/80 text-foreground/60"
-              >
-                Pedals
-              </Link>
-              <Link
-                href="/boards"
-                className="transition-colors hover:text-foreground/80 text-foreground/60"
-              >
-                Boards
-              </Link>
-              <Link
-                href="/amps"
-                className="transition-colors hover:text-foreground/80 text-foreground/60"
-              >
-                Amps
-              </Link>
-            </nav>
-          )}
         </div>
+
+        {/* Desktop nav */}
+        {user && (
+          <nav className="hidden md:flex items-center gap-6 text-sm">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="transition-colors hover:text-foreground/80 text-foreground/60"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+        )}
+
+        {/* Right side */}
         <div className="flex flex-1 items-center justify-end space-x-2">
           {user ? (
             mounted ? (
@@ -88,7 +114,7 @@ export function Header({ user }: HeaderProps) {
                 <DropdownMenuContent align="end">
                   <div className="flex items-center justify-start gap-2 p-2">
                     <div className="flex flex-col space-y-1 leading-none">
-                      <p className="text-sm text-muted-foreground">{user.email}</p>
+                      <p className="text-sm text-muted-foreground truncate max-w-[200px]">{user.email}</p>
                     </div>
                   </div>
                   <DropdownMenuSeparator />

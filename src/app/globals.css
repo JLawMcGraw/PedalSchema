@@ -123,3 +123,8 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Container with proper padding */
+.container {
+  @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
+}

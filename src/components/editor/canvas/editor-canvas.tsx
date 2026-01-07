@@ -28,7 +28,7 @@ export function EditorCanvas() {
   const { zoom, pan, gridVisible, cablesVisible, selectedPedalId, selectPedal, mode, pedalToAdd, setPedalToAdd } =
     useEditorStore();
 
-  const { board, placedPedals, pedalsById, cables, collisions, addPedal, movePedal } =
+  const { board, placedPedals, pedalsById, cables, collisions, addPedal, movePedal, amp, useEffectsLoop } =
     useConfigurationStore();
 
   // Convert screen coordinates to board coordinates
@@ -271,28 +271,57 @@ export function EditorCanvas() {
               </text>
             </g>
 
-            {/* Amp icon on left */}
-            <g transform={`translate(-60, ${boardHeight / 2})`}>
-              <circle r={20} fill="#374151" stroke="#f59e0b" strokeWidth={2} />
+            {/* Amp panel on left - shows jacks based on FX loop state */}
+            <g transform="translate(-60, 0)">
+              {/* Amp panel background */}
+              <rect
+                x={-30}
+                y={boardHeight * 0.1}
+                width={60}
+                height={boardHeight * 0.8}
+                rx={8}
+                fill="#1f2937"
+                stroke="#374151"
+                strokeWidth={2}
+              />
               <text
                 x={0}
-                y={5}
-                textAnchor="middle"
-                fill="#f59e0b"
-                fontSize={10}
-                fontWeight="bold"
-              >
-                🔊
-              </text>
-              <text
-                x={0}
-                y={35}
+                y={boardHeight * 0.1 - 8}
                 textAnchor="middle"
                 fill="#9ca3af"
-                fontSize={10}
+                fontSize={11}
+                fontWeight="bold"
               >
-                Amp
+                AMP
               </text>
+
+              {/* Return jack (top) - only show when FX loop enabled */}
+              {useEffectsLoop && amp?.hasEffectsLoop && (
+                <g transform={`translate(0, ${boardHeight * 0.2})`}>
+                  <circle r={12} fill="#374151" stroke="#22c55e" strokeWidth={2} />
+                  <text x={0} y={4} textAnchor="middle" fill="#22c55e" fontSize={8} fontWeight="bold">
+                    RTN
+                  </text>
+                </g>
+              )}
+
+              {/* Send jack (middle) - only show when FX loop enabled */}
+              {useEffectsLoop && amp?.hasEffectsLoop && (
+                <g transform={`translate(0, ${boardHeight * 0.5})`}>
+                  <circle r={12} fill="#374151" stroke="#3b82f6" strokeWidth={2} />
+                  <text x={0} y={4} textAnchor="middle" fill="#3b82f6" fontSize={8} fontWeight="bold">
+                    SND
+                  </text>
+                </g>
+              )}
+
+              {/* Input jack (bottom or center if no FX loop) */}
+              <g transform={`translate(0, ${useEffectsLoop && amp?.hasEffectsLoop ? boardHeight * 0.8 : boardHeight * 0.5})`}>
+                <circle r={12} fill="#374151" stroke="#f59e0b" strokeWidth={2} />
+                <text x={0} y={4} textAnchor="middle" fill="#f59e0b" fontSize={8} fontWeight="bold">
+                  IN
+                </text>
+              </g>
             </g>
           </>
         )}
@@ -309,6 +338,7 @@ export function EditorCanvas() {
               scale={INCHES_TO_PIXELS}
               cableIndex={index}
               totalCables={cables.length}
+              useEffectsLoop={useEffectsLoop && !!amp?.hasEffectsLoop}
             />
           ))}
 

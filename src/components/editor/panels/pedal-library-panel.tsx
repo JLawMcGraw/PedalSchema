@@ -3,7 +3,6 @@
 import { useState, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -59,7 +58,7 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="p-3 border-b space-y-2 shrink-0">
-        <h3 className="font-semibold">Add Pedal</h3>
+        <h3 className="font-semibold text-sm">Add Pedal</h3>
         <Input
           placeholder="Search pedals..."
           value={search}
@@ -67,7 +66,7 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
           className="h-8"
         />
         <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-          <SelectTrigger className="h-8">
+          <SelectTrigger className="h-8 text-xs">
             <SelectValue placeholder="All Categories" />
           </SelectTrigger>
           <SelectContent>
@@ -76,7 +75,7 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
               <SelectItem key={cat.value} value={cat.value}>
                 <div className="flex items-center gap-2">
                   <div
-                    className="w-2 h-2 rounded-full"
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
                     style={{ backgroundColor: cat.color }}
                   />
                   {cat.label}
@@ -88,7 +87,7 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
       </div>
 
       {pedalToAdd && (
-        <div className="p-2 bg-primary/10 border-b text-sm text-center shrink-0">
+        <div className="p-2 bg-primary/10 border-b text-xs text-center shrink-0">
           Click on the board to place
         </div>
       )}
@@ -103,30 +102,28 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
               <button
                 key={pedal.id}
                 onClick={() => handlePedalClick(pedal)}
-                className={`w-full text-left p-2 rounded-md text-sm transition-colors ${
+                className={`w-full text-left p-2 rounded-md transition-colors overflow-hidden ${
                   isSelected
                     ? 'bg-primary text-primary-foreground'
                     : 'hover:bg-muted'
                 }`}
               >
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: getCategoryColor(pedal.category) }}
+                    title={getCategoryLabel(pedal.category)}
+                  />
                   <div className="min-w-0 flex-1">
-                    <div className="font-medium truncate text-xs">{pedal.name}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium truncate text-xs">{pedal.name}</span>
+                      {isOnBoard && (
+                        <span className="text-xs text-muted-foreground shrink-0">✓</span>
+                      )}
+                    </div>
                     <div className="text-xs text-muted-foreground truncate">
                       {pedal.manufacturer} · {pedal.widthInches}&quot;×{pedal.depthInches}&quot;
                     </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {isOnBoard && (
-                      <Badge variant="outline" className="text-[10px] px-1 py-0">
-                        Added
-                      </Badge>
-                    )}
-                    <div
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: getCategoryColor(pedal.category) }}
-                      title={getCategoryLabel(pedal.category)}
-                    />
                   </div>
                 </div>
               </button>
@@ -134,7 +131,7 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
           })}
 
           {filteredPedals.length === 0 && (
-            <div className="text-center text-muted-foreground text-sm py-4">
+            <div className="text-center text-muted-foreground text-xs py-4">
               No pedals found
             </div>
           )}

@@ -4,6 +4,57 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-01-07 (Evening)
+
+### Summary
+UI audit and fixes for layout bugs, plus cable routing improvements for effects loop support.
+
+### What Was Accomplished
+- [x] Fixed responsive layout with collapsible panels for mobile
+- [x] Added mobile hamburger menu to header
+- [x] Made toolbar responsive with overflow menu
+- [x] Fixed pedal library panel overflow (color dots and "Added" badge)
+- [x] Added proper container padding for dashboard
+- [x] Fixed right panel sheet only opening on mobile
+- [x] Added amp panel visualization with RTN/SND/IN jacks for effects loop
+- [x] Fixed cable routing for effects loop connections
+- [x] Fixed amp_send → pedal routing to go through open channel (not through pedal body)
+- [x] Standardized spacing values across panels
+
+### Key Changes
+| File | Change |
+|------|--------|
+| `src/app/(dashboard)/editor/[id]/editor-client.tsx` | Added Sheet components for mobile panels, responsive layout |
+| `src/app/globals.css` | Added container class with responsive padding |
+| `src/components/editor/canvas/cable-renderer.tsx` | Added useEffectsLoop prop, improved external→pedal routing to approach from below |
+| `src/components/editor/canvas/editor-canvas.tsx` | Added amp panel with RTN/SND/IN jacks visualization |
+| `src/components/editor/panels/pedal-library-panel.tsx` | Fixed overflow - moved color dot left, replaced "Added" with checkmark |
+| `src/components/editor/toolbar/editor-toolbar.tsx` | Made responsive with overflow dropdown menu |
+| `src/components/layout/header.tsx` | Added mobile hamburger menu |
+| `src/components/editor/panels/*.tsx` | Standardized spacing (gap-2, p-2/p-3, space-y-1/2/3) |
+
+### Technical Decisions
+1. **Mobile breakpoint at lg (1024px)**: Panels collapse into Sheet components on mobile
+2. **Effects loop amp visualization**: Shows three jacks (RTN top, SND middle, IN bottom) when FX loop enabled
+3. **External→pedal routing**: Now approaches pedals from below through the open channel between rows, avoiding routing through pedal bodies
+4. **Pedal→external routing**: Uses L-shaped paths with standoff points, validated before use
+
+### Architecture Notes
+Cable routing for effects loop now properly splits signal:
+- Front chain: Guitar → pedals → amp_input (bottom jack)
+- Loop chain: amp_send (middle jack) → pedals → amp_return (top jack)
+
+The `useEffectsLoop` prop is passed to CableRenderer to position amp_input jack correctly.
+
+External→pedal routing calculates approach point below the destination pedal and routes through the channel.
+
+### Next Tasks
+- [ ] Test with different board layouts and pedal arrangements
+- [ ] Consider optimizing cable paths for visual cleanliness
+- [ ] Mobile touch interactions for drag-and-drop
+
+---
+
 ## Session: 2026-01-07
 
 ### Summary

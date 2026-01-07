@@ -705,19 +705,22 @@ interface CableRendererProps {
   scale: number;
   cableIndex?: number;
   totalCables?: number;
+  useEffectsLoop?: boolean;
 }
 
-export function CableRenderer({ cable, placedPedals, pedalsById, board, scale }: CableRendererProps) {
+export function CableRenderer({ cable, placedPedals, pedalsById, board, scale, useEffectsLoop }: CableRendererProps) {
   const boardWidth = board.widthInches * scale;
   const boardHeight = board.depthInches * scale;
 
   // Get jack position for a cable endpoint
   const getJackPosition = (type: string, pedalId: string | null, jackType: string | null): Point | null => {
     // External connections (guitar/amp)
+    // When FX loop is enabled: return (top) -> send (middle) -> input (bottom)
+    // When FX loop is disabled: input in center
     if (type === 'guitar') return { x: boardWidth + 60, y: boardHeight / 2 };
-    if (type === 'amp_input') return { x: -60, y: boardHeight / 2 };
-    if (type === 'amp_send') return { x: -60, y: boardHeight * 0.3 };
-    if (type === 'amp_return') return { x: -60, y: boardHeight * 0.7 };
+    if (type === 'amp_return') return { x: -60, y: boardHeight * 0.2 };  // Top - receives from last FX loop pedal
+    if (type === 'amp_send') return { x: -60, y: boardHeight * 0.5 };    // Middle - sends to first FX loop pedal
+    if (type === 'amp_input') return { x: -60, y: useEffectsLoop ? boardHeight * 0.8 : boardHeight * 0.5 };
 
     // Pedal jack connections
     if (type === 'pedal' && pedalId && jackType) {
@@ -830,40 +833,84 @@ export function CableRenderer({ cable, placedPedals, pedalsById, board, scale }:
     // Short distance: route directly between jacks, excluding source/dest pedals
     path = findPathAStar(fromPos, toPos, boxes, fromBoxIdx, toBoxIdx);
   } else if (isFromExternal || isToExternal) {
-    // External connection: use simple L-shaped routing
-    // This is cleaner than A* for off-board connections
+    // External connection: try L-shaped routing first, fall back to A* if it collides
     const pedalPos = fromBox ? fromPos : toPos;
     const pedalBox = fromBox || toBox;
     const externalPos = fromBox ? toPos : fromPos;
-    const pedalStandoff = getStandoffPoint(pedalPos, pedalBox, STANDOFF);
+    const pedalBoxIdx = fromBox ? fromBoxIdx : toBoxIdx;
 
-    path = [];
+    // Build exclude set for validation
+    const extExcludeSet = new Set<number>();
+    if (pedalBoxIdx >= 0) extExcludeSet.add(pedalBoxIdx);
+
+    // Try multiple L-shaped path orientations
+    let lPath: Point[] | null = null;
+
     if (fromBox) {
       // Pedal → External: jack → standoff → L-shape to external
-      path.push(fromPos);
-      path.push(pedalStandoff);
-      // L-shape: maintain standoff direction until aligned, then go to external
-      // If standoff is above/below, go horizontally first; if left/right, go vertically first
+      const pedalStandoff = getStandoffPoint(fromPos, fromBox, STANDOFF);
       const standoffIsVertical = Math.abs(pedalStandoff.x - fromPos.x) < 5;
-      if (standoffIsVertical) {
-        // Standoff is above or below pedal - go horizontally to align with external, then vertically
-        path.push({ x: externalPos.x, y: pedalStandoff.y });
-      } else {
-        // Standoff is left or right of pedal - go vertically to align with external, then horizontally
-        path.push({ x: pedalStandoff.x, y: externalPos.y });
+      const midPoint = standoffIsVertical
+        ? { x: externalPos.x, y: pedalStandoff.y }
+        : { x: pedalStandoff.x, y: externalPos.y };
+      const candidate = [fromPos, pedalStandoff, midPoint, externalPos];
+      if (validateRoute(candidate, boxes, extExcludeSet)) {
+        lPath = candidate;
       }
-      path.push(externalPos);
     } else {
-      // External → Pedal: external → L-shape → standoff → jack
-      path.push(fromPos);
-      const standoffIsVertical = Math.abs(pedalStandoff.x - toPos.x) < 5;
-      if (standoffIsVertical) {
-        path.push({ x: fromPos.x, y: pedalStandoff.y });
-      } else {
-        path.push({ x: pedalStandoff.x, y: fromPos.y });
+      // External → Pedal: route through the open channel between pedal rows
+      // The pedal box tells us where NOT to go through
+      const pedalBox = toBox!;
+      const box = boxes[toBoxIdx];
+
+      // Find the best approach: from below the pedal (through the channel)
+      // This avoids routing through the pedal body
+      const belowY = box.y + box.height + STANDOFF; // Below the pedal
+      const aboveY = box.y - STANDOFF; // Above the pedal
+
+      // Calculate approach point - prefer going through the channel (below top-row pedals)
+      // For amp_send going to a top-row pedal, go down first then approach from below
+      const useBelow = fromPos.y > box.y; // External is below the pedal's top
+      const approachY = useBelow ? belowY : aboveY;
+
+      // Create approach point directly below/above the jack
+      const approachPoint = { x: toPos.x, y: approachY };
+
+      // Route: external → down to approach level → across to below pedal → up to jack
+      const candidates: Point[][] = [];
+
+      // Option 1: Go to approach Y first, then across, then to jack
+      const route1Mid = { x: fromPos.x, y: approachY };
+      candidates.push([fromPos, route1Mid, approachPoint, toPos]);
+
+      // Option 2: Go across first, then down to approach, then to jack
+      const route2Mid1 = { x: toPos.x, y: fromPos.y };
+      candidates.push([fromPos, route2Mid1, approachPoint, toPos]);
+
+      // Option 3: Use standoff-based approach as fallback
+      const pedalStandoff = getStandoffPoint(toPos, pedalBox, STANDOFF);
+      const horizMid = { x: pedalStandoff.x, y: fromPos.y };
+      candidates.push([fromPos, horizMid, pedalStandoff, toPos]);
+
+      for (const candidate of candidates) {
+        if (validateRoute(candidate, boxes, extExcludeSet)) {
+          lPath = candidate;
+          break;
+        }
       }
-      path.push(pedalStandoff);
-      path.push(toPos);
+    }
+
+    if (lPath) {
+      path = lPath;
+      if (DEBUG_PATHS) {
+        console.log(`  [L-EXT] Using validated L-shaped external path`);
+      }
+    } else {
+      // L-shaped paths collide - use A* pathfinding
+      if (DEBUG_PATHS) {
+        console.log(`  [A*-EXT] L-paths invalid, using A* for external connection`);
+      }
+      path = findPathAStar(fromPos, toPos, boxes, fromBoxIdx, toBoxIdx);
     }
   } else {
     // Long distance between two pedals: use standoffs on both sides
