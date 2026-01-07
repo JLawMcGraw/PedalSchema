@@ -4,6 +4,53 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-01-07 (Very Late Night)
+
+### Summary
+Fixed noise gate positioning bug and added clean/dirty modulation setting for effects loop routing.
+
+### What Was Accomplished
+- [x] Diagnosed NS-2 appearing after modulation (PH-3, BF-3) instead of before
+- [x] Found bug in `noise-gate-after-drive` rule - was moving gates to END of chain instead of after last drive
+- [x] Fixed rule to only move noise gates that are BEFORE the last drive pedal
+- [x] Added `modulationInLoop` setting (clean vs dirty modulation)
+- [x] Updated modulation-flexible rule to move modulation to effects loop when enabled
+- [x] Added UI toggle in Routing Options panel
+- [x] Created database migration for `modulation_in_loop` column
+- [x] Updated editor to load/save the new setting
+
+### Key Changes
+| File | Change |
+|------|--------|
+| `src/lib/engine/signal-chain/rules.ts` | Fixed `noise-gate-after-drive` rule, updated `modulation-flexible` to respect `modulationInLoop` |
+| `src/types/index.ts` | Added `modulationInLoop` to `Configuration` and `ChainContext` |
+| `src/store/configuration-store.ts` | Added `modulationInLoop` state and `setModulationInLoop` action |
+| `src/components/editor/panels/routing-options-panel.tsx` | Added Modulation toggle (clean/dirty) |
+| `src/app/(dashboard)/editor/[id]/page.tsx` | Pass `modulationInLoop` prop |
+| `src/app/(dashboard)/editor/[id]/editor-client.tsx` | Accept and save `modulationInLoop` |
+| `supabase/migrations/20240107000002_add_modulation_in_loop.sql` | Add column to configurations |
+
+### Technical Decisions
+1. **Noise gate bug**: The original rule collected ALL noise gates and inserted them after the last drive. Fixed to only move gates that are BEFORE the last drive.
+2. **Clean vs Dirty modulation**:
+   - Dirty (default): Modulation stays in front of amp - preamp distortion affects modulated signal
+   - Clean: Modulation goes in effects loop - cleaner, unaffected by preamp
+3. **UI placement**: Modulation toggle only appears when effects loop is enabled (logical dependency)
+
+### Architecture Notes
+**Modulation Placement Logic:**
+```
+if (modulationInLoop && ampHasEffectsLoop && useEffectsLoop) {
+  // Move chorus, flanger, phaser, tremolo to effects_loop location
+}
+```
+This ensures the toggle only has effect when the effects loop is active.
+
+### Next Tasks
+- [ ] None - feature complete
+
+---
+
 ## Session: 2026-01-07 (Late Night)
 
 ### Summary

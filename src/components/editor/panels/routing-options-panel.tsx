@@ -30,6 +30,8 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
     setAmp,
     useEffectsLoop,
     setUseEffectsLoop,
+    modulationInLoop,
+    setModulationInLoop,
   } = useConfigurationStore();
 
   const handleAmpChange = (ampId: string) => {
@@ -136,6 +138,26 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
               </p>
             </div>
           </div>
+
+          {/* Modulation Placement */}
+          {useEffectsLoop && amp?.hasEffectsLoop && (
+            <div className="border rounded-lg overflow-hidden">
+              <div className="px-3 py-2 bg-muted/50 border-b flex items-center justify-between">
+                <span className="text-xs font-medium">Modulation</span>
+                <Switch
+                  checked={modulationInLoop}
+                  onCheckedChange={setModulationInLoop}
+                />
+              </div>
+              <div className="p-3">
+                <p className="text-xs text-muted-foreground">
+                  {modulationInLoop
+                    ? 'Clean: chorus, flanger, phaser in FX loop'
+                    : 'Dirty: modulation before preamp'}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Signal Flow */}
           <div className="border rounded-lg overflow-hidden">

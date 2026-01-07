@@ -176,6 +176,7 @@ export default async function EditorPage({ params }: PageProps) {
       amp={amp}
       useEffectsLoop={config.use_effects_loop}
       use4CableMethod={config.use_4_cable_method}
+      modulationInLoop={config.modulation_in_loop ?? false}
       placedPedals={placedPedals}
       pedalsById={pedalsById}
       availablePedals={availablePedals}

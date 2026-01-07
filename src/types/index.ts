@@ -131,6 +131,8 @@ export interface Configuration {
   ampId: string | null;
   useEffectsLoop: boolean;
   use4CableMethod: boolean;
+  /** When true, modulation pedals go in effects loop for cleaner sound */
+  modulationInLoop: boolean;
   createdAt: string;
   updatedAt: string;
   isPublic: boolean;
@@ -215,6 +217,8 @@ export interface ChainContext {
   ampHasEffectsLoop: boolean;
   useEffectsLoop: boolean;
   use4CableMethod: boolean;
+  /** When true, modulation pedals go in effects loop for cleaner sound */
+  modulationInLoop: boolean;
   loopType?: LoopType;
 }
 

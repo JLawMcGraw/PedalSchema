@@ -77,27 +77,41 @@ export const SIGNAL_CHAIN_RULES: ChainRule[] = [
         }
       }
 
+      // No drive pedals found - noise gates stay where category ordering put them
       if (lastDriveIndex === -1) return pedals;
 
-      // Move noise gates to after the last drive
-      const result: PlacedPedal[] = [];
-      const noiseGates: PlacedPedal[] = [];
+      // Find noise gates that are BEFORE the last drive pedal
+      // Only those need to be moved; gates already after drives should stay in place
+      const noiseGatesToMove: PlacedPedal[] = [];
+      const noiseGateIndices: Set<number> = new Set();
 
       for (let i = 0; i < pedals.length; i++) {
         const pedal = pedals[i].pedal;
         if (pedal && pedal.category === 'noise_gate') {
-          noiseGates.push(pedals[i]);
-        } else {
-          result.push(pedals[i]);
-          if (i === lastDriveIndex) {
-            result.push(...noiseGates);
+          if (i < lastDriveIndex) {
+            // This noise gate is before the last drive - needs to move
+            noiseGatesToMove.push(pedals[i]);
+            noiseGateIndices.add(i);
           }
+          // Noise gates already after lastDriveIndex stay in place
         }
       }
 
-      // If we haven't inserted the noise gates yet (no drive pedals found after them)
-      if (noiseGates.length > 0 && !result.includes(noiseGates[0])) {
-        result.push(...noiseGates);
+      // If no noise gates need to move, return original order
+      if (noiseGatesToMove.length === 0) return pedals;
+
+      // Build result: skip the noise gates we're moving, insert them after last drive
+      const result: PlacedPedal[] = [];
+      for (let i = 0; i < pedals.length; i++) {
+        if (noiseGateIndices.has(i)) {
+          // Skip - will be inserted after last drive
+          continue;
+        }
+        result.push(pedals[i]);
+        if (i === lastDriveIndex) {
+          // Insert the moved noise gates right after the last drive
+          result.push(...noiseGatesToMove);
+        }
       }
 
       return result;
@@ -139,7 +153,17 @@ export const SIGNAL_CHAIN_RULES: ChainRule[] = [
     priority: 50,
     condition: (pedal) => pedal.category === 'modulation' || pedal.category === 'tremolo',
     apply: (pedals, context) => {
-      // Keep modulation in front of amp by default, user can override
+      // If user has enabled "clean modulation" (modulationInLoop), move modulation to effects loop
+      if (context.modulationInLoop && context.ampHasEffectsLoop && context.useEffectsLoop) {
+        return pedals.map((p) => {
+          const pedal = p.pedal;
+          if (pedal && (pedal.category === 'modulation' || pedal.category === 'tremolo')) {
+            return { ...p, location: 'effects_loop' as const };
+          }
+          return p;
+        });
+      }
+      // Default: keep modulation in front of amp ("dirty modulation")
       return pedals;
     },
   },

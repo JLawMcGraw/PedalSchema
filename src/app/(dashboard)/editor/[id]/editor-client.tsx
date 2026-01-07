@@ -27,6 +27,7 @@ interface EditorClientProps {
   amp: Amp | null;
   useEffectsLoop: boolean;
   use4CableMethod: boolean;
+  modulationInLoop: boolean;
   placedPedals: PlacedPedal[];
   pedalsById: Record<string, Pedal>;
   availablePedals: Pedal[];
@@ -41,6 +42,7 @@ export function EditorClient({
   amp,
   useEffectsLoop,
   use4CableMethod,
+  modulationInLoop,
   placedPedals: initialPlacedPedals,
   pedalsById: initialPedalsById,
   availablePedals,
@@ -76,6 +78,7 @@ export function EditorClient({
       amp,
       useEffectsLoop,
       use4CableMethod,
+      modulationInLoop,
       placedPedals: initialPlacedPedals,
       pedalsById: initialPedalsById,
     });
@@ -113,6 +116,7 @@ export function EditorClient({
           amp_id: amp?.id || null,
           use_effects_loop: useEffectsLoop,
           use_4_cable_method: use4CableMethod,
+          modulation_in_loop: configStore.modulationInLoop,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);

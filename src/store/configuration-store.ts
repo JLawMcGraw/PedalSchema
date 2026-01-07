@@ -19,6 +19,8 @@ interface ConfigurationState {
   amp: Amp | null;
   useEffectsLoop: boolean;
   use4CableMethod: boolean;
+  /** When true, modulation pedals go in effects loop for cleaner sound */
+  modulationInLoop: boolean;
 
   // Pedals on the board
   placedPedals: PlacedPedal[];
@@ -46,6 +48,7 @@ interface ConfigurationState {
     amp?: Amp | null;
     useEffectsLoop?: boolean;
     use4CableMethod?: boolean;
+    modulationInLoop?: boolean;
     placedPedals?: PlacedPedal[];
     pedalsById?: Record<string, Pedal>;
   }) => void;
@@ -56,6 +59,7 @@ interface ConfigurationState {
   setDescription: (description: string) => void;
   setUseEffectsLoop: (use: boolean) => void;
   setUse4CableMethod: (use: boolean) => void;
+  setModulationInLoop: (inLoop: boolean) => void;
 
   addPedal: (pedal: Pedal, position: Position) => void;
   movePedal: (placedPedalId: string, position: Position) => void;
@@ -94,6 +98,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       amp: null,
       useEffectsLoop: false,
       use4CableMethod: false,
+      modulationInLoop: false,
       placedPedals: [],
       pedalsById: {},
       routingConfig: {
@@ -117,6 +122,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           state.amp = config.amp || null;
           state.useEffectsLoop = config.useEffectsLoop || false;
           state.use4CableMethod = config.use4CableMethod || false;
+          state.modulationInLoop = config.modulationInLoop || false;
           state.placedPedals = config.placedPedals || [];
           state.pedalsById = config.pedalsById || {};
           state.isDirty = false;
@@ -181,6 +187,18 @@ export const useConfigurationStore = create<ConfigurationState>()(
           state.use4CableMethod = use;
           state.isDirty = true;
           if (use) {
+            state.useEffectsLoop = true;
+          }
+        });
+        get().recalculateSignalChain();
+      },
+
+      setModulationInLoop: (inLoop) => {
+        set((state) => {
+          state.modulationInLoop = inLoop;
+          state.isDirty = true;
+          // Modulation in loop requires effects loop to be enabled
+          if (inLoop) {
             state.useEffectsLoop = true;
           }
         });
@@ -368,7 +386,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       recalculateSignalChain: () => {
-        const { placedPedals, pedalsById, amp, useEffectsLoop, use4CableMethod } = get();
+        const { placedPedals, pedalsById, amp, useEffectsLoop, use4CableMethod, modulationInLoop } = get();
 
         if (placedPedals.length === 0) {
           set({ warnings: [], suggestions: [] });
@@ -379,6 +397,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           ampHasEffectsLoop: amp?.hasEffectsLoop || false,
           useEffectsLoop,
           use4CableMethod,
+          modulationInLoop,
           loopType: amp?.loopType,
         };
 
