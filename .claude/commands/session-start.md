@@ -8,9 +8,21 @@ Use this at the beginning of a coding session to quickly understand the project 
 
 ## Instructions
 
-### 1. Read Project Overview
+### 1. Read Session History (REQUIRED)
 
-Read the main documentation to understand the project:
+**First, read the session history to understand recent work:**
+
+```bash
+cat .claude/docs/sessions.md
+```
+
+This file contains:
+- Recent session summaries
+- Technical decisions made
+- Architecture notes
+- Pending tasks from previous sessions
+
+### 2. Read Project Overview
 
 ```bash
 # Read project README
@@ -20,9 +32,7 @@ cat README.md
 cat package.json | head -50
 ```
 
-### 2. Check Recent Git Activity
-
-Understand what has been worked on recently:
+### 3. Check Recent Git Activity
 
 ```bash
 # Recent commits
@@ -35,7 +45,7 @@ git status
 git diff --stat HEAD~5
 ```
 
-### 3. Review Project Structure
+### 4. Review Project Structure
 
 Key directories and their purposes:
 
@@ -46,16 +56,17 @@ Key directories and their purposes:
 | `src/lib/engine/` | Core logic (cables, collision, layout) |
 | `src/store/` | Zustand state management |
 | `src/types/` | TypeScript type definitions |
-| `.claude/` | Claude Code scripts and commands |
+| `.claude/` | Claude Code scripts, commands, and docs |
+| `.claude/docs/` | Session history and project documentation |
 
-### 4. Check for Active Issues
+### 5. Check for Active Issues
 
 ```bash
 # Check for TODO comments in recent files
 grep -r "TODO\|FIXME\|HACK" src/ --include="*.ts" --include="*.tsx" | head -20
 ```
 
-### 5. Review Key Files Based on Context
+### 6. Review Key Files Based on Context
 
 **For layout/optimization work:**
 - `src/lib/engine/layout/index.ts` - Pedal layout algorithm
@@ -63,6 +74,7 @@ grep -r "TODO\|FIXME\|HACK" src/ --include="*.ts" --include="*.tsx" | head -20
 - `src/store/configuration-store.ts` - State management
 
 **For cable/wiring work:**
+- `src/components/editor/canvas/cable-renderer.tsx` - Cable routing with A* pathfinding
 - `src/lib/engine/cables/index.ts` - Cable generation
 - `src/components/editor/panels/cable-list-panel.tsx` - Cable UI
 
@@ -70,7 +82,7 @@ grep -r "TODO\|FIXME\|HACK" src/ --include="*.ts" --include="*.tsx" | head -20
 - `src/components/editor/canvas/` - Canvas rendering
 - `src/components/editor/panels/` - Side panels
 
-### 6. Check Dev Environment
+### 7. Check Dev Environment
 
 ```bash
 # Ensure dependencies are installed
@@ -84,9 +96,9 @@ lsof -i :3000 || echo "Dev server not running - start with: npm run dev"
 
 After gathering context, summarize:
 
-1. **Project State**: What's the current state of the codebase?
-2. **Recent Work**: What was worked on in recent commits?
-3. **Open Issues**: Any TODOs, FIXMEs, or known issues?
+1. **Previous Session**: What was worked on last? (from sessions.md)
+2. **Pending Tasks**: Any incomplete tasks from previous sessions?
+3. **Project State**: Current state of the codebase
 4. **Ready to Work**: Is the dev environment ready?
 
 ## Quick Start Commands
@@ -99,5 +111,5 @@ npm run dev
 npm run build
 
 # Take verification screenshot
-node .claude/scripts/screenshot-optimize.js
+node .claude/scripts/screenshot-editor.js
 ```

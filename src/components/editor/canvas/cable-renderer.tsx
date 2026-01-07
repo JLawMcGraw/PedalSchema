@@ -5,12 +5,40 @@ import type { Cable, PlacedPedal, Pedal, Board } from '@/types';
 interface Point { x: number; y: number }
 interface Box { x: number; y: number; width: number; height: number }
 
-const STANDOFF = 30;
-const CORNER_MARGIN = 50; // Margin around pedal corners - increased for better visual separation
-const COLLISION_MARGIN = 30; // Margin for collision detection - increased to keep cables visually clear of pedals
-const DEBUG_ASCII = false; // Enable ASCII visualization for debugging
-const DEBUG_VALIDATION = false; // Log detailed collision validation
-const DEBUG_PATHS = false; // Log all paths for debugging
+// Grid-based A* configuration
+const GRID_CELL_SIZE = 10; // 10px per grid cell - balance between precision and performance
+const OBSTACLE_MARGIN = 15; // Margin around pedals in pixels (will be converted to grid cells)
+const STANDOFF = 35; // Distance from jack to first routing point - must be outside pedal box
+
+// Debug flags - set to false for production
+const DEBUG_PATHS = false;
+const DEBUG_GRID = false;
+
+// Calculate a standoff point outside the pedal box based on which edge the jack is on
+function getStandoffPoint(jackPos: Point, box: Box | null, standoff: number): Point {
+  if (!box) return jackPos; // No box = external connection, no standoff needed
+
+  const tolerance = 5; // How close to edge to consider "on" that edge
+
+  // Determine which edge the jack is on
+  const onLeft = Math.abs(jackPos.x - box.x) < tolerance;
+  const onRight = Math.abs(jackPos.x - (box.x + box.width)) < tolerance;
+  const onTop = Math.abs(jackPos.y - box.y) < tolerance;
+  const onBottom = Math.abs(jackPos.y - (box.y + box.height)) < tolerance;
+
+  if (onLeft) return { x: jackPos.x - standoff, y: jackPos.y };
+  if (onRight) return { x: jackPos.x + standoff, y: jackPos.y };
+  if (onTop) return { x: jackPos.x, y: jackPos.y - standoff };
+  if (onBottom) return { x: jackPos.x, y: jackPos.y + standoff };
+
+  // Jack is not on an edge (shouldn't happen) - project away from center of box
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  const dx = jackPos.x - cx;
+  const dy = jackPos.y - cy;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  return { x: jackPos.x + (dx / len) * standoff, y: jackPos.y + (dy / len) * standoff };
+}
 
 // Distance between two points
 function dist(a: Point, b: Point): number {
@@ -85,154 +113,441 @@ function onSegment(p1: Point, p2: Point, p: Point): boolean {
          p.y >= Math.min(p1.y, p2.y) && p.y <= Math.max(p1.y, p2.y);
 }
 
-// Check if path between two points is clear of all boxes (optionally excluding some)
-function isPathClear(p1: Point, p2: Point, boxes: Box[], excludeIndices: Set<number> = new Set()): boolean {
+
+// ============================================================================
+// GRID-BASED A* PATHFINDING
+// ============================================================================
+
+interface GridCell {
+  x: number;
+  y: number;
+}
+
+interface AStarNode {
+  cell: GridCell;
+  g: number; // Cost from start
+  h: number; // Heuristic cost to end
+  f: number; // Total cost (g + h)
+  parent: AStarNode | null;
+}
+
+// Convert pixel coordinates to grid cell
+function pixelToGrid(px: number, py: number): GridCell {
+  return {
+    x: Math.floor(px / GRID_CELL_SIZE),
+    y: Math.floor(py / GRID_CELL_SIZE)
+  };
+}
+
+// Convert grid cell to pixel coordinates (center of cell)
+function gridToPixel(cell: GridCell): Point {
+  return {
+    x: cell.x * GRID_CELL_SIZE + GRID_CELL_SIZE / 2,
+    y: cell.y * GRID_CELL_SIZE + GRID_CELL_SIZE / 2
+  };
+}
+
+// Create a grid key for Map storage
+function cellKey(cell: GridCell): string {
+  return `${cell.x},${cell.y}`;
+}
+
+// Manhattan distance heuristic (for 4-directional movement)
+function manhattanDistance(a: GridCell, b: GridCell): number {
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+}
+
+// Build blocked cell set from boxes with margin
+function buildBlockedCells(
+  boxes: Box[],
+  excludeIndices: Set<number>,
+  gridBounds: { minX: number; maxX: number; minY: number; maxY: number }
+): Set<string> {
+  const blocked = new Set<string>();
+  const marginCells = Math.ceil(OBSTACLE_MARGIN / GRID_CELL_SIZE);
+
   for (let i = 0; i < boxes.length; i++) {
     if (excludeIndices.has(i)) continue;
-    if (lineIntersectsBox(p1, p2, boxes[i], COLLISION_MARGIN)) return false;
-  }
-  return true;
-}
 
-// Get the box index containing a point
-function getBoxIndex(p: Point, boxes: Box[]): number {
-  for (let i = 0; i < boxes.length; i++) {
     const box = boxes[i];
-    if (p.x >= box.x && p.x <= box.x + box.width &&
-        p.y >= box.y && p.y <= box.y + box.height) {
-      return i;
+    // Convert box bounds to grid cells with margin
+    const minCellX = Math.floor((box.x - OBSTACLE_MARGIN) / GRID_CELL_SIZE);
+    const maxCellX = Math.ceil((box.x + box.width + OBSTACLE_MARGIN) / GRID_CELL_SIZE);
+    const minCellY = Math.floor((box.y - OBSTACLE_MARGIN) / GRID_CELL_SIZE);
+    const maxCellY = Math.ceil((box.y + box.height + OBSTACLE_MARGIN) / GRID_CELL_SIZE);
+
+    // Mark all cells in the expanded box as blocked
+    for (let cx = minCellX; cx <= maxCellX; cx++) {
+      for (let cy = minCellY; cy <= maxCellY; cy++) {
+        blocked.add(cellKey({ x: cx, y: cy }));
+      }
     }
   }
-  return -1;
+
+  return blocked;
 }
 
-// Calculate standoff point perpendicular to the jack's edge
-function getStandoff(jack: Point, box: Box | null): Point {
-  if (!box) {
-    // External connection (guitar/amp)
-    return jack.x < 0
-      ? { x: jack.x + STANDOFF, y: jack.y }
-      : { x: jack.x - STANDOFF, y: jack.y };
+// 4-directional neighbors (orthogonal movement only)
+const DIRECTIONS: GridCell[] = [
+  { x: 0, y: -1 },  // Up
+  { x: 1, y: 0 },   // Right
+  { x: 0, y: 1 },   // Down
+  { x: -1, y: 0 },  // Left
+];
+
+// Find nearest unblocked cell to a given cell
+function findNearestUnblockedCell(
+  target: GridCell,
+  blocked: Set<string>,
+  gridBounds: { minX: number; maxX: number; minY: number; maxY: number }
+): GridCell {
+  if (!blocked.has(cellKey(target))) {
+    return target;
   }
 
-  // Find closest edge
-  const dLeft = Math.abs(jack.x - box.x);
-  const dRight = Math.abs(jack.x - (box.x + box.width));
-  const dTop = Math.abs(jack.y - box.y);
-  const dBottom = Math.abs(jack.y - (box.y + box.height));
-  const min = Math.min(dLeft, dRight, dTop, dBottom);
+  // BFS to find nearest unblocked cell
+  const queue: GridCell[] = [target];
+  const visited = new Set<string>();
+  visited.add(cellKey(target));
 
-  if (min === dLeft) return { x: box.x - STANDOFF, y: jack.y };
-  if (min === dRight) return { x: box.x + box.width + STANDOFF, y: jack.y };
-  if (min === dTop) return { x: jack.x, y: box.y - STANDOFF };
-  return { x: jack.x, y: box.y + box.height + STANDOFF };
-}
+  while (queue.length > 0) {
+    const current = queue.shift()!;
 
-// Check if a point is inside any box (with optional exclusions)
-function isPointInsideAnyBox(p: Point, boxes: Box[], exclude: Set<number> = new Set()): number {
-  for (let i = 0; i < boxes.length; i++) {
-    if (exclude.has(i)) continue;
-    const box = boxes[i];
-    if (p.x >= box.x && p.x <= box.x + box.width &&
-        p.y >= box.y && p.y <= box.y + box.height) {
-      return i;
+    for (const dir of DIRECTIONS) {
+      const neighbor: GridCell = {
+        x: current.x + dir.x,
+        y: current.y + dir.y
+      };
+      const key = cellKey(neighbor);
+
+      if (visited.has(key)) continue;
+      if (neighbor.x < gridBounds.minX || neighbor.x > gridBounds.maxX ||
+          neighbor.y < gridBounds.minY || neighbor.y > gridBounds.maxY) {
+        continue;
+      }
+
+      visited.add(key);
+
+      if (!blocked.has(key)) {
+        return neighbor;
+      }
+
+      queue.push(neighbor);
     }
   }
-  return -1;
+
+  return target; // Fallback to original if nothing found
 }
 
-// Get ALL box indices that contain a point (handles overlapping boxes)
-function getAllBoxIndices(p: Point, boxes: Box[]): Set<number> {
-  const result = new Set<number>();
-  for (let i = 0; i < boxes.length; i++) {
-    const box = boxes[i];
-    if (p.x >= box.x && p.x <= box.x + box.width &&
-        p.y >= box.y && p.y <= box.y + box.height) {
-      result.add(i);
+// A* pathfinding algorithm
+function aStarSearch(
+  startPixel: Point,
+  endPixel: Point,
+  blocked: Set<string>,
+  gridBounds: { minX: number; maxX: number; minY: number; maxY: number }
+): GridCell[] | null {
+  let start = pixelToGrid(startPixel.x, startPixel.y);
+  let end = pixelToGrid(endPixel.x, endPixel.y);
+
+  // If start or end is blocked, find nearest unblocked cell
+  start = findNearestUnblockedCell(start, blocked, gridBounds);
+  end = findNearestUnblockedCell(end, blocked, gridBounds);
+
+  // If start equals end, return direct path
+  if (start.x === end.x && start.y === end.y) {
+    return [start];
+  }
+
+  const openSet: AStarNode[] = [];
+  const closedSet = new Set<string>();
+  const gScores = new Map<string, number>();
+
+  const startNode: AStarNode = {
+    cell: start,
+    g: 0,
+    h: manhattanDistance(start, end),
+    f: manhattanDistance(start, end),
+    parent: null
+  };
+
+  openSet.push(startNode);
+  gScores.set(cellKey(start), 0);
+
+  let iterations = 0;
+  const maxIterations = 10000; // Safety limit
+
+  while (openSet.length > 0 && iterations < maxIterations) {
+    iterations++;
+
+    // Find node with lowest f score
+    let lowestIdx = 0;
+    for (let i = 1; i < openSet.length; i++) {
+      if (openSet[i].f < openSet[lowestIdx].f) {
+        lowestIdx = i;
+      }
+    }
+
+    const current = openSet[lowestIdx];
+
+    // Check if we reached the goal
+    if (current.cell.x === end.x && current.cell.y === end.y) {
+      // Reconstruct path
+      const path: GridCell[] = [];
+      let node: AStarNode | null = current;
+      while (node) {
+        path.unshift(node.cell);
+        node = node.parent;
+      }
+      return path;
+    }
+
+    // Move current from open to closed
+    openSet.splice(lowestIdx, 1);
+    closedSet.add(cellKey(current.cell));
+
+    // Check all neighbors
+    for (const dir of DIRECTIONS) {
+      const neighbor: GridCell = {
+        x: current.cell.x + dir.x,
+        y: current.cell.y + dir.y
+      };
+
+      const neighborKey = cellKey(neighbor);
+
+      // Skip if out of bounds
+      if (neighbor.x < gridBounds.minX || neighbor.x > gridBounds.maxX ||
+          neighbor.y < gridBounds.minY || neighbor.y > gridBounds.maxY) {
+        continue;
+      }
+
+      // Skip if in closed set
+      if (closedSet.has(neighborKey)) {
+        continue;
+      }
+
+      // Skip if blocked (unless it's the end cell)
+      if (blocked.has(neighborKey) && !(neighbor.x === end.x && neighbor.y === end.y)) {
+        continue;
+      }
+
+      const tentativeG = current.g + 1; // Cost of 1 per orthogonal move
+
+      const existingG = gScores.get(neighborKey);
+      if (existingG !== undefined && tentativeG >= existingG) {
+        continue; // Not a better path
+      }
+
+      // This is a better path
+      gScores.set(neighborKey, tentativeG);
+
+      const h = manhattanDistance(neighbor, end);
+      const neighborNode: AStarNode = {
+        cell: neighbor,
+        g: tentativeG,
+        h: h,
+        f: tentativeG + h,
+        parent: current
+      };
+
+      // Add to open set if not already there
+      const existingIdx = openSet.findIndex(n =>
+        n.cell.x === neighbor.x && n.cell.y === neighbor.y
+      );
+      if (existingIdx >= 0) {
+        openSet[existingIdx] = neighborNode;
+      } else {
+        openSet.push(neighborNode);
+      }
     }
   }
+
+  // No path found
+  return null;
+}
+
+// Simplify path by removing redundant points on same line
+function simplifyPath(path: Point[]): Point[] {
+  if (path.length <= 2) return path;
+
+  const result: Point[] = [path[0]];
+
+  for (let i = 1; i < path.length - 1; i++) {
+    const prev = result[result.length - 1];
+    const curr = path[i];
+    const next = path[i + 1];
+
+    // Check if curr is on the line between prev and next
+    const dx1 = curr.x - prev.x;
+    const dy1 = curr.y - prev.y;
+    const dx2 = next.x - curr.x;
+    const dy2 = next.y - curr.y;
+
+    // If direction changes, keep this point
+    const sameDirection = (dx1 === 0 && dx2 === 0) || (dy1 === 0 && dy2 === 0);
+    if (!sameDirection) {
+      result.push(curr);
+    }
+  }
+
+  result.push(path[path.length - 1]);
   return result;
 }
 
-// Smart pathfinding - tries multiple strategies in order of preference:
-// 1. Direct path (if clear)
-// 2. Simple orthogonal (L-shaped) paths
-// 3. Route through center gap between pedal rows
-// 4. Route via perimeter as fallback
-function findPathAStar(start: Point, end: Point, boxes: Box[], fromBoxIdx: number = -1, toBoxIdx: number = -1): Point[] {
-  // Build exclude set for source/dest AND any boxes that overlap with them
+// Remove small zigzags from path (e.g., when standoff and route point are close)
+function smoothPath(path: Point[]): Point[] {
+  if (path.length <= 2) return path;
+
+  const result: Point[] = [path[0]];
+
+  for (let i = 1; i < path.length - 1; i++) {
+    const prev = result[result.length - 1];
+    const curr = path[i];
+    const next = path[i + 1];
+
+    // Calculate the deviation: how far does curr deviate from the prev→next line?
+    const dx = next.x - prev.x;
+    const dy = next.y - prev.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+
+    if (len < 1) {
+      // prev and next are basically the same point, skip curr
+      continue;
+    }
+
+    // Project curr onto line prev→next
+    const t = ((curr.x - prev.x) * dx + (curr.y - prev.y) * dy) / (len * len);
+    const projX = prev.x + t * dx;
+    const projY = prev.y + t * dy;
+    const deviation = Math.sqrt((curr.x - projX) ** 2 + (curr.y - projY) ** 2);
+
+    // Keep point only if it creates significant deviation (> 20px)
+    // or if it's a corner point (direction changes significantly)
+    if (deviation > 20) {
+      result.push(curr);
+    }
+  }
+
+  result.push(path[path.length - 1]);
+  return result;
+}
+
+// Simplify path by removing only collinear points, validate every removal
+function simplifyPathValidated(path: Point[], boxes: Box[], excludeSet: Set<number>): Point[] {
+  if (path.length <= 2) return path;
+
+  const result: Point[] = [path[0]];
+
+  for (let i = 1; i < path.length - 1; i++) {
+    const prev = result[result.length - 1];
+    const curr = path[i];
+    const next = path[i + 1];
+
+    // Check if points are collinear (on same horizontal or vertical line)
+    const prevToCurrHorizontal = Math.abs(prev.y - curr.y) < 1;
+    const currToNextHorizontal = Math.abs(curr.y - next.y) < 1;
+    const prevToCurrVertical = Math.abs(prev.x - curr.x) < 1;
+    const currToNextVertical = Math.abs(curr.x - next.x) < 1;
+
+    const collinear = (prevToCurrHorizontal && currToNextHorizontal) ||
+                      (prevToCurrVertical && currToNextVertical);
+
+    if (collinear) {
+      // Can potentially skip this point, but validate the direct path is clear
+      if (isDirectPathClear(prev, next, boxes, excludeSet)) {
+        continue; // Skip this point
+      }
+    }
+
+    // Keep this point
+    result.push(curr);
+  }
+
+  result.push(path[path.length - 1]);
+  return result;
+}
+
+// Main pathfinding function - uses A* with fallback strategies
+function findPathAStar(
+  start: Point,
+  end: Point,
+  boxes: Box[],
+  fromBoxIdx: number = -1,
+  toBoxIdx: number = -1
+): Point[] {
+  // Build exclude set - exclude source and destination pedals
   const excludeSet = new Set<number>();
+  if (fromBoxIdx >= 0) excludeSet.add(fromBoxIdx);
+  if (toBoxIdx >= 0) excludeSet.add(toBoxIdx);
 
-  const boxesOverlap = (a: Box, b: Box): boolean => {
-    return !(a.x + a.width <= b.x || b.x + b.width <= a.x ||
-             a.y + a.height <= b.y || b.y + b.height <= a.y);
-  };
+  // CRITICAL: If start or end is physically inside another pedal's box,
+  // we MUST exclude that pedal too - otherwise routing is impossible
+  for (let i = 0; i < boxes.length; i++) {
+    if (excludeSet.has(i)) continue;
+    const box = boxes[i];
+    if (box.width === 0 || box.height === 0) continue;
 
-  if (fromBoxIdx >= 0) {
-    excludeSet.add(fromBoxIdx);
-    const srcBox = boxes[fromBoxIdx];
-    for (let i = 0; i < boxes.length; i++) {
-      if (i !== fromBoxIdx && boxesOverlap(srcBox, boxes[i])) {
-        excludeSet.add(i);
+    const startInside = start.x >= box.x && start.x <= box.x + box.width &&
+                        start.y >= box.y && start.y <= box.y + box.height;
+    const endInside = end.x >= box.x && end.x <= box.x + box.width &&
+                      end.y >= box.y && end.y <= box.y + box.height;
+
+    if (startInside || endInside) {
+      excludeSet.add(i);
+      if (DEBUG_PATHS) {
+        console.log(`  [exclude] Adding box ${i} to exclude set (start inside: ${startInside}, end inside: ${endInside})`);
       }
     }
   }
 
-  if (toBoxIdx >= 0) {
-    excludeSet.add(toBoxIdx);
-    const destBox = boxes[toBoxIdx];
-    for (let i = 0; i < boxes.length; i++) {
-      if (i !== toBoxIdx && boxesOverlap(destBox, boxes[i])) {
-        excludeSet.add(i);
+  // STRATEGY 1: Check for direct line path (fastest)
+  // Only use direct paths for SHORT distances or nearly axis-aligned paths
+  // This prevents diagonal cables that visually appear to cross pedals
+  const dx = Math.abs(end.x - start.x);
+  const dy = Math.abs(end.y - start.y);
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  const isShort = distance < 80; // Very short distances
+  const isHorizontal = dy < 30 && dx > dy; // Nearly horizontal
+  const isVertical = dx < 30 && dy > dx; // Nearly vertical
+
+  if ((isShort || isHorizontal || isVertical) && isDirectPathClear(start, end, boxes, excludeSet)) {
+    if (DEBUG_PATHS) {
+      console.log(`  [DIRECT] Using direct path (dist=${distance.toFixed(0)}, dx=${dx.toFixed(0)}, dy=${dy.toFixed(0)})`);
+    }
+    return [start, end];
+  }
+
+  // STRATEGY 2: Simple L-shaped paths (only for short distances)
+  // Skip L-shaped paths for long distances - they often cross through pedal areas visually
+  if (distance < 200) {
+    const midH = { x: end.x, y: start.y };
+    const midV = { x: start.x, y: end.y };
+
+    if (isDirectPathClear(start, midH, boxes, excludeSet) &&
+        isDirectPathClear(midH, end, boxes, excludeSet) &&
+        !isPointInAnyBox(midH, boxes, excludeSet)) {
+      if (DEBUG_PATHS) {
+        console.log(`  [L-PATH] Using L-shaped path via (${midH.x.toFixed(0)},${midH.y.toFixed(0)})`);
       }
+      return [start, midH, end];
+    }
+
+    if (isDirectPathClear(start, midV, boxes, excludeSet) &&
+        isDirectPathClear(midV, end, boxes, excludeSet) &&
+        !isPointInAnyBox(midV, boxes, excludeSet)) {
+      if (DEBUG_PATHS) {
+        console.log(`  [L-PATH] Using L-shaped path via (${midV.x.toFixed(0)},${midV.y.toFixed(0)})`);
+      }
+      return [start, midV, end];
     }
   }
 
-  // STRATEGY 1: Direct path
-  // For direct path to be valid, the line should NOT pass through the interior of the destination box
-  // It should only "touch" the destination at the jack position
-  if (isPathClear(start, end, boxes, excludeSet)) {
-    // Additional check: if destination box exists, verify we're not passing through its interior
-    let directPathValid = true;
-    if (toBoxIdx >= 0) {
-      const destBox = boxes[toBoxIdx];
-      // Check if start point is outside dest box
-      const startOutsideDest = start.x < destBox.x || start.x > destBox.x + destBox.width ||
-                                start.y < destBox.y || start.y > destBox.y + destBox.height;
-      if (startOutsideDest) {
-        // If start is outside dest, check if the line would pass through dest's interior
-        // The line should only touch dest at the end point (jack position)
-        // We use a slightly expanded box to catch lines that just clip the edge
-        const expandedDestBox = {
-          x: destBox.x + 5,
-          y: destBox.y + 5,
-          width: destBox.width - 10,
-          height: destBox.height - 10
-        };
-        if (expandedDestBox.width > 0 && expandedDestBox.height > 0) {
-          // Check if line from start to a point BEFORE the end intersects the expanded box
-          // Sample points along the line (except the last 10%)
-          for (let t = 0; t < 0.9; t += 0.1) {
-            const checkPoint = {
-              x: start.x + (end.x - start.x) * t,
-              y: start.y + (end.y - start.y) * t
-            };
-            if (checkPoint.x >= expandedDestBox.x && checkPoint.x <= expandedDestBox.x + expandedDestBox.width &&
-                checkPoint.y >= expandedDestBox.y && checkPoint.y <= expandedDestBox.y + expandedDestBox.height) {
-              directPathValid = false;
-              break;
-            }
-          }
-        }
-      }
-    }
-    if (directPathValid) {
-      return [start, end];
-    }
-  }
+  // STRATEGY 3: Full A* pathfinding
+  // Calculate grid bounds with padding
+  let minX = Math.min(start.x, end.x);
+  let maxX = Math.max(start.x, end.x);
+  let minY = Math.min(start.y, end.y);
+  let maxY = Math.max(start.y, end.y);
 
-  // Find bounding box of ALL pedals
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const box of boxes) {
     minX = Math.min(minX, box.x);
     maxX = Math.max(maxX, box.x + box.width);
@@ -240,681 +555,147 @@ function findPathAStar(start: Point, end: Point, boxes: Box[], fromBoxIdx: numbe
     maxY = Math.max(maxY, box.y + box.height);
   }
 
-  const margin = CORNER_MARGIN;
-  const perimTop = minY - margin;
-  const perimBottom = maxY + margin;
-  const perimLeft = minX - margin;
-  const perimRight = maxX + margin;
-
-  // STRATEGY 2: Simple L-shaped paths (horizontal then vertical, or vertical then horizontal)
-  // This works well for adjacent pedals
-  // IMPORTANT: The intermediate point should NOT be inside the destination box
-  // Only the FINAL segment can enter the destination
-  const midH = { x: end.x, y: start.y };  // Horizontal first
-  const midV = { x: start.x, y: end.y };  // Vertical first
-
-  // Check if intermediate points are inside dest box (not allowed!)
-  const midHInDest = toBoxIdx >= 0 &&
-    midH.x >= boxes[toBoxIdx].x && midH.x <= boxes[toBoxIdx].x + boxes[toBoxIdx].width &&
-    midH.y >= boxes[toBoxIdx].y && midH.y <= boxes[toBoxIdx].y + boxes[toBoxIdx].height;
-  const midVInDest = toBoxIdx >= 0 &&
-    midV.x >= boxes[toBoxIdx].x && midV.x <= boxes[toBoxIdx].x + boxes[toBoxIdx].width &&
-    midV.y >= boxes[toBoxIdx].y && midV.y <= boxes[toBoxIdx].y + boxes[toBoxIdx].height;
-
-
-  // For first segment (start->mid), only exclude source; for second segment (mid->end), exclude both
-  const srcOnlyExclude = new Set<number>();
-  if (fromBoxIdx >= 0) {
-    srcOnlyExclude.add(fromBoxIdx);
-    const srcBox = boxes[fromBoxIdx];
-    for (let i = 0; i < boxes.length; i++) {
-      if (i !== fromBoxIdx && boxesOverlap(srcBox, boxes[i])) {
-        srcOnlyExclude.add(i);
-      }
-    }
-  }
-
-  if (!midHInDest && isPathClear(start, midH, boxes, srcOnlyExclude) && isPathClear(midH, end, boxes, excludeSet)) {
-    return [start, midH, end];
-  }
-
-  if (!midVInDest && isPathClear(start, midV, boxes, srcOnlyExclude) && isPathClear(midV, end, boxes, excludeSet)) {
-    return [start, midV, end];
-  }
-
-  // STRATEGY 3: Find horizontal gaps between pedal rows and route through them
-  // Collect all y-boundaries of non-excluded boxes
-  const yBoundaries: Array<{ y: number; isTop: boolean; boxIdx: number }> = [];
-  for (let i = 0; i < boxes.length; i++) {
-    if (excludeSet.has(i)) continue;
-    yBoundaries.push({ y: boxes[i].y, isTop: true, boxIdx: i });
-    yBoundaries.push({ y: boxes[i].y + boxes[i].height, isTop: false, boxIdx: i });
-  }
-  yBoundaries.sort((a, b) => a.y - b.y);
-
-  // Find gaps (regions where no box exists)
-  const gaps: Array<{ y1: number; y2: number }> = [];
-  let lastBottom = -Infinity;
-  for (const boundary of yBoundaries) {
-    if (boundary.isTop && boundary.y > lastBottom + margin) {
-      // Found a gap
-      gaps.push({ y1: lastBottom, y2: boundary.y });
-    }
-    if (!boundary.isTop) {
-      lastBottom = Math.max(lastBottom, boundary.y);
-    }
-  }
-
-  // Helper to check if point is inside destination box
-  const isInsideDestBox = (p: Point): boolean => {
-    if (toBoxIdx < 0) return false;
-    const box = boxes[toBoxIdx];
-    return p.x >= box.x && p.x <= box.x + box.width &&
-           p.y >= box.y && p.y <= box.y + box.height;
+  // Add padding for routing around obstacles
+  const padding = 100;
+  const gridBounds = {
+    minX: Math.floor((minX - padding) / GRID_CELL_SIZE),
+    maxX: Math.ceil((maxX + padding) / GRID_CELL_SIZE),
+    minY: Math.floor((minY - padding) / GRID_CELL_SIZE),
+    maxY: Math.ceil((maxY + padding) / GRID_CELL_SIZE)
   };
 
-  // STRATEGY 3a: If source and dest are in same row, route through center gap
-  // Check if start and end are at similar Y positions (same row)
-  const srcBox = fromBoxIdx >= 0 ? boxes[fromBoxIdx] : null;
-  const destBox = toBoxIdx >= 0 ? boxes[toBoxIdx] : null;
+  // Build blocked cells
+  const blocked = buildBlockedCells(boxes, excludeSet, gridBounds);
 
-  if (srcBox && destBox) {
-    const srcCenterY = srcBox.y + srcBox.height / 2;
-    const destCenterY = destBox.y + destBox.height / 2;
-    const sameRow = Math.abs(srcCenterY - destCenterY) < 100; // Within 100px = same row
-
-    if (sameRow) {
-      // Find the actual gap between rows by looking at ALL pedals
-      const rowTop = Math.min(srcBox.y, destBox.y);
-      const rowBottom = Math.max(srcBox.y + srcBox.height, destBox.y + destBox.height);
-
-      // Find the bottom of any row ABOVE our row
-      let aboveRowBottom = -Infinity;
-      // Find the top of any row BELOW our row
-      let belowRowTop = Infinity;
-
-      for (let i = 0; i < boxes.length; i++) {
-        if (i === fromBoxIdx || i === toBoxIdx) continue; // Skip src/dest
-        const box = boxes[i];
-        const boxCenterY = box.y + box.height / 2;
-
-        // If this box is above our row
-        if (boxCenterY < rowTop) {
-          aboveRowBottom = Math.max(aboveRowBottom, box.y + box.height);
-        }
-        // If this box is below our row
-        if (boxCenterY > rowBottom) {
-          belowRowTop = Math.min(belowRowTop, box.y);
-        }
-      }
-
-      // For same-row routing, determine if dest is to the left or right
-      const destIsLeft = destBox.x + destBox.width / 2 < srcBox.x + srcBox.width / 2;
-
-      // Calculate routing Y - either through gap above, or just above the row if no gap
-      let routeY: number;
-      if (aboveRowBottom > -Infinity) {
-        // There's a row above - use the center of the gap
-        routeY = (aboveRowBottom + rowTop) / 2;
-        // Ensure we're in the clear zone
-        if (routeY <= aboveRowBottom + COLLISION_MARGIN || routeY >= rowTop - COLLISION_MARGIN) {
-          routeY = rowTop - COLLISION_MARGIN - 5; // Just above our row with small margin
-        }
-      } else {
-        // No row above - route just above our row with minimal clearance
-        // Use a small margin to stay close to the board
-        routeY = Math.max(rowTop - COLLISION_MARGIN - 5, -20); // Don't go more than 20px above board
-      }
-
-      // Simple L-shaped route: up to routeY, then across, then down
-      const p1 = { x: start.x, y: routeY };
-      const p2 = { x: end.x, y: routeY };
-
-      // Check if this simple route works
-      // For same-row routing, exclude BOTH source and dest for the horizontal segment
-      // since we're routing above/below both pedals
-      const path1Clear = isPathClear(start, p1, boxes, excludeSet);
-      const path2Clear = isPathClear(p1, p2, boxes, excludeSet); // Exclude both for horizontal
-      const path3Clear = isPathClear(p2, end, boxes, excludeSet);
-
-      if (path1Clear && path2Clear && path3Clear) {
-        return [start, p1, p2, end];
-      }
-
-      // If simple route doesn't work, try routing away from dest first
-      const escapeX = destIsLeft
-        ? srcBox.x + srcBox.width + margin / 2  // Go to right of source
-        : srcBox.x - margin / 2;                 // Go to left of source
-
-      const p1Escape = { x: escapeX, y: start.y };
-      const p2Escape = { x: escapeX, y: routeY };
-      const p3Escape = { x: end.x, y: routeY };
-
-      const escapePath1Clear = isPathClear(start, p1Escape, boxes, srcOnlyExclude);
-      const escapePath2Clear = isPathClear(p1Escape, p2Escape, boxes, srcOnlyExclude);
-      const escapePath3Clear = isPathClear(p2Escape, p3Escape, boxes, srcOnlyExclude);
-      const escapePath4Clear = isPathClear(p3Escape, end, boxes, excludeSet);
-
-      if (escapePath1Clear && escapePath2Clear && escapePath3Clear && escapePath4Clear) {
-        return [start, p1Escape, p2Escape, p3Escape, end];
-      }
-    }
+  if (DEBUG_GRID) {
+    console.log(`A* Grid: ${gridBounds.maxX - gridBounds.minX} x ${gridBounds.maxY - gridBounds.minY} cells`);
+    console.log(`Blocked cells: ${blocked.size}`);
   }
 
-  // STRATEGY 3b: Try routing through detected gaps between rows
-  for (const gap of gaps) {
-    const gapY = (gap.y1 + gap.y2) / 2;
+  // Run A* search
+  const gridPath = aStarSearch(start, end, blocked, gridBounds);
 
-    // Check if this gap is between start and end vertically
-    const startY = start.y;
-    const endY = end.y;
-    const minStartEndY = Math.min(startY, endY);
-    const maxStartEndY = Math.max(startY, endY);
+  if (gridPath && gridPath.length > 0) {
+    // Convert grid path to pixels - include ALL points to avoid clipping corners
+    const pixelPath: Point[] = [start];
 
-    // Only use gap if it's roughly between start and end
-    if (gapY >= minStartEndY - 100 && gapY <= maxStartEndY + 100) {
-      // Route: start -> (start.x, gapY) -> (end.x, gapY) -> end
-      const p1 = { x: start.x, y: gapY };
-      const p2 = { x: end.x, y: gapY };
-
-      // Intermediate points should NOT be inside destination box
-      if (isInsideDestBox(p1) || isInsideDestBox(p2)) continue;
-
-      if (isPathClear(start, p1, boxes, srcOnlyExclude) &&
-          isPathClear(p1, p2, boxes, srcOnlyExclude) &&
-          isPathClear(p2, end, boxes, excludeSet)) {
-        return [start, p1, p2, end];
-      }
+    // Add ALL grid points (they define the safe corridor)
+    for (let i = 0; i < gridPath.length; i++) {
+      pixelPath.push(gridToPixel(gridPath[i]));
     }
+
+    pixelPath.push(end);
+
+    // Simplify path - only remove truly collinear points, validate each step
+    const simplified = simplifyPathValidated(pixelPath, boxes, excludeSet);
+
+    if (DEBUG_PATHS) {
+      console.log(`A* found path with ${gridPath.length} grid cells, simplified to ${simplified.length} points`);
+    }
+
+    return simplified;
   }
 
-  // STRATEGY 4: Route via edges of adjacent boxes (for adjacent pedals)
-  // srcBox and destBox already defined above in Strategy 3a
-  if (srcBox && destBox) {
-    // Try routing around the edge of source box
-    const srcEdges = [
-      { x: srcBox.x - margin, y: start.y },           // Left of source
-      { x: srcBox.x + srcBox.width + margin, y: start.y }, // Right of source
-      { x: start.x, y: srcBox.y - margin },           // Above source
-      { x: start.x, y: srcBox.y + srcBox.height + margin } // Below source
-    ];
-
-    const destEdges = [
-      { x: destBox.x - margin, y: end.y },
-      { x: destBox.x + destBox.width + margin, y: end.y },
-      { x: end.x, y: destBox.y - margin },
-      { x: end.x, y: destBox.y + destBox.height + margin }
-    ];
-
-    // Try each combination of source edge -> dest edge
-    for (const srcEdge of srcEdges) {
-      // Skip if srcEdge is inside destination
-      if (isInsideDestBox(srcEdge)) continue;
-      if (!isPathClear(start, srcEdge, boxes, srcOnlyExclude)) continue;
-
-      for (const destEdge of destEdges) {
-        // Skip if destEdge is inside destination (shouldn't happen but check anyway)
-        if (isInsideDestBox(destEdge)) continue;
-        if (!isPathClear(destEdge, end, boxes, excludeSet)) continue;
-
-        // Try direct connection between edges
-        if (isPathClear(srcEdge, destEdge, boxes, srcOnlyExclude)) {
-          return [start, srcEdge, destEdge, end];
-        }
-
-        // Try L-shaped connection between edges
-        const midH2 = { x: destEdge.x, y: srcEdge.y };
-        const midV2 = { x: srcEdge.x, y: destEdge.y };
-
-        // Skip if intermediate points are inside destination
-        if (!isInsideDestBox(midH2) &&
-            isPathClear(srcEdge, midH2, boxes, srcOnlyExclude) &&
-            isPathClear(midH2, destEdge, boxes, srcOnlyExclude)) {
-          return [start, srcEdge, midH2, destEdge, end];
-        }
-
-        if (!isInsideDestBox(midV2) &&
-            isPathClear(srcEdge, midV2, boxes, srcOnlyExclude) &&
-            isPathClear(midV2, destEdge, boxes, srcOnlyExclude)) {
-          return [start, srcEdge, midV2, destEdge, end];
-        }
-      }
-    }
+  // STRATEGY 4: Perimeter fallback (validated)
+  // Find the bounding box of all obstacles
+  let perimMinX = Infinity, perimMaxX = -Infinity;
+  let perimMinY = Infinity, perimMaxY = -Infinity;
+  for (const box of boxes) {
+    perimMinX = Math.min(perimMinX, box.x);
+    perimMaxX = Math.max(perimMaxX, box.x + box.width);
+    perimMinY = Math.min(perimMinY, box.y);
+    perimMaxY = Math.max(perimMaxY, box.y + box.height);
   }
 
-  // STRATEGY 5: Route via perimeter (top or bottom)
-  // Check that intermediate points aren't inside dest box
-  const topP1 = { x: start.x, y: perimTop };
-  const topP2 = { x: end.x, y: perimTop };
-  if (!isInsideDestBox(topP1) && !isInsideDestBox(topP2)) {
-    const topRoute = [start, topP1, topP2, end];
-    let topValid = true;
-    for (let i = 0; i < topRoute.length - 1; i++) {
-      const useExclude = i === topRoute.length - 2 ? excludeSet : srcOnlyExclude;
-      if (!isPathClear(topRoute[i], topRoute[i + 1], boxes, useExclude)) {
-        topValid = false;
-        break;
-      }
-    }
-    if (topValid) return topRoute;
-  }
+  const margin = 50;
+  const perimTop = perimMinY - margin;
+  const perimBottom = perimMaxY + margin;
+  const perimLeft = perimMinX - margin;
+  const perimRight = perimMaxX + margin;
 
-  // Try bottom perimeter
-  const bottomP1 = { x: start.x, y: perimBottom };
-  const bottomP2 = { x: end.x, y: perimBottom };
-  if (!isInsideDestBox(bottomP1) && !isInsideDestBox(bottomP2)) {
-    const bottomRoute = [start, bottomP1, bottomP2, end];
-    let bottomValid = true;
-    for (let i = 0; i < bottomRoute.length - 1; i++) {
-      const useExclude = i === bottomRoute.length - 2 ? excludeSet : srcOnlyExclude;
-      if (!isPathClear(bottomRoute[i], bottomRoute[i + 1], boxes, useExclude)) {
-        bottomValid = false;
-        break;
-      }
-    }
-    if (bottomValid) return bottomRoute;
-  }
-
-  // STRATEGY 6: L-shaped via corners
-  const cornerRoutes = [
+  // Try various perimeter routes and validate each
+  const perimeterRoutes = [
+    // Top route
+    [start, { x: start.x, y: perimTop }, { x: end.x, y: perimTop }, end],
+    // Bottom route
+    [start, { x: start.x, y: perimBottom }, { x: end.x, y: perimBottom }, end],
+    // Left route
     [start, { x: perimLeft, y: start.y }, { x: perimLeft, y: end.y }, end],
+    // Right route
     [start, { x: perimRight, y: start.y }, { x: perimRight, y: end.y }, end],
+    // Top-left corner
     [start, { x: start.x, y: perimTop }, { x: perimLeft, y: perimTop }, { x: perimLeft, y: end.y }, end],
+    // Top-right corner
+    [start, { x: start.x, y: perimTop }, { x: perimRight, y: perimTop }, { x: perimRight, y: end.y }, end],
+    // Bottom-left corner
     [start, { x: start.x, y: perimBottom }, { x: perimLeft, y: perimBottom }, { x: perimLeft, y: end.y }, end],
+    // Bottom-right corner
+    [start, { x: start.x, y: perimBottom }, { x: perimRight, y: perimBottom }, { x: perimRight, y: end.y }, end],
   ];
 
-  for (let routeIdx = 0; routeIdx < cornerRoutes.length; routeIdx++) {
-    const route = cornerRoutes[routeIdx];
-    // Check no intermediate points are inside dest box
-    let hasInsideDest = false;
-    for (let i = 1; i < route.length - 1; i++) {
-      if (isInsideDestBox(route[i])) {
-        hasInsideDest = true;
-        break;
-      }
-    }
-    if (hasInsideDest) continue;
-
-    let valid = true;
-    for (let i = 0; i < route.length - 1; i++) {
-      const useExclude = i === route.length - 2 ? excludeSet : srcOnlyExclude;
-      if (!isPathClear(route[i], route[i + 1], boxes, useExclude)) {
-        valid = false;
-        break;
-      }
-    }
-    if (valid) {
+  for (const route of perimeterRoutes) {
+    if (validateRoute(route, boxes, excludeSet)) {
       return route;
     }
   }
 
-  // FALLBACK: Route via top-left perimeter (go up first, then left, then down)
-  // This ensures we don't cut through pedals that might be on the same horizontal level
-  return [start, { x: start.x, y: perimTop }, { x: perimLeft, y: perimTop }, { x: perimLeft, y: end.y }, end];
-}
-
-interface JackInfo {
-  point: Point;
-  type: 'input' | 'output' | 'send' | 'return';
-  pedalIndex: number;
-}
-
-// ASCII visualization for debugging - shows pedals with jacks and cable path
-function printASCIIGrid(
-  boxes: Box[],
-  path: Point[],
-  cableId: string,
-  startJack: Point,
-  endJack: Point,
-  allJacks: JackInfo[]
-): void {
-  if (!DEBUG_ASCII) return;
-
-  // Find bounds - include all jacks
-  const allX = [
-    ...boxes.flatMap(b => [b.x, b.x + b.width]),
-    ...path.map(p => p.x),
-    ...allJacks.map(j => j.point.x)
+  // ULTIMATE FALLBACK: Return a path that goes way outside (should never happen with proper A*)
+  console.warn('Cable routing: All strategies failed, using emergency fallback');
+  const emergencyY = perimTop - 100;
+  return [
+    start,
+    { x: start.x, y: emergencyY },
+    { x: end.x, y: emergencyY },
+    end
   ];
-  const allY = [
-    ...boxes.flatMap(b => [b.y, b.y + b.height]),
-    ...path.map(p => p.y),
-    ...allJacks.map(j => j.point.y)
-  ];
-  const minX = Math.min(...allX) - 40;
-  const maxX = Math.max(...allX) + 40;
-  const minY = Math.min(...allY) - 20;
-  const maxY = Math.max(...allY) + 20;
-
-  // Scale to reasonable ASCII size
-  const width = 100;
-  const height = 35;
-  const scaleX = (x: number) => Math.round(((x - minX) / (maxX - minX)) * (width - 1));
-  const scaleY = (y: number) => Math.round(((y - minY) / (maxY - minY)) * (height - 1));
-
-  // Create grid
-  const grid: string[][] = Array(height).fill(null).map(() => Array(width).fill(' '));
-
-  // Draw boxes (pedals)
-  boxes.forEach((box, idx) => {
-    const x1 = scaleX(box.x);
-    const x2 = scaleX(box.x + box.width);
-    const y1 = scaleY(box.y);
-    const y2 = scaleY(box.y + box.height);
-
-    for (let y = y1; y <= y2; y++) {
-      for (let x = x1; x <= x2; x++) {
-        if (y >= 0 && y < height && x >= 0 && x < width) {
-          if (y === y1 || y === y2 || x === x1 || x === x2) {
-            grid[y][x] = '#';
-          } else {
-            grid[y][x] = '.';
-          }
-        }
-      }
-    }
-    // Label pedal index in center
-    const cx = Math.round((x1 + x2) / 2);
-    const cy = Math.round((y1 + y2) / 2);
-    if (cy >= 0 && cy < height && cx >= 0 && cx < width) {
-      grid[cy][cx] = String(idx);
-    }
-  });
-
-  // Draw all jacks (i=input, o=output, s=send, r=return)
-  for (const jack of allJacks) {
-    const jx = scaleX(jack.point.x);
-    const jy = scaleY(jack.point.y);
-    if (jy >= 0 && jy < height && jx >= 0 && jx < width) {
-      const char = jack.type === 'input' ? 'i' : jack.type === 'output' ? 'o' : jack.type === 'send' ? 's' : 'r';
-      grid[jy][jx] = char;
-    }
-  }
-
-  // Draw path
-  for (let i = 0; i < path.length - 1; i++) {
-    const p1 = path[i];
-    const p2 = path[i + 1];
-    const x1 = scaleX(p1.x);
-    const y1 = scaleY(p1.y);
-    const x2 = scaleX(p2.x);
-    const y2 = scaleY(p2.y);
-
-    // Draw line between points
-    const steps = Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1), 1);
-    for (let s = 0; s <= steps; s++) {
-      const x = Math.round(x1 + (x2 - x1) * s / steps);
-      const y = Math.round(y1 + (y2 - y1) * s / steps);
-      if (y >= 0 && y < height && x >= 0 && x < width) {
-        const current = grid[y][x];
-        if (current === ' ') {
-          if (Math.abs(x2 - x1) > Math.abs(y2 - y1)) {
-            grid[y][x] = '-';
-          } else if (Math.abs(y2 - y1) > Math.abs(x2 - x1)) {
-            grid[y][x] = '|';
-          } else {
-            grid[y][x] = '*';
-          }
-        } else if (current === '-' || current === '|') {
-          grid[y][x] = '+';
-        }
-      }
-    }
-  }
-
-  // Mark start (S) and end (E) - the actual jack positions
-  const startX = scaleX(startJack.x);
-  const startY = scaleY(startJack.y);
-  const endX = scaleX(endJack.x);
-  const endY = scaleY(endJack.y);
-  if (startY >= 0 && startY < height && startX >= 0 && startX < width) grid[startY][startX] = 'S';
-  if (endY >= 0 && endY < height && endX >= 0 && endX < width) grid[endY][endX] = 'E';
-
-  // Print as single string so browser captures it
-  const lines: string[] = [];
-  lines.push(`[Cable] ${cableId}`);
-  lines.push(`Legend: #=pedal border, i=input jack, o=output jack, s=send, r=return, S=cable start, E=cable end`);
-  lines.push(`Pedals: ${boxes.length}, Jacks shown: ${allJacks.length}`);
-  lines.push('┌' + '─'.repeat(width) + '┐');
-  for (const row of grid) {
-    lines.push('│' + row.join('') + '│');
-  }
-  lines.push('└' + '─'.repeat(width) + '┘');
-  lines.push(`Path: ${path.map(p => `(${Math.round(p.x)},${Math.round(p.y)})`).join('→')}`);
-  console.log(lines.join('\n'));
 }
 
-// VALIDATION: Check if path goes through any pedal boxes
-// Returns array of collision descriptions, empty if path is valid
-function validatePath(
-  path: Point[],
-  boxes: Box[],
-  fromBoxIdx: number,
-  toBoxIdx: number
-): string[] {
-  const errors: string[] = [];
-
-  // Find ALL boxes containing start and end points (for overlapping pedals)
-  const start = path[0];
-  const end = path[path.length - 1];
-  const startBoxes = new Set<number>();
-  const endBoxes = new Set<number>();
-
+// Check if a direct line path is clear (no obstacles)
+function isDirectPathClear(p1: Point, p2: Point, boxes: Box[], excludeSet: Set<number>): boolean {
   for (let i = 0; i < boxes.length; i++) {
+    if (excludeSet.has(i)) continue;
+    if (lineIntersectsBox(p1, p2, boxes[i], OBSTACLE_MARGIN)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Check if a point is inside any non-excluded box
+function isPointInAnyBox(p: Point, boxes: Box[], excludeSet: Set<number>): boolean {
+  for (let i = 0; i < boxes.length; i++) {
+    if (excludeSet.has(i)) continue;
     const box = boxes[i];
-    if (start.x >= box.x && start.x <= box.x + box.width &&
-        start.y >= box.y && start.y <= box.y + box.height) {
-      startBoxes.add(i);
-    }
-    if (end.x >= box.x && end.x <= box.x + box.width &&
-        end.y >= box.y && end.y <= box.y + box.height) {
-      endBoxes.add(i);
+    if (p.x >= box.x && p.x <= box.x + box.width &&
+        p.y >= box.y && p.y <= box.y + box.height) {
+      return true;
     }
   }
-
-  for (let i = 0; i < path.length - 1; i++) {
-    const p1 = path[i];
-    const p2 = path[i + 1];
-
-    for (let boxIdx = 0; boxIdx < boxes.length; boxIdx++) {
-      const box = boxes[boxIdx];
-
-      // Check if segment endpoints are inside this box
-      const p1InBox = p1.x >= box.x && p1.x <= box.x + box.width &&
-                      p1.y >= box.y && p1.y <= box.y + box.height;
-      const p2InBox = p2.x >= box.x && p2.x <= box.x + box.width &&
-                      p2.y >= box.y && p2.y <= box.y + box.height;
-
-      // Skip collision with source boxes if segment starts inside (exiting source)
-      if (p1InBox && startBoxes.has(boxIdx)) continue;
-
-      // Skip collision with dest boxes if segment ends inside (entering dest)
-      if (p2InBox && endBoxes.has(boxIdx)) continue;
-
-      // Skip collision if this is a direct connection within overlapping boxes
-      // (both endpoints in their respective source/dest boxes)
-      if (p1InBox && p2InBox && (startBoxes.has(boxIdx) || endBoxes.has(boxIdx))) continue;
-
-      if (lineIntersectsBox(p1, p2, box, 5)) {
-        errors.push(`Segment ${i} (${Math.round(p1.x)},${Math.round(p1.y)})→(${Math.round(p2.x)},${Math.round(p2.y)}) COLLIDES with box ${boxIdx} (x:${box.x.toFixed(0)}-${(box.x+box.width).toFixed(0)}, y:${box.y.toFixed(0)}-${(box.y+box.height).toFixed(0)})`);
-      }
-    }
-  }
-
-  return errors;
+  return false;
 }
 
-// Print validation result for a cable path
-function printValidation(
-  cableId: string,
-  path: Point[],
-  boxes: Box[],
-  fromBoxIdx: number,
-  toBoxIdx: number
-): void {
-  if (!DEBUG_ASCII) return;
-
-  const errors = validatePath(path, boxes, fromBoxIdx, toBoxIdx);
-  if (errors.length === 0) {
-    console.log(`[Cable] ✓ VALID: ${cableId}`);
-  } else {
-    console.log(`[Cable] ✗ INVALID: ${cableId}`);
-    for (const err of errors) {
-      console.log(`[Cable]   ${err}`);
+// Validate that an entire route is clear
+function validateRoute(route: Point[], boxes: Box[], excludeSet: Set<number>): boolean {
+  // Check each segment
+  for (let i = 0; i < route.length - 1; i++) {
+    if (!isDirectPathClear(route[i], route[i + 1], boxes, excludeSet)) {
+      return false;
     }
   }
-}
 
-// Convert path to orthogonal segments (only horizontal and vertical)
-// IMPORTANT: Check ALL boxes for collisions - intermediate waypoints should not be inside ANY pedal
-// The only points allowed inside pedals are the actual jack positions (start/end of path)
-function makeOrthogonal(path: Point[], boxes: Box[], excludeIndices: Set<number> = new Set()): Point[] {
-  if (path.length < 2) return path;
-
-  const result: Point[] = [path[0]];
-
-  for (let i = 1; i < path.length; i++) {
-    const prev = result[result.length - 1];
-    const curr = path[i];
-    const isLastSegment = (i === path.length - 1);
-
-    // If not already horizontal or vertical, add intermediate point
-    if (Math.abs(prev.x - curr.x) > 1 && Math.abs(prev.y - curr.y) > 1) {
-      // Try both directions and pick the one without collision
-      const horizontalFirst = { x: curr.x, y: prev.y };
-      const verticalFirst = { x: prev.x, y: curr.y };
-
-      // Check which option has fewer collisions
-      // CRITICAL: Check ALL boxes, don't exclude destination box for intermediate points
-      // Only the final destination point (curr on last segment) can be inside dest box
-      let hCollision = false;
-      let vCollision = false;
-
-      for (let boxIdx = 0; boxIdx < boxes.length; boxIdx++) {
-        const box = boxes[boxIdx];
-        const isExcluded = excludeIndices.has(boxIdx);
-
-        // Check if intermediate point itself is inside a box (bad unless it's source/dest)
-        const hPointInBox = horizontalFirst.x >= box.x && horizontalFirst.x <= box.x + box.width &&
-                            horizontalFirst.y >= box.y && horizontalFirst.y <= box.y + box.height;
-        const vPointInBox = verticalFirst.x >= box.x && verticalFirst.x <= box.x + box.width &&
-                            verticalFirst.y >= box.y && verticalFirst.y <= box.y + box.height;
-
-        if (hPointInBox && !isExcluded) hCollision = true;
-        if (vPointInBox && !isExcluded) vCollision = true;
-
-        // Check line segments for intersection
-        // For source/dest boxes (excluded), allow cable to exit/enter
-        // For all other boxes, ANY intersection is a collision
-        if (lineIntersectsBox(prev, horizontalFirst, box, COLLISION_MARGIN)) {
-          if (!isExcluded) {
-            hCollision = true;
-          }
-        }
-        if (lineIntersectsBox(horizontalFirst, curr, box, COLLISION_MARGIN)) {
-          if (!isExcluded || !isLastSegment) {
-            // Only allow entering dest box on final segment
-            if (!isExcluded) hCollision = true;
-          }
-        }
-
-        if (lineIntersectsBox(prev, verticalFirst, box, COLLISION_MARGIN)) {
-          if (!isExcluded) {
-            vCollision = true;
-          }
-        }
-        if (lineIntersectsBox(verticalFirst, curr, box, COLLISION_MARGIN)) {
-          if (!isExcluded || !isLastSegment) {
-            if (!isExcluded) vCollision = true;
-          }
-        }
-      }
-
-      // Choose based on collision detection, defaulting to longer direction
-      if (!hCollision && !vCollision) {
-        // Neither has collision, use longer direction
-        if (Math.abs(curr.x - prev.x) > Math.abs(curr.y - prev.y)) {
-          result.push(horizontalFirst);
-        } else {
-          result.push(verticalFirst);
-        }
-      } else if (!hCollision) {
-        result.push(horizontalFirst);
-      } else if (!vCollision) {
-        result.push(verticalFirst);
-      } else {
-        // Both have collision - need to route around obstacles
-        // Find blocking boxes that are NOT source/dest - check LINE INTERSECTIONS, not just point-in-box
-        const nonExcludedBlockingBoxes: { box: Box; idx: number }[] = [];
-        for (let boxIdx = 0; boxIdx < boxes.length; boxIdx++) {
-          if (excludeIndices.has(boxIdx)) continue; // Skip source/dest boxes
-          const box = boxes[boxIdx];
-
-          // Check if EITHER orthogonal path would intersect this box
-          const hPathIntersects = lineIntersectsBox(prev, horizontalFirst, box, COLLISION_MARGIN) ||
-                                   lineIntersectsBox(horizontalFirst, curr, box, COLLISION_MARGIN);
-          const vPathIntersects = lineIntersectsBox(prev, verticalFirst, box, COLLISION_MARGIN) ||
-                                   lineIntersectsBox(verticalFirst, curr, box, COLLISION_MARGIN);
-
-          if (hPathIntersects || vPathIntersects) {
-            nonExcludedBlockingBoxes.push({ box, idx: boxIdx });
-          }
-        }
-
-        if (nonExcludedBlockingBoxes.length === 0) {
-          // Only source/dest boxes blocking - use direct orthogonal with smaller axis change
-          if (Math.abs(curr.x - prev.x) <= Math.abs(curr.y - prev.y)) {
-            result.push(horizontalFirst);
-          } else {
-            result.push(verticalFirst);
-          }
-        } else {
-          // Real blocking boxes - route around them
-          let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-          for (const { box } of nonExcludedBlockingBoxes) {
-            minX = Math.min(minX, box.x);
-            maxX = Math.max(maxX, box.x + box.width);
-            minY = Math.min(minY, box.y);
-            maxY = Math.max(maxY, box.y + box.height);
-          }
-
-          // Determine best route around based on prev position relative to blocking boxes
-          const margin = CORNER_MARGIN;
-
-          // Calculate distances to each side
-          const distToLeft = Math.abs(prev.x - (minX - margin));
-          const distToRight = Math.abs(prev.x - (maxX + margin));
-          const distToTop = Math.abs(prev.y - (minY - margin));
-          const distToBottom = Math.abs(prev.y - (maxY + margin));
-
-          // Find minimum distance and route that way
-          const minDist = Math.min(distToLeft, distToRight, distToTop, distToBottom);
-
-          if (minDist === distToTop && prev.y < minY) {
-            // Route above
-            result.push({ x: prev.x, y: minY - margin });
-            result.push({ x: curr.x, y: minY - margin });
-          } else if (minDist === distToBottom && prev.y > maxY) {
-            // Route below
-            result.push({ x: prev.x, y: maxY + margin });
-            result.push({ x: curr.x, y: maxY + margin });
-          } else if (minDist === distToLeft || prev.x < (minX + maxX) / 2) {
-            // Route around left side
-            result.push({ x: minX - margin, y: prev.y });
-            result.push({ x: minX - margin, y: curr.y });
-          } else {
-            // Route around right side
-            result.push({ x: maxX + margin, y: prev.y });
-            result.push({ x: maxX + margin, y: curr.y });
-          }
-        }
-      }
+  // Check that intermediate points aren't inside any box
+  for (let i = 1; i < route.length - 1; i++) {
+    if (isPointInAnyBox(route[i], boxes, excludeSet)) {
+      return false;
     }
-    result.push(curr);
   }
 
-  return result;
+  return true;
 }
+
+// ============================================================================
+// CABLE RENDERER COMPONENT
+// ============================================================================
 
 interface CableRendererProps {
   cable: Cable;
@@ -926,17 +707,19 @@ interface CableRendererProps {
   totalCables?: number;
 }
 
-export function CableRenderer({ cable, placedPedals, pedalsById, board, scale, cableIndex = 0, totalCables = 1 }: CableRendererProps) {
+export function CableRenderer({ cable, placedPedals, pedalsById, board, scale }: CableRendererProps) {
   const boardWidth = board.widthInches * scale;
   const boardHeight = board.depthInches * scale;
 
-
+  // Get jack position for a cable endpoint
   const getJackPosition = (type: string, pedalId: string | null, jackType: string | null): Point | null => {
+    // External connections (guitar/amp)
     if (type === 'guitar') return { x: boardWidth + 60, y: boardHeight / 2 };
     if (type === 'amp_input') return { x: -60, y: boardHeight / 2 };
     if (type === 'amp_send') return { x: -60, y: boardHeight * 0.3 };
     if (type === 'amp_return') return { x: -60, y: boardHeight * 0.7 };
 
+    // Pedal jack connections
     if (type === 'pedal' && pedalId && jackType) {
       const placed = placedPedals.find((p) => p.id === pedalId);
       if (!placed) return null;
@@ -944,6 +727,7 @@ export function CableRenderer({ cable, placedPedals, pedalsById, board, scale, c
       const pedal = pedalsById[placed.pedalId] || placed.pedal;
       if (!pedal) return { x: placed.xInches * scale + 50, y: placed.yInches * scale + 50 };
 
+      // Find the specific jack or fall back to default positions
       let jack = pedal.jacks?.find((j) => j.jackType === jackType);
       if (!jack && pedal.jacks?.length) {
         jack = jackType === 'input' || jackType === 'send'
@@ -958,9 +742,13 @@ export function CableRenderer({ cable, placedPedals, pedalsById, board, scale, c
       const y = placed.yInches * scale;
 
       if (!jack) {
-        return jackType === 'input' || jackType === 'send' ? { x: x + w, y: y + h / 2 } : { x, y: y + h / 2 };
+        // Default jack positions: input on right, output on left
+        return jackType === 'input' || jackType === 'send'
+          ? { x: x + w, y: y + h / 2 }
+          : { x, y: y + h / 2 };
       }
 
+      // Calculate jack position based on side and rotation
       let side = jack.side;
       if (isRotated) {
         const steps = placed.rotationDegrees / 90;
@@ -978,259 +766,231 @@ export function CableRenderer({ cable, placedPedals, pedalsById, board, scale, c
     return null;
   };
 
+  // Get cable endpoints
   const fromPos = getJackPosition(cable.fromType, cable.fromPedalId, cable.fromJack);
   const toPos = getJackPosition(cable.toType, cable.toPedalId, cable.toJack);
   if (!fromPos || !toPos) return null;
 
-  // Build obstacle boxes and collect all jack positions
-  const boxes: Box[] = [];
-  const allJacks: JackInfo[] = [];
-
-  placedPedals.forEach((placed, pedalIndex) => {
+  // Build obstacle boxes from placed pedals
+  // IMPORTANT: Don't filter - indices must match placedPedals for fromBoxIdx/toBoxIdx
+  const boxes: Box[] = placedPedals.map((placed) => {
     const pedal = pedalsById[placed.pedalId] || placed.pedal;
-    if (!pedal) return;
+    if (!pedal) return { x: 0, y: 0, width: 0, height: 0 };
 
     const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-    const w = (isRotated ? pedal.depthInches : pedal.widthInches) * scale;
-    const h = (isRotated ? pedal.widthInches : pedal.depthInches) * scale;
-    const x = placed.xInches * scale;
-    const y = placed.yInches * scale;
-
-    boxes.push({ x, y, width: w, height: h });
-
-    // Collect all jacks for this pedal
-    if (pedal.jacks) {
-      for (const jack of pedal.jacks) {
-        let side = jack.side;
-        if (isRotated) {
-          const steps = placed.rotationDegrees / 90;
-          const sides = ['top', 'right', 'bottom', 'left'] as const;
-          side = sides[(sides.indexOf(side) + steps) % 4];
-        }
-
-        let jackPos: Point;
-        switch (side) {
-          case 'top': jackPos = { x: x + (w * jack.positionPercent) / 100, y }; break;
-          case 'bottom': jackPos = { x: x + (w * jack.positionPercent) / 100, y: y + h }; break;
-          case 'left': jackPos = { x, y: y + (h * jack.positionPercent) / 100 }; break;
-          case 'right': jackPos = { x: x + w, y: y + (h * jack.positionPercent) / 100 }; break;
-          default: jackPos = { x: x + w / 2, y: y + h / 2 };
-        }
-
-        allJacks.push({
-          point: jackPos,
-          type: jack.jackType as 'input' | 'output' | 'send' | 'return',
-          pedalIndex
-        });
-      }
-    }
+    return {
+      x: placed.xInches * scale,
+      y: placed.yInches * scale,
+      width: (isRotated ? pedal.depthInches : pedal.widthInches) * scale,
+      height: (isRotated ? pedal.widthInches : pedal.depthInches) * scale,
+    };
   });
 
-  // Find the specific box index for source and destination pedals (not ALL overlapping boxes)
-  let fromBoxIdx = -1;
-  let toBoxIdx = -1;
-  if (cable.fromPedalId) {
-    fromBoxIdx = placedPedals.findIndex(p => p.id === cable.fromPedalId);
-  }
-  if (cable.toPedalId) {
-    toBoxIdx = placedPedals.findIndex(p => p.id === cable.toPedalId);
+  // Find box indices for source and destination pedals
+  const fromBoxIdx = cable.fromPedalId
+    ? placedPedals.findIndex(p => p.id === cable.fromPedalId)
+    : -1;
+  const toBoxIdx = cable.toPedalId
+    ? placedPedals.findIndex(p => p.id === cable.toPedalId)
+    : -1;
+
+  if (DEBUG_PATHS) {
+    const srcName = fromBoxIdx >= 0 ? (pedalsById[placedPedals[fromBoxIdx].pedalId]?.name || 'unknown') : cable.fromType;
+    const dstName = toBoxIdx >= 0 ? (pedalsById[placedPedals[toBoxIdx].pedalId]?.name || 'unknown') : cable.toType;
+    console.log(`[Cable] ${srcName} → ${dstName} | from:(${fromPos.x.toFixed(0)},${fromPos.y.toFixed(0)}) to:(${toPos.x.toFixed(0)},${toPos.y.toFixed(0)}) | boxes:${boxes.length} exclude:[${fromBoxIdx},${toBoxIdx}]`);
+
   }
 
-  // Find path using A*, only excluding the specific source/destination pedals
-  const rawPath = findPathAStar(fromPos, toPos, boxes, fromBoxIdx, toBoxIdx);
+  // Log boxes once - for cable from guitar (first cable)
+  if (DEBUG_PATHS && cable.fromType === 'guitar') {
+    const boxStr = boxes.map((box, i) => {
+      const name = pedalsById[placedPedals[i]?.pedalId]?.name || `b${i}`;
+      return `${i}:${name}(${box.x.toFixed(0)}-${(box.x+box.width).toFixed(0)},${box.y.toFixed(0)}-${(box.y+box.height).toFixed(0)})`;
+    }).join(' ');
+    console.log(`[BOXES] ${boxStr}`);
+  }
 
-  // Build exclude set for source/destination boxes AND any overlapping boxes
+  // Calculate distance between jack positions
+  const jackDistance = dist(fromPos, toPos);
+
+  const fromBox = fromBoxIdx >= 0 ? boxes[fromBoxIdx] : null;
+  const toBox = toBoxIdx >= 0 ? boxes[toBoxIdx] : null;
+
+  // Determine routing strategy:
+  // - Short distances (< 120px): direct routing, no standoffs needed
+  // - External connections: use standoff only on pedal side
+  // - Long pedal-to-pedal: use standoffs on both sides
+  const isShortDistance = jackDistance <= 120;
+  const isFromExternal = !fromBox; // From guitar/amp
+  const isToExternal = !toBox;     // To guitar/amp
+
+  let path: Point[];
+
+  if (isShortDistance) {
+    // Short distance: route directly between jacks, excluding source/dest pedals
+    path = findPathAStar(fromPos, toPos, boxes, fromBoxIdx, toBoxIdx);
+  } else if (isFromExternal || isToExternal) {
+    // External connection: use simple L-shaped routing
+    // This is cleaner than A* for off-board connections
+    const pedalPos = fromBox ? fromPos : toPos;
+    const pedalBox = fromBox || toBox;
+    const externalPos = fromBox ? toPos : fromPos;
+    const pedalStandoff = getStandoffPoint(pedalPos, pedalBox, STANDOFF);
+
+    path = [];
+    if (fromBox) {
+      // Pedal → External: jack → standoff → L-shape to external
+      path.push(fromPos);
+      path.push(pedalStandoff);
+      // L-shape: maintain standoff direction until aligned, then go to external
+      // If standoff is above/below, go horizontally first; if left/right, go vertically first
+      const standoffIsVertical = Math.abs(pedalStandoff.x - fromPos.x) < 5;
+      if (standoffIsVertical) {
+        // Standoff is above or below pedal - go horizontally to align with external, then vertically
+        path.push({ x: externalPos.x, y: pedalStandoff.y });
+      } else {
+        // Standoff is left or right of pedal - go vertically to align with external, then horizontally
+        path.push({ x: pedalStandoff.x, y: externalPos.y });
+      }
+      path.push(externalPos);
+    } else {
+      // External → Pedal: external → L-shape → standoff → jack
+      path.push(fromPos);
+      const standoffIsVertical = Math.abs(pedalStandoff.x - toPos.x) < 5;
+      if (standoffIsVertical) {
+        path.push({ x: fromPos.x, y: pedalStandoff.y });
+      } else {
+        path.push({ x: pedalStandoff.x, y: fromPos.y });
+      }
+      path.push(pedalStandoff);
+      path.push(toPos);
+    }
+  } else {
+    // Long distance between two pedals: use standoffs on both sides
+    const fromStandoff = getStandoffPoint(fromPos, fromBox, STANDOFF);
+    const toStandoff = getStandoffPoint(toPos, toBox, STANDOFF);
+
+    // Route between standoff points (which are outside pedal boxes)
+    // Don't exclude source/dest pedals - standoffs are already outside!
+    const routePath = findPathAStar(fromStandoff, toStandoff, boxes, -1, -1);
+
+    // Build complete path: jack → standoff → [route] → standoff → jack
+    path = [];
+
+    // Add starting jack position
+    path.push(fromPos);
+
+    // Add from standoff if we have a source pedal
+    if (fromBox) {
+      path.push(fromStandoff);
+    }
+
+    // Add intermediate route points, skipping duplicates
+    for (let i = 0; i < routePath.length; i++) {
+      const pt = routePath[i];
+      const lastPt = path[path.length - 1];
+      // Skip if too close to last point (use larger threshold to avoid micro-zigzags)
+      if (Math.abs(pt.x - lastPt.x) > 15 || Math.abs(pt.y - lastPt.y) > 15) {
+        path.push(pt);
+      }
+    }
+
+    // Add to standoff if we have a destination pedal
+    if (toBox) {
+      const lastPt = path[path.length - 1];
+      if (Math.abs(toStandoff.x - lastPt.x) > 15 || Math.abs(toStandoff.y - lastPt.y) > 15) {
+        path.push(toStandoff);
+      }
+    }
+
+    // Add ending jack position
+    const lastPt = path[path.length - 1];
+    if (Math.abs(toPos.x - lastPt.x) > 5 || Math.abs(toPos.y - lastPt.y) > 5) {
+      path.push(toPos);
+    }
+
+    // Smooth out small zigzags created by standoff-to-route transitions
+    path = smoothPath(path);
+  }
+
+  // Build exclude set for validation (same logic as pathfinding)
   const excludeSet = new Set<number>();
-  const boxesOverlap = (a: Box, b: Box): boolean => {
-    return !(a.x + a.width <= b.x || b.x + b.width <= a.x ||
-             a.y + a.height <= b.y || b.y + b.height <= a.y);
-  };
+  if (fromBoxIdx >= 0) excludeSet.add(fromBoxIdx);
+  if (toBoxIdx >= 0) excludeSet.add(toBoxIdx);
 
-  if (fromBoxIdx >= 0) {
-    excludeSet.add(fromBoxIdx);
-    const srcBox = boxes[fromBoxIdx];
-    for (let i = 0; i < boxes.length; i++) {
-      if (i !== fromBoxIdx && boxesOverlap(srcBox, boxes[i])) {
-        excludeSet.add(i);
-      }
-    }
-  }
-  if (toBoxIdx >= 0) {
-    excludeSet.add(toBoxIdx);
-    const destBox = boxes[toBoxIdx];
-    for (let i = 0; i < boxes.length; i++) {
-      if (i !== toBoxIdx && boxesOverlap(destBox, boxes[i])) {
-        excludeSet.add(i);
-      }
+  // Also exclude boxes that contain the start or end point
+  for (let i = 0; i < boxes.length; i++) {
+    if (excludeSet.has(i)) continue;
+    const box = boxes[i];
+    if (box.width === 0 || box.height === 0) continue;
+
+    const startInside = fromPos.x >= box.x && fromPos.x <= box.x + box.width &&
+                        fromPos.y >= box.y && fromPos.y <= box.y + box.height;
+    const endInside = toPos.x >= box.x && toPos.x <= box.x + box.width &&
+                      toPos.y >= box.y && toPos.y <= box.y + box.height;
+
+    if (startInside || endInside) {
+      excludeSet.add(i);
     }
   }
 
-  // Convert to orthogonal path, passing exclude set so we don't flag source/dest as collisions
-  let path = makeOrthogonal(rawPath, boxes, excludeSet);
-
-  // POST-VALIDATION: Check if path crosses any non-excluded boxes and reroute if needed
-  // Helper to check if a segment is clear
-  const isSegmentClear = (p1: Point, p2: Point): boolean => {
+  // POST-VALIDATION: Check if the path collides with any non-excluded boxes
+  const collisions: string[] = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    const p1 = path[i];
+    const p2 = path[i + 1];
     for (let boxIdx = 0; boxIdx < boxes.length; boxIdx++) {
       if (excludeSet.has(boxIdx)) continue;
-      if (lineIntersectsBox(p1, p2, boxes[boxIdx], 0)) return false;
-    }
-    return true;
-  };
-
-  for (let attempt = 0; attempt < 3; attempt++) {
-    let fixed = false;
-    for (let i = 0; i < path.length - 1 && !fixed; i++) {
-      const p1 = path[i];
-      const p2 = path[i + 1];
-      for (let boxIdx = 0; boxIdx < boxes.length; boxIdx++) {
-        if (excludeSet.has(boxIdx)) continue;
-        if (lineIntersectsBox(p1, p2, boxes[boxIdx], 0)) {
-          const box = boxes[boxIdx];
-          const isVertical = Math.abs(p1.x - p2.x) < Math.abs(p1.y - p2.y);
-
-          // Try both escape directions and pick one that's clear
-          let newSegments: Point[][] = [];
-          if (isVertical) {
-            const escapeLeft = box.x - CORNER_MARGIN;
-            const escapeRight = box.x + box.width + CORNER_MARGIN;
-            newSegments = [
-              [{ x: escapeLeft, y: p1.y }, { x: escapeLeft, y: p2.y }],
-              [{ x: escapeRight, y: p1.y }, { x: escapeRight, y: p2.y }]
-            ];
-          } else {
-            const escapeAbove = box.y - CORNER_MARGIN;
-            const escapeBelow = box.y + box.height + CORNER_MARGIN;
-            newSegments = [
-              [{ x: p1.x, y: escapeAbove }, { x: p2.x, y: escapeAbove }],
-              [{ x: p1.x, y: escapeBelow }, { x: p2.x, y: escapeBelow }]
-            ];
-          }
-
-          // Find an escape route that doesn't create new collisions
-          for (const [waypoint1, waypoint2] of newSegments) {
-            if (isSegmentClear(p1, waypoint1) && isSegmentClear(waypoint1, waypoint2) && isSegmentClear(waypoint2, p2)) {
-              const newPath = [...path.slice(0, i + 1), waypoint1, waypoint2, ...path.slice(i + 1)];
-              path = newPath;
-              fixed = true;
-              break;
-            }
-          }
-          if (fixed) break;
-        }
+      const box = boxes[boxIdx];
+      if (box.width === 0 || box.height === 0) continue;
+      if (lineIntersectsBox(p1, p2, box, 0)) {
+        const pedalName = pedalsById[placedPedals[boxIdx].pedalId]?.name || `box${boxIdx}`;
+        collisions.push(`seg${i} hits ${pedalName}`);
       }
     }
-    if (!fixed) break;
+  }
+  const srcName = fromBoxIdx >= 0 ? (pedalsById[placedPedals[fromBoxIdx].pedalId]?.name || 'unknown') : cable.fromType;
+  const dstName = toBoxIdx >= 0 ? (pedalsById[placedPedals[toBoxIdx].pedalId]?.name || 'unknown') : cable.toType;
+
+  if (DEBUG_PATHS && collisions.length > 0) {
+    console.error(`[COLLISION] ${srcName} → ${dstName}: ${collisions.join(', ')}`);
+    console.error(`  Path: ${path.map(p => `(${p.x.toFixed(0)},${p.y.toFixed(0)})`).join(' → ')}`);
+    console.error(`  Exclude set: [${Array.from(excludeSet).join(',')}]`);
   }
 
   // Log all paths for debugging
   if (DEBUG_PATHS) {
-    const cableId = `${cable.fromType}:${cable.fromPedalId?.slice(0,4) || 'ext'} → ${cable.toType}:${cable.toPedalId?.slice(0,4) || 'ext'}`;
-    const srcPedal = fromBoxIdx >= 0 ? placedPedals[fromBoxIdx] : null;
-    const destPedal = toBoxIdx >= 0 ? placedPedals[toBoxIdx] : null;
-    const srcName = srcPedal ? (pedalsById[srcPedal.pedalId]?.name || 'unknown') : 'ext';
-    const destName = destPedal ? (pedalsById[destPedal.pedalId]?.name || 'unknown') : 'ext';
-    console.log(`PATH: ${srcName} → ${destName} | ${path.map(p => `(${p.x.toFixed(0)},${p.y.toFixed(0)})`).join('→')}`);
+    console.log(`[PATH] ${srcName} → ${dstName} (${path.length}pts): ${path.map(p => `(${p.x.toFixed(0)},${p.y.toFixed(0)})`).join(' → ')}`);
   }
 
-  // Detailed validation logging - check ALL cables for real intersections
-  if (DEBUG_VALIDATION) {
-    const cableId = `${cable.fromType}:${cable.fromPedalId?.slice(0,4) || 'ext'} → ${cable.toType}:${cable.toPedalId?.slice(0,4) || 'ext'}`;
-
-    // Check for ACTUAL intersections with NON-EXCLUDED boxes
-    const violations: string[] = [];
-    for (let i = 0; i < path.length - 1; i++) {
-      const p1 = path[i];
-      const p2 = path[i + 1];
-
-      for (let boxIdx = 0; boxIdx < boxes.length; boxIdx++) {
-        if (excludeSet.has(boxIdx)) continue; // Skip source/dest boxes
-        const box = boxes[boxIdx];
-        const intersects = lineIntersectsBox(p1, p2, box, 0); // Check with 0 margin for actual intersection
-
-        if (intersects) {
-          const placed = placedPedals[boxIdx];
-          const pedal = placed ? (pedalsById[placed.pedalId] || placed.pedal) : null;
-          violations.push(`Seg${i} (${p1.x.toFixed(0)},${p1.y.toFixed(0)})→(${p2.x.toFixed(0)},${p2.y.toFixed(0)}) CROSSES ${pedal?.name || `Box${boxIdx}`}`);
-        }
-      }
-    }
-
-    if (violations.length > 0) {
-      // Log everything in one line so Playwright captures it
-      const info = `!!! COLLISION: ${cableId} | boxes=${fromBoxIdx}→${toBoxIdx} | CROSSES: ${violations.map(v => v.split('CROSSES ')[1]).join(', ')} | Path: ${path.map(p => `(${p.x.toFixed(0)},${p.y.toFixed(0)})`).join('→')}`;
-      console.log(info);
-    }
-  }
-
-  // ASCII debug visualization (when enabled)
-  if (DEBUG_ASCII) {
-    const cableId = `${cable.fromType}:${cable.fromPedalId?.slice(0,4) || 'ext'} → ${cable.toType}:${cable.toPedalId?.slice(0,4) || 'ext'}`;
-
-    // Log boxes for first cable
-    if (cable.fromType === 'guitar') {
-      const boxStr = boxes.map((b, i) => `${i}:x${b.x.toFixed(0)}-${(b.x+b.width).toFixed(0)},y${b.y.toFixed(0)}-${(b.y+b.height).toFixed(0)}`).join(' | ');
-      console.log(`[Cable] BOXES: ${boxStr}`);
-    }
-
-    printASCIIGrid(boxes, path, cableId, fromPos, toPos, allJacks);
-
-    // VALIDATE: Check and report if path goes through any pedal
-    printValidation(cableId, path, boxes, fromBoxIdx, toBoxIdx);
-  }
-
+  // Generate SVG path
   const pathD = 'M ' + path.map(p => `${p.x} ${p.y}`).join(' L ');
 
+  // Cable colors by type
   const color = cable.cableType === 'instrument' ? '#f59e0b' :
                 cable.cableType === 'power' ? '#ef4444' : '#22c55e';
 
-  // Debug: draw collision boxes to verify they match pedal positions
-  const DEBUG_BOXES = false;
-  const isFirstCable = cable.fromType === 'guitar';
-
-  // Log pedal positions when this is the first cable
-  if (DEBUG_BOXES && isFirstCable) {
-    console.log('=== PEDAL BOXES ===');
-    boxes.forEach((box, i) => {
-      const placed = placedPedals[i];
-      const pedal = placed ? (pedalsById[placed.pedalId] || placed.pedal) : null;
-      console.log(`Box ${i}: ${pedal?.name} x=${box.x.toFixed(0)}-${(box.x + box.width).toFixed(0)}, y=${box.y.toFixed(0)}-${(box.y + box.height).toFixed(0)}`);
-    });
-    console.log('=== END PEDAL BOXES ===');
-  }
-
   return (
     <g style={{ pointerEvents: 'none' }}>
-      {/* Debug: Show collision boxes with labels */}
-      {DEBUG_BOXES && isFirstCable && boxes.map((box, i) => {
-        const placed = placedPedals[i];
-        const pedal = placed ? (pedalsById[placed.pedalId] || placed.pedal) : null;
-        return (
-          <g key={`debug-box-${i}`}>
-            <rect
-              x={box.x}
-              y={box.y}
-              width={box.width}
-              height={box.height}
-              fill="rgba(255,0,0,0.1)"
-              stroke="red"
-              strokeWidth={2}
-              strokeDasharray="5,5"
-            />
-            <text
-              x={box.x + 5}
-              y={box.y + 15}
-              fill="red"
-              fontSize={12}
-              fontWeight="bold"
-            >
-              {i}: {pedal?.name?.slice(0, 8) || '?'} c{placed?.chainPosition || '?'}
-            </text>
-          </g>
-        );
-      })}
-      <path d={pathD} fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" />
-      <path d={pathD} fill="none" stroke={color} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+      {/* Cable shadow for depth */}
+      <path
+        d={pathD}
+        fill="none"
+        stroke="rgba(0,0,0,0.4)"
+        strokeWidth={5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Cable line */}
+      <path
+        d={pathD}
+        fill="none"
+        stroke={color}
+        strokeWidth={3}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Jack connection points */}
       <circle cx={fromPos.x} cy={fromPos.y} r={5} fill={color} stroke="#000" strokeWidth={1} />
       <circle cx={toPos.x} cy={toPos.y} r={5} fill={color} stroke="#000" strokeWidth={1} />
     </g>
