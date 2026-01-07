@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
@@ -25,22 +24,24 @@ if (fs.existsSync(envPath)) {
     await page.fill('input[type="password"]', process.env.VERIFY_PASSWORD);
     await page.click('button[type="submit"]');
     await page.waitForURL(url => !url.pathname.includes('/login'), { timeout: 15000 });
-    console.error('Login successful');
-
+    
     // Go to dashboard and click the config
-    console.error('Going to dashboard...');
     await page.goto('http://localhost:3000/dashboard');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
-
+    
     // Click on the first configuration card
-    console.error('Clicking configuration...');
     await page.click('text=J$ Home');
     await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+    
+    // Click "Optimize Layout" button
+    console.error('Clicking Optimize Layout...');
+    await page.click('text=Optimize Layout');
     await page.waitForTimeout(3000);
-
+    
     // Take screenshot
-    const outputPath = path.join(__dirname, '../screenshots/editor-test.png');
+    const outputPath = path.join(__dirname, '../screenshots/after-optimize.png');
     await page.screenshot({ path: outputPath });
     console.log(outputPath);
 

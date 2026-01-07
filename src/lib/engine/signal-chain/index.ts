@@ -5,6 +5,8 @@ import type {
   ChainWarning,
   ChainSuggestion,
   SignalChainResult,
+  SwappableGroup,
+  PedalCategory,
 } from '@/types';
 import { SIGNAL_CHAIN_RULES } from './rules';
 import { getCategoryDefaultOrder } from '@/lib/constants/pedal-categories';
@@ -286,3 +288,104 @@ export function calculateOptimalChainPosition(
 
 // Export singleton instance
 export const signalChainEngine = new SignalChainEngine();
+
+// ============================================
+// Swappable Group Detection
+// ============================================
+
+/**
+ * Categories that should never be swapped (user intent is critical)
+ */
+const NON_SWAPPABLE_CATEGORIES: PedalCategory[] = [
+  'tuner',
+  'looper',
+  'volume',
+  'utility',
+  'multi_fx',
+];
+
+/**
+ * Identify groups of consecutive same-category pedals that can be reordered
+ * without affecting the signal chain semantics.
+ *
+ * For example, if you have [OD1, OD2, OD3] all overdrives in a row,
+ * the order between them is typically a matter of preference and can be
+ * optimized for cable routing.
+ */
+export function identifySwappableGroups(
+  orderedPedals: PlacedPedal[],
+  pedalsById: Record<string, Pedal>
+): SwappableGroup[] {
+  const groups: SwappableGroup[] = [];
+
+  if (orderedPedals.length < 2) {
+    return groups;
+  }
+
+  let currentGroup: { category: PedalCategory; pedalIds: string[]; startIndex: number } | null = null;
+
+  for (let i = 0; i < orderedPedals.length; i++) {
+    const placed = orderedPedals[i];
+    const pedal = pedalsById[placed.pedalId] || placed.pedal;
+
+    if (!pedal) {
+      // End current group if pedal data missing
+      if (currentGroup && currentGroup.pedalIds.length >= 2) {
+        groups.push({
+          category: currentGroup.category,
+          pedalIds: currentGroup.pedalIds,
+          chainStartIndex: currentGroup.startIndex,
+        });
+      }
+      currentGroup = null;
+      continue;
+    }
+
+    const category = pedal.category;
+
+    // Skip non-swappable categories
+    if (NON_SWAPPABLE_CATEGORIES.includes(category)) {
+      // End current group
+      if (currentGroup && currentGroup.pedalIds.length >= 2) {
+        groups.push({
+          category: currentGroup.category,
+          pedalIds: currentGroup.pedalIds,
+          chainStartIndex: currentGroup.startIndex,
+        });
+      }
+      currentGroup = null;
+      continue;
+    }
+
+    // Check if this pedal continues the current group
+    if (currentGroup && currentGroup.category === category) {
+      currentGroup.pedalIds.push(placed.id);
+    } else {
+      // End previous group if it has 2+ pedals
+      if (currentGroup && currentGroup.pedalIds.length >= 2) {
+        groups.push({
+          category: currentGroup.category,
+          pedalIds: currentGroup.pedalIds,
+          chainStartIndex: currentGroup.startIndex,
+        });
+      }
+      // Start new group
+      currentGroup = {
+        category,
+        pedalIds: [placed.id],
+        startIndex: i,
+      };
+    }
+  }
+
+  // Don't forget the last group
+  if (currentGroup && currentGroup.pedalIds.length >= 2) {
+    groups.push({
+      category: currentGroup.category,
+      pedalIds: currentGroup.pedalIds,
+      chainStartIndex: currentGroup.startIndex,
+    });
+  }
+
+  return groups;
+}

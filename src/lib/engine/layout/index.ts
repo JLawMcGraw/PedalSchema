@@ -1,11 +1,6 @@
-import type { Board, Pedal, PlacedPedal, RoutingConfig } from '@/types';
-import { optimizeForCableLength } from './optimizer';
-
-interface PedalPlacement {
-  id: string;
-  x: number;
-  y: number;
-}
+import type { Board, Pedal, PlacedPedal, RoutingConfig, JointOptimizationResult, PedalPlacement } from '@/types';
+import { optimizeForCableLength, optimizeJointly } from './optimizer';
+import { identifySwappableGroups } from '../signal-chain';
 
 interface PlacedBox {
   x: number;
@@ -20,8 +15,11 @@ const MIN_SPACING = 0.5; // minimum inches between pedals (for cable access)
  * Calculate optimal layout positions for all pedals based on signal chain order
  * Signal flows right-to-left: Guitar (right) → Pedals → Amp (left)
  *
- * Simple approach: place each pedal in the first valid position found,
- * scanning the board systematically with proper collision detection.
+ * Layout zones:
+ * - Front of amp pedals: placed from right side (closer to guitar)
+ * - Effects loop pedals: placed from left side (closer to amp send/return)
+ *
+ * Uses greedy first-fit for initial placement, then simulated annealing optimization.
  */
 export function calculateOptimalLayout(
   placedPedals: PlacedPedal[],
@@ -33,38 +31,152 @@ export function calculateOptimalLayout(
     return [];
   }
 
-  // Sort pedals by chain position
-  const sortedPedals = [...placedPedals].sort((a, b) => a.chainPosition - b.chainPosition);
+  // Split pedals by location for zone-based placement
+  const useEffectsLoop = routingConfig?.useEffectsLoop ?? false;
+  const frontOfAmpPedals = placedPedals.filter(p => p.location !== 'effects_loop');
+  const effectsLoopPedals = placedPedals.filter(p => p.location === 'effects_loop');
 
-  // Build pedal info with dimensions
-  const pedalInfos = sortedPedals.map(placed => {
-    const pedal = pedalsById[placed.pedalId] || placed.pedal;
-    const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-    return {
-      id: placed.id,
-      width: pedal ? (isRotated ? pedal.depthInches : pedal.widthInches) : 2.87,
-      depth: pedal ? (isRotated ? pedal.widthInches : pedal.depthInches) : 5.12,
-    };
-  });
-
-  const placements: PedalPlacement[] = [];
-  const placedBoxes: PlacedBox[] = [];
-
-  // Get rail Y positions (sorted front to back - higher Y = front of board = bottom of canvas)
+  // Get rail Y positions (sorted front to back)
   const rails = [...(board.rails || [])].sort((a, b) => b.positionFromBackInches - a.positionFromBackInches);
   const rowYPositions = rails.length > 0
     ? rails.map(r => r.positionFromBackInches)
     : [board.depthInches * 0.55, board.depthInches * 0.05]; // Default: 2 rows
 
-  // Place each pedal
-  for (const info of pedalInfos) {
-    const spot = findValidPosition(info.width, info.depth, placedBoxes, board, rowYPositions);
+  const placements: PedalPlacement[] = [];
+  const placedBoxes: PlacedBox[] = [];
 
-    placements.push({ id: info.id, x: spot.x, y: spot.y });
-    placedBoxes.push({ x: spot.x, y: spot.y, width: info.width, height: info.depth });
+  // Calculate zone boundaries if effects loop is active
+  // Front-of-amp zone: right 60% of board
+  // Effects loop zone: left 40% of board
+  const ampZoneBoundary = useEffectsLoop && effectsLoopPedals.length > 0
+    ? board.widthInches * 0.4
+    : 0;
+
+  // Place front-of-amp pedals (right to left, starting from right edge)
+  const frontSorted = [...frontOfAmpPedals].sort((a, b) => a.chainPosition - b.chainPosition);
+  for (const placed of frontSorted) {
+    const pedal = pedalsById[placed.pedalId] || placed.pedal;
+    const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
+    const width = pedal ? (isRotated ? pedal.depthInches : pedal.widthInches) : 2.87;
+    const depth = pedal ? (isRotated ? pedal.widthInches : pedal.depthInches) : 5.12;
+
+    // Search from right edge, but don't go past amp zone boundary
+    const spot = findValidPositionInZone(
+      width, depth, placedBoxes, board, rowYPositions,
+      ampZoneBoundary, board.widthInches, // Zone: ampZoneBoundary to right edge
+      'right-to-left'
+    );
+
+    placements.push({ id: placed.id, x: spot.x, y: spot.y });
+    placedBoxes.push({ x: spot.x, y: spot.y, width, height: depth });
   }
 
-  return placements;
+  // Place effects loop pedals (left to right, starting from left edge)
+  if (effectsLoopPedals.length > 0) {
+    const loopSorted = [...effectsLoopPedals].sort((a, b) => a.chainPosition - b.chainPosition);
+    for (const placed of loopSorted) {
+      const pedal = pedalsById[placed.pedalId] || placed.pedal;
+      const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
+      const width = pedal ? (isRotated ? pedal.depthInches : pedal.widthInches) : 2.87;
+      const depth = pedal ? (isRotated ? pedal.widthInches : pedal.depthInches) : 5.12;
+
+      // Search from left edge, within amp zone
+      const spot = findValidPositionInZone(
+        width, depth, placedBoxes, board, rowYPositions,
+        0, ampZoneBoundary, // Zone: left edge to ampZoneBoundary
+        'left-to-right'
+      );
+
+      placements.push({ id: placed.id, x: spot.x, y: spot.y });
+      placedBoxes.push({ x: spot.x, y: spot.y, width, height: depth });
+    }
+  }
+
+  // Optimize placements to minimize cable length using simulated annealing
+  const optimizedPlacements = optimizeForCableLength(
+    placements,
+    placedPedals,
+    pedalsById,
+    board,
+    30, // maxIterations
+    useEffectsLoop
+  );
+
+  return optimizedPlacements;
+}
+
+/**
+ * Find a valid position within a specific zone of the board
+ */
+function findValidPositionInZone(
+  width: number,
+  depth: number,
+  placedBoxes: PlacedBox[],
+  board: Board,
+  rowYPositions: number[],
+  zoneMinX: number,
+  zoneMaxX: number,
+  direction: 'left-to-right' | 'right-to-left'
+): { x: number; y: number } {
+  const STEP = 0.25;
+
+  // Try each row
+  for (const rowY of rowYPositions) {
+    const y = Math.min(rowY, board.depthInches - depth);
+    if (y < 0) continue;
+
+    if (direction === 'right-to-left') {
+      // Scan from right to left within zone
+      for (let x = Math.min(zoneMaxX, board.widthInches) - width; x >= zoneMinX; x -= STEP) {
+        const candidate: PlacedBox = { x, y, width, height: depth };
+        if (isValidPlacement(candidate, placedBoxes, board)) {
+          return { x, y };
+        }
+      }
+    } else {
+      // Scan from left to right within zone
+      for (let x = zoneMinX; x <= zoneMaxX - width; x += STEP) {
+        const candidate: PlacedBox = { x, y, width, height: depth };
+        if (isValidPlacement(candidate, placedBoxes, board)) {
+          return { x, y };
+        }
+      }
+    }
+  }
+
+  // Fallback: scan entire zone
+  for (let y = 0; y <= board.depthInches - depth; y += STEP) {
+    if (direction === 'right-to-left') {
+      for (let x = Math.min(zoneMaxX, board.widthInches) - width; x >= zoneMinX; x -= STEP) {
+        const candidate: PlacedBox = { x, y, width, height: depth };
+        if (isValidPlacement(candidate, placedBoxes, board)) {
+          return { x, y };
+        }
+      }
+    } else {
+      for (let x = zoneMinX; x <= zoneMaxX - width; x += STEP) {
+        const candidate: PlacedBox = { x, y, width, height: depth };
+        if (isValidPlacement(candidate, placedBoxes, board)) {
+          return { x, y };
+        }
+      }
+    }
+  }
+
+  // Last resort: place at zone start
+  return { x: direction === 'right-to-left' ? zoneMaxX - width : zoneMinX, y: 0 };
+}
+
+/**
+ * Check if a placement is valid (within bounds and no collisions)
+ */
+function isValidPlacement(candidate: PlacedBox, placedBoxes: PlacedBox[], board: Board): boolean {
+  // Check bounds
+  if (candidate.x < 0 || candidate.x + candidate.width > board.widthInches) return false;
+  if (candidate.y < 0 || candidate.y + candidate.height > board.depthInches) return false;
+
+  // Check collisions
+  return !placedBoxes.some(box => boxesOverlap(candidate, box, MIN_SPACING));
 }
 
 /**
@@ -442,4 +554,60 @@ export function calculateSimpleLayout(
   }
 
   return placements;
+}
+
+/**
+ * Calculate optimal layout with joint topology + geometry optimization.
+ *
+ * This is the recommended function for optimize layout - it:
+ * 1. Detects swappable groups (consecutive pedals of same category)
+ * 2. Runs simulated annealing with both position swaps AND chain reordering
+ * 3. Returns optimized placements AND optimized signal chain order
+ */
+export function calculateOptimalLayoutJoint(
+  placedPedals: PlacedPedal[],
+  pedalsById: Record<string, Pedal>,
+  board: Board,
+  routingConfig?: RoutingConfig
+): JointOptimizationResult {
+  if (placedPedals.length === 0) {
+    return {
+      placements: [],
+      chainOrder: [],
+      swappableGroups: [],
+    };
+  }
+
+  // First, calculate the base layout (greedy placement)
+  const basePlacements = calculateOptimalLayout(placedPedals, pedalsById, board, routingConfig);
+
+  // Get the initial chain order from placedPedals (sorted by chainPosition)
+  const sortedPedals = [...placedPedals].sort((a, b) => a.chainPosition - b.chainPosition);
+  const initialChainOrder = sortedPedals.map(p => p.id);
+
+  // Identify swappable groups
+  const swappableGroups = identifySwappableGroups(sortedPedals, pedalsById);
+
+  // If no swappable groups, return base layout
+  if (swappableGroups.length === 0) {
+    return {
+      placements: basePlacements,
+      chainOrder: initialChainOrder,
+      swappableGroups: [],
+    };
+  }
+
+  // Run joint optimization
+  const useEffectsLoop = routingConfig?.useEffectsLoop ?? false;
+  const result = optimizeJointly(
+    basePlacements,
+    initialChainOrder,
+    placedPedals,
+    pedalsById,
+    board,
+    swappableGroups,
+    useEffectsLoop
+  );
+
+  return result;
 }

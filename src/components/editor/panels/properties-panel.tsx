@@ -11,6 +11,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { getCategoryColor, getCategoryLabel } from '@/lib/constants/pedal-categories';
 import type { ChainLocation } from '@/types';
 
@@ -22,6 +24,7 @@ export function PropertiesPanel() {
     removePedal,
     rotatePedal,
     updatePedalLocation,
+    setUseLoop,
     amp,
     useEffectsLoop,
     collisions,
@@ -125,6 +128,32 @@ export function PropertiesPanel() {
                     )}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+          )}
+
+          {/* Loop Routing (for NS-2 style pedals) */}
+          {selectedPedal.supports4Cable && (
+            <div className="border rounded-lg overflow-hidden">
+              <div className="px-3 py-2 bg-muted/50 border-b">
+                <span className="text-xs font-medium">Loop Routing</span>
+              </div>
+              <div className="p-3">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="use-loop" className="text-xs cursor-pointer">
+                    Use Send/Return Loop
+                  </Label>
+                  <Switch
+                    id="use-loop"
+                    checked={selectedPlaced.useLoop}
+                    onCheckedChange={(checked) => setUseLoop(selectedPlaced.id, checked)}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {selectedPlaced.useLoop
+                    ? 'Drive pedals will be routed through this pedal\'s loop'
+                    : 'Only using input/output jacks'}
+                </p>
               </div>
             </div>
           )}

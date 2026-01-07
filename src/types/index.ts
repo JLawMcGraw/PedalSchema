@@ -151,6 +151,8 @@ export interface PlacedPedal {
   chainPosition: number;
   location: ChainLocation;
   isActive: boolean;
+  /** For pedals with send/return (like NS-2), whether to use the loop routing */
+  useLoop: boolean;
   createdAt: string;
   pedal?: Pedal;
 }
@@ -259,4 +261,32 @@ export interface WiringOption {
   name: string;
   description: string;
   isSelected: boolean;
+}
+
+// ============================================
+// Optimization Types
+// ============================================
+
+export interface SwappableGroup {
+  /** Pedal category (e.g., "overdrive", "delay") */
+  category: PedalCategory;
+  /** IDs of pedals in this group (placed pedal IDs) */
+  pedalIds: string[];
+  /** Index in signal chain where this group starts */
+  chainStartIndex: number;
+}
+
+export interface PedalPlacement {
+  id: string;
+  x: number;
+  y: number;
+}
+
+export interface JointOptimizationResult {
+  /** Optimized pedal placements */
+  placements: PedalPlacement[];
+  /** Optimized signal chain order (placed pedal IDs) */
+  chainOrder: string[];
+  /** Swappable groups that were detected */
+  swappableGroups: SwappableGroup[];
 }

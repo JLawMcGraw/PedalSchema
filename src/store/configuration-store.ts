@@ -6,7 +6,7 @@ import { detectCollisions } from '@/lib/engine/collision';
 import { getCategoryDefaultOrder } from '@/lib/constants/pedal-categories';
 import { signalChainEngine } from '@/lib/engine/signal-chain';
 import { calculateCables } from '@/lib/engine/cables';
-import { calculateOptimalLayout } from '@/lib/engine/layout';
+import { calculateOptimalLayout, calculateOptimalLayoutJoint } from '@/lib/engine/layout';
 
 interface ConfigurationState {
   // Configuration data
@@ -63,6 +63,7 @@ interface ConfigurationState {
   rotatePedal: (placedPedalId: string) => void;
   updatePedalChainPosition: (placedPedalId: string, newPosition: number) => void;
   updatePedalLocation: (placedPedalId: string, location: ChainLocation) => void;
+  setUseLoop: (placedPedalId: string, useLoop: boolean) => void;
 
   recalculateCollisions: () => void;
   recalculateCables: () => void;
@@ -199,6 +200,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
             chainPosition: state.placedPedals.length + 1,
             location: pedal.preferredLocation || 'front_of_amp',
             isActive: true,
+            useLoop: false, // Default to not using loop (user must enable)
             createdAt: new Date().toISOString(),
             pedal,
           };
@@ -304,6 +306,18 @@ export const useConfigurationStore = create<ConfigurationState>()(
         });
 
         get().recalculateSignalChain();
+      },
+
+      setUseLoop: (placedPedalId, useLoop) => {
+        set((state) => {
+          const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
+          if (pedal) {
+            pedal.useLoop = useLoop;
+            state.isDirty = true;
+          }
+        });
+
+        get().recalculateCables();
       },
 
       recalculateCollisions: () => {
@@ -442,23 +456,35 @@ export const useConfigurationStore = create<ConfigurationState>()(
 
         if (!board || placedPedals.length === 0) return;
 
-        // Calculate optimal positions - pass useEffectsLoop in routingConfig
-        const optimalPlacements = calculateOptimalLayout(
+        // Calculate optimal positions AND chain order using joint optimization
+        const result = calculateOptimalLayoutJoint(
           placedPedals,
           pedalsById,
           board,
           { ...routingConfig, useEffectsLoop }
         );
 
-        // Apply the new positions
+        // Apply the new positions and chain order
         set((state) => {
-          for (const placement of optimalPlacements) {
+          // Apply position changes
+          for (const placement of result.placements) {
             const pedal = state.placedPedals.find((p) => p.id === placement.id);
             if (pedal) {
               pedal.xInches = placement.x;
               pedal.yInches = placement.y;
             }
           }
+
+          // Apply chain order changes if any swappable groups were optimized
+          if (result.swappableGroups.length > 0) {
+            for (let i = 0; i < result.chainOrder.length; i++) {
+              const pedal = state.placedPedals.find((p) => p.id === result.chainOrder[i]);
+              if (pedal) {
+                pedal.chainPosition = i + 1;
+              }
+            }
+          }
+
           state.isDirty = true;
         });
 

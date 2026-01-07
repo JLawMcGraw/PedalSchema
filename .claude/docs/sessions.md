@@ -4,6 +4,71 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-01-07 (Late Night)
+
+### Summary
+Major optimization system overhaul: implemented joint topology + geometry optimization and added per-pedal loop toggle for NS-2 style pedals.
+
+### What Was Accomplished
+- [x] Fixed cables going through pedals (increased OBSTACLE_MARGIN, reduced GRID_CELL_SIZE)
+- [x] Implemented joint topology + geometry optimization (signal chain + placement optimized together)
+- [x] Added `SwappableGroup` detection for consecutive same-category pedals
+- [x] Added `tryChainSwap` SA move type (25% probability) to reorder within swappable groups
+- [x] Fixed Euclidean fallback bug (>10 pedals was using straight-line distance instead of A* routing)
+- [x] Added `useLoop` toggle for NS-2 style pedals (no longer auto-uses all 4 jacks)
+- [x] Created database migration for `use_loop` column
+- [x] Renamed migration files to Supabase timestamp format
+- [x] Pushed migration to production database
+
+### Key Changes
+| File | Change |
+|------|--------|
+| `src/types/index.ts` | Added `SwappableGroup`, `PedalPlacement`, `JointOptimizationResult`, `useLoop` field on `PlacedPedal` |
+| `src/lib/engine/signal-chain/index.ts` | Added `identifySwappableGroups()` function |
+| `src/lib/engine/layout/optimizer.ts` | Added `tryChainSwap`, `optimizeJointly()`, fixed Euclidean fallback, returns `JointOptimizationResult` |
+| `src/lib/engine/layout/index.ts` | Added `calculateOptimalLayoutJoint()` |
+| `src/lib/engine/layout/routing-cost.ts` | Uses shared `PedalPlacement` type from types |
+| `src/lib/engine/pathfinding/index.ts` | Extracted A* pathfinding from cable-renderer (new file) |
+| `src/lib/engine/cables/index.ts` | Check `placed.useLoop` before using send/return jacks |
+| `src/store/configuration-store.ts` | Added `setUseLoop` action, uses `calculateOptimalLayoutJoint()` |
+| `src/components/editor/panels/properties-panel.tsx` | Added "Loop Routing" toggle UI for 4-cable pedals |
+| `src/app/(dashboard)/editor/[id]/page.tsx` | Load `use_loop` from database |
+| `src/app/(dashboard)/editor/[id]/editor-client.tsx` | Save `use_loop` to database |
+| `supabase/migrations/20240107000001_add_use_loop.sql` | Add `use_loop` column to `configuration_pedals` |
+
+### Technical Decisions
+1. **Joint optimization**: SA now optimizes both pedal positions AND signal chain order simultaneously, returning `{ placements, chainOrder, swappableGroups }`
+2. **Swappable groups**: Consecutive pedals of same category (e.g., 3 overdrives) can be reordered for better cable routing
+3. **Non-swappable categories**: tuner, looper, volume, utility, multi_fx are never swapped (user intent critical)
+4. **useLoop default false**: NS-2 style pedals now require explicit opt-in for 4-cable routing
+5. **Always use routing cost**: Removed Euclidean fallback for >10 pedals - A* routing always used
+
+### Architecture Notes
+**Joint Optimization Flow:**
+```
+1. identifySwappableGroups() finds [OD1, OD2, OD3] as swappable
+2. SA runs with 4 move types:
+   - trySwap (30%): swap pedal x,y positions
+   - tryNudge (30%): move pedal slightly
+   - tryRowChange (15%): move to different rail
+   - tryChainSwap (25%): reorder within swappable group
+3. Cost function uses A* routing (never Euclidean)
+4. Returns { placements, chainOrder }
+5. Store applies both position AND chainPosition changes
+```
+
+**NS-2 Loop Toggle:**
+- `useLoop: boolean` on `PlacedPedal` controls whether send/return jacks are used
+- Default `false` - only input/output jacks used (2 cables)
+- When `true` - drive pedals route through the loop (4 cables)
+
+### Next Tasks
+- [ ] Test joint optimization with complex pedalboard layouts
+- [ ] Consider anchor optimization (guitar/amp positions currently fixed)
+- [ ] Add visual indicator when chain order was optimized
+
+---
+
 ## Session: 2026-01-07 (Night)
 
 ### Summary

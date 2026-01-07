@@ -131,6 +131,7 @@ export function EditorClient({
             chain_position: p.chainPosition,
             location: p.location,
             is_active: p.isActive,
+            use_loop: p.useLoop,
           }))
         );
       }

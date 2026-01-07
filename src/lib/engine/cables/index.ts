@@ -270,9 +270,12 @@ export function calculateCables(
     }
   }
 
-  // If no explicit config, auto-detect (for backwards compatibility)
-  if (!loopPedal && routingConfig?.useLoopPedals !== false) {
+  // If no explicit config, check for pedals with useLoop enabled
+  if (!loopPedal) {
     for (const placed of sortedPedals) {
+      // Only use loop if the pedal has useLoop explicitly enabled
+      if (!placed.useLoop) continue;
+
       const pedal = pedalsById[placed.pedalId] || placed.pedal;
       if (pedal?.supports4Cable) {
         const hasSend = findJack(pedal, 'send');
@@ -280,7 +283,7 @@ export function calculateCables(
         if (hasSend && hasReturn) {
           loopPedal = placed;
           loopPedalData = pedal;
-          // Auto-detect which pedals should go in loop
+          // Auto-detect which pedals should go in loop (drive pedals)
           configuredLoopPedalIds = sortedPedals
             .filter(p => {
               const pd = pedalsById[p.pedalId] || p.pedal;
