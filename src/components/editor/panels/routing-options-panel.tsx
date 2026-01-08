@@ -30,6 +30,8 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
     setAmp,
     useEffectsLoop,
     setUseEffectsLoop,
+    use4CableMethod,
+    setUse4CableMethod,
     modulationInLoop,
     setModulationInLoop,
   } = useConfigurationStore();
@@ -61,6 +63,14 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
       const pedal = pedalsById[placed.pedalId] || placed.pedal;
       if (!pedal) return false;
       return driveCategories.includes(pedal.category);
+    });
+  }, [placedPedals, pedalsById]);
+
+  // Check if there's a 4-cable capable pedal (like NS-2) on the board
+  const has4CablePedal = useMemo(() => {
+    return placedPedals.some(placed => {
+      const pedal = pedalsById[placed.pedalId] || placed.pedal;
+      return pedal?.supports4Cable === true;
     });
   }, [placedPedals, pedalsById]);
 
@@ -159,27 +169,84 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
             </div>
           )}
 
+          {/* 4-Cable Method */}
+          {useEffectsLoop && amp?.hasEffectsLoop && has4CablePedal && (
+            <div className="border rounded-lg overflow-hidden">
+              <div className="px-3 py-2 bg-muted/50 border-b flex items-center justify-between">
+                <span className="text-xs font-medium">4-Cable Method</span>
+                <Switch
+                  checked={use4CableMethod}
+                  onCheckedChange={setUse4CableMethod}
+                />
+              </div>
+              <div className="p-3">
+                <p className="text-xs text-muted-foreground">
+                  {use4CableMethod
+                    ? 'NS-2 gates drives and FX loop'
+                    : 'Standard routing (NS-2 inline)'}
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Signal Flow */}
           <div className="border rounded-lg overflow-hidden">
             <div className="px-3 py-2 bg-muted/50 border-b">
               <span className="text-xs font-medium">Signal Flow</span>
             </div>
             <div className="p-3 text-xs space-y-1">
-              <div className="flex items-center gap-1 flex-wrap">
-                <span className="font-medium">Guitar</span>
-                <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
-                <span>Pedals</span>
-                <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
-                <span className="font-medium">Amp</span>
-              </div>
-              {useEffectsLoop && amp?.hasEffectsLoop && (
-                <div className="flex items-center gap-1 text-muted-foreground flex-wrap">
-                  <span>Send</span>
-                  <ArrowRight className="w-3 h-3 shrink-0" />
-                  <span>Loop</span>
-                  <ArrowRight className="w-3 h-3 shrink-0" />
-                  <span>Return</span>
-                </div>
+              {use4CableMethod && has4CablePedal ? (
+                // 4-Cable Method flow
+                <>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="font-medium">Guitar</span>
+                    <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                    <span>Tuner</span>
+                    <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                    <span className="font-medium text-orange-500">NS-2 IN</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-muted-foreground flex-wrap">
+                    <span className="text-orange-500">Send</span>
+                    <ArrowRight className="w-3 h-3 shrink-0" />
+                    <span>Drives</span>
+                    <ArrowRight className="w-3 h-3 shrink-0" />
+                    <span className="font-medium text-foreground">Amp IN</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-muted-foreground flex-wrap">
+                    <span>Amp Send</span>
+                    <ArrowRight className="w-3 h-3 shrink-0" />
+                    <span>FX</span>
+                    <ArrowRight className="w-3 h-3 shrink-0" />
+                    <span className="text-orange-500">NS-2 Return</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-muted-foreground flex-wrap">
+                    <span className="text-orange-500">NS-2 Out</span>
+                    <ArrowRight className="w-3 h-3 shrink-0" />
+                    <span>Looper</span>
+                    <ArrowRight className="w-3 h-3 shrink-0" />
+                    <span className="font-medium text-foreground">Amp Return</span>
+                  </div>
+                </>
+              ) : (
+                // Standard flow
+                <>
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="font-medium">Guitar</span>
+                    <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                    <span>Pedals</span>
+                    <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                    <span className="font-medium">Amp</span>
+                  </div>
+                  {useEffectsLoop && amp?.hasEffectsLoop && (
+                    <div className="flex items-center gap-1 text-muted-foreground flex-wrap">
+                      <span>Send</span>
+                      <ArrowRight className="w-3 h-3 shrink-0" />
+                      <span>Loop</span>
+                      <ArrowRight className="w-3 h-3 shrink-0" />
+                      <span>Return</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

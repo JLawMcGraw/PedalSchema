@@ -1,6 +1,12 @@
 import type { Board, Pedal, PlacedPedal, Collision, BoundingBox } from '@/types';
 
 /**
+ * Minimum spacing between pedals (inches) for cable access.
+ * Used by both collision detection and layout optimizer for consistency.
+ */
+export const COLLISION_SPACING = 0.5;
+
+/**
  * Get the bounding box for a placed pedal, accounting for rotation
  */
 export function getPedalBoundingBox(
@@ -18,14 +24,15 @@ export function getPedalBoundingBox(
 }
 
 /**
- * Check if two bounding boxes overlap
+ * Check if two bounding boxes overlap (or are within spacing distance)
+ * @param spacing - Optional minimum spacing to consider as "too close"
  */
-export function boxesOverlap(a: BoundingBox, b: BoundingBox): boolean {
-  return (
-    a.x < b.x + b.width &&
-    a.x + a.width > b.x &&
-    a.y < b.y + b.height &&
-    a.y + a.height > b.y
+export function boxesOverlap(a: BoundingBox, b: BoundingBox, spacing: number = 0): boolean {
+  return !(
+    a.x + a.width + spacing <= b.x ||
+    b.x + b.width + spacing <= a.x ||
+    a.y + a.height + spacing <= b.y ||
+    b.y + b.height + spacing <= a.y
   );
 }
 

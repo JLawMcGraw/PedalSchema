@@ -4,6 +4,27 @@ import type { Pedal, PlacedPedal, ChainContext, ChainRule } from '@/types';
  * Signal chain rules ordered by priority (higher = applied first)
  */
 export const SIGNAL_CHAIN_RULES: ChainRule[] = [
+  // Rule: 4-Cable hub pedal (NS-2 style) acts as routing hub
+  {
+    id: 'four-cable-hub',
+    name: '4-Cable Hub Pedal',
+    description: 'NS-2 style pedals act as the hub in 4-cable method, routing drives and FX loop through noise gate',
+    priority: 105, // Highest priority - determines routing topology
+    condition: (pedal, context) =>
+      pedal.supports4Cable === true && context.use4CableMethod === true,
+    apply: (pedals, context) => {
+      // Mark 4-cable capable pedals as hubs when 4-cable method is enabled
+      return pedals.map((p) => {
+        if (p.locationOverride) return p; // Respect manual override
+        const pedal = p.pedal;
+        if (pedal?.supports4Cable && context.use4CableMethod) {
+          return { ...p, location: 'four_cable_hub' as const };
+        }
+        return p;
+      });
+    },
+  },
+
   // Rule: Fuzz pedals that need direct pickup signal go FIRST
   {
     id: 'fuzz-first',
@@ -130,7 +151,10 @@ export const SIGNAL_CHAIN_RULES: ChainRule[] = [
       context.useEffectsLoop,
     apply: (pedals, context) => {
       // This rule changes location, not order
+      // Skip pedals with manual location override
       return pedals.map((p) => {
+        if (p.locationOverride) return p; // Respect user's manual choice
+
         const pedal = p.pedal;
         if (
           pedal &&
@@ -154,8 +178,11 @@ export const SIGNAL_CHAIN_RULES: ChainRule[] = [
     condition: (pedal) => pedal.category === 'modulation' || pedal.category === 'tremolo',
     apply: (pedals, context) => {
       // If user has enabled "clean modulation" (modulationInLoop), move modulation to effects loop
+      // Skip pedals with manual location override
       if (context.modulationInLoop && context.ampHasEffectsLoop && context.useEffectsLoop) {
         return pedals.map((p) => {
+          if (p.locationOverride) return p; // Respect user's manual choice
+
           const pedal = p.pedal;
           if (pedal && (pedal.category === 'modulation' || pedal.category === 'tremolo')) {
             return { ...p, location: 'effects_loop' as const };

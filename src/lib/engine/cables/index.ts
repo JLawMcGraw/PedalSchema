@@ -226,8 +226,78 @@ function addCable(
 }
 
 /**
+ * Categories that go before the 4-cable hub (tuner, wah, filters)
+ */
+const BEFORE_HUB_CATEGORIES = ['tuner', 'filter', 'wah', 'pitch'];
+
+/**
+ * Categories that go through the hub's send/return loop (drives)
+ */
+const IN_HUB_LOOP_CATEGORIES = ['overdrive', 'distortion', 'fuzz', 'boost'];
+
+/**
+ * Categories that go in the amp's FX loop (time-based effects)
+ */
+const IN_AMP_LOOP_CATEGORIES = ['modulation', 'tremolo', 'delay', 'reverb'];
+
+/**
+ * Categories that go after everything (looper)
+ */
+const AFTER_HUB_CATEGORIES = ['looper', 'volume'];
+
+/**
+ * Categorize pedals for 4-cable method routing
+ */
+function categorizeFor4Cable(
+  pedals: PlacedPedal[],
+  hubPedal: PlacedPedal,
+  pedalsById: Record<string, Pedal>
+): {
+  beforeHub: PlacedPedal[];
+  inHubLoop: PlacedPedal[];
+  inAmpLoop: PlacedPedal[];
+  afterHub: PlacedPedal[];
+} {
+  const beforeHub: PlacedPedal[] = [];
+  const inHubLoop: PlacedPedal[] = [];
+  const inAmpLoop: PlacedPedal[] = [];
+  const afterHub: PlacedPedal[] = [];
+
+  for (const placed of pedals) {
+    if (placed.id === hubPedal.id) continue;
+
+    const pedal = pedalsById[placed.pedalId] || placed.pedal;
+    if (!pedal) continue;
+
+    const category = pedal.category;
+
+    if (BEFORE_HUB_CATEGORIES.includes(category)) {
+      beforeHub.push(placed);
+    } else if (IN_HUB_LOOP_CATEGORIES.includes(category)) {
+      inHubLoop.push(placed);
+    } else if (IN_AMP_LOOP_CATEGORIES.includes(category)) {
+      inAmpLoop.push(placed);
+    } else if (AFTER_HUB_CATEGORIES.includes(category)) {
+      afterHub.push(placed);
+    } else {
+      // Default: put unknown categories in front of amp (hub loop)
+      inHubLoop.push(placed);
+    }
+  }
+
+  // Sort each group by chain position
+  beforeHub.sort((a, b) => a.chainPosition - b.chainPosition);
+  inHubLoop.sort((a, b) => a.chainPosition - b.chainPosition);
+  inAmpLoop.sort((a, b) => a.chainPosition - b.chainPosition);
+  afterHub.sort((a, b) => a.chainPosition - b.chainPosition);
+
+  return { beforeHub, inHubLoop, inAmpLoop, afterHub };
+}
+
+/**
  * Calculate all cable connections for a configuration
- * Handles standard chains, effects loops, and pedals with send/return loops (like NS-2)
+ * Handles standard chains, effects loops, pedals with send/return loops (like NS-2),
+ * and the full 4-cable method routing
  */
 export function calculateCables(
   placedPedals: PlacedPedal[],
@@ -235,7 +305,8 @@ export function calculateCables(
   board: Board,
   amp: Amp | null,
   useEffectsLoop: boolean,
-  routingConfig?: RoutingConfig
+  routingConfig?: RoutingConfig,
+  use4CableMethod: boolean = false
 ): CableConnection[] {
   if (placedPedals.length === 0) {
     return [];
@@ -327,7 +398,200 @@ export function calculateCables(
     ? sortedPedals.filter((p) => p.location !== 'effects_loop')
     : sortedPedals; // All pedals when effects loop is disabled
 
-  // === ROUTING WITH LOOP PEDAL (NS-2 style) ===
+  // === 4-CABLE METHOD ROUTING ===
+  // Find 4-cable hub pedal (like NS-2) when 4-cable method is enabled
+  const hubPedal = use4CableMethod
+    ? sortedPedals.find((p) => p.location === 'four_cable_hub')
+    : null;
+  const hubPedalData = hubPedal
+    ? (pedalsById[hubPedal.pedalId] || hubPedal.pedal)
+    : null;
+
+  if (use4CableMethod && hubPedal && hubPedalData && effectsLoopEnabled) {
+    // Categorize pedals for 4-cable routing
+    const { beforeHub, inHubLoop, inAmpLoop, afterHub } = categorizeFor4Cable(
+      sortedPedals,
+      hubPedal,
+      pedalsById
+    );
+
+    // 1. Guitar → beforeHub pedals → HUB INPUT
+    const firstPedal = beforeHub.length > 0 ? beforeHub[0] : hubPedal;
+    const firstPedalData = beforeHub.length > 0
+      ? (pedalsById[firstPedal.pedalId] || firstPedal.pedal)
+      : hubPedalData;
+
+    if (firstPedalData) {
+      const inputJack = findJack(firstPedalData, 'input');
+      if (inputJack) {
+        const guitarPos = getGuitarPosition(board);
+        const jackPos = getJackPosition(firstPedal, inputJack, firstPedalData);
+        addCable(cables, 'guitar', null, null, 'pedal', firstPedal.id, 'input',
+          calculateDistance(guitarPos, jackPos) * ROUTING_OVERHEAD, 'instrument', sortOrder++);
+      }
+    }
+
+    // Connect beforeHub pedals
+    for (let i = 0; i < beforeHub.length - 1; i++) {
+      const from = beforeHub[i];
+      const to = beforeHub[i + 1];
+      const fromPedal = pedalsById[from.pedalId] || from.pedal;
+      const toPedal = pedalsById[to.pedalId] || to.pedal;
+      if (fromPedal && toPedal) {
+        const fromJack = findJack(fromPedal, 'output');
+        const toJack = findJack(toPedal, 'input');
+        addCable(cables, 'pedal', from.id, 'output', 'pedal', to.id, 'input',
+          calculateDistance(getJackPosition(from, fromJack, fromPedal), getJackPosition(to, toJack, toPedal)) * ROUTING_OVERHEAD,
+          'patch', sortOrder++);
+      }
+    }
+
+    // Last beforeHub to HUB INPUT
+    if (beforeHub.length > 0) {
+      const lastBefore = beforeHub[beforeHub.length - 1];
+      const lastBeforePedal = pedalsById[lastBefore.pedalId] || lastBefore.pedal;
+      if (lastBeforePedal) {
+        const outJack = findJack(lastBeforePedal, 'output');
+        const inJack = findJack(hubPedalData, 'input');
+        addCable(cables, 'pedal', lastBefore.id, 'output', 'pedal', hubPedal.id, 'input',
+          calculateDistance(getJackPosition(lastBefore, outJack, lastBeforePedal), getJackPosition(hubPedal, inJack, hubPedalData)) * ROUTING_OVERHEAD,
+          'patch', sortOrder++);
+      }
+    }
+
+    // 2. HUB SEND → inHubLoop (drives) → AMP INPUT
+    const hubSendJack = findJack(hubPedalData, 'send');
+    if (inHubLoop.length > 0) {
+      const firstDrive = inHubLoop[0];
+      const firstDrivePedal = pedalsById[firstDrive.pedalId] || firstDrive.pedal;
+      if (firstDrivePedal) {
+        const driveInputJack = findJack(firstDrivePedal, 'input');
+        addCable(cables, 'pedal', hubPedal.id, 'send', 'pedal', firstDrive.id, 'input',
+          calculateDistance(getJackPosition(hubPedal, hubSendJack, hubPedalData), getJackPosition(firstDrive, driveInputJack, firstDrivePedal)) * ROUTING_OVERHEAD,
+          'patch', sortOrder++);
+      }
+
+      // Connect drives
+      for (let i = 0; i < inHubLoop.length - 1; i++) {
+        const from = inHubLoop[i];
+        const to = inHubLoop[i + 1];
+        const fromPedal = pedalsById[from.pedalId] || from.pedal;
+        const toPedal = pedalsById[to.pedalId] || to.pedal;
+        if (fromPedal && toPedal) {
+          const fromJack = findJack(fromPedal, 'output');
+          const toJack = findJack(toPedal, 'input');
+          addCable(cables, 'pedal', from.id, 'output', 'pedal', to.id, 'input',
+            calculateDistance(getJackPosition(from, fromJack, fromPedal), getJackPosition(to, toJack, toPedal)) * ROUTING_OVERHEAD,
+            'patch', sortOrder++);
+        }
+      }
+
+      // Last drive → AMP INPUT
+      const lastDrive = inHubLoop[inHubLoop.length - 1];
+      const lastDrivePedal = pedalsById[lastDrive.pedalId] || lastDrive.pedal;
+      if (lastDrivePedal) {
+        const outJack = findJack(lastDrivePedal, 'output');
+        addCable(cables, 'pedal', lastDrive.id, 'output', 'amp_input', null, null,
+          calculateDistance(getJackPosition(lastDrive, outJack, lastDrivePedal), getAmpInputPosition(board)) * ROUTING_OVERHEAD,
+          'instrument', sortOrder++);
+      }
+    } else {
+      // No drives - HUB SEND goes directly to AMP INPUT
+      addCable(cables, 'pedal', hubPedal.id, 'send', 'amp_input', null, null,
+        calculateDistance(getJackPosition(hubPedal, hubSendJack, hubPedalData), getAmpInputPosition(board)) * ROUTING_OVERHEAD,
+        'instrument', sortOrder++);
+    }
+
+    // 3. AMP SEND → inAmpLoop (modulation/time) → HUB RETURN
+    const hubReturnJack = findJack(hubPedalData, 'return');
+    if (inAmpLoop.length > 0) {
+      const firstFx = inAmpLoop[0];
+      const firstFxPedal = pedalsById[firstFx.pedalId] || firstFx.pedal;
+      if (firstFxPedal) {
+        const fxInputJack = findJack(firstFxPedal, 'input');
+        addCable(cables, 'amp_send', null, null, 'pedal', firstFx.id, 'input',
+          calculateDistance(getAmpSendPosition(board), getJackPosition(firstFx, fxInputJack, firstFxPedal)) * ROUTING_OVERHEAD,
+          'instrument', sortOrder++);
+      }
+
+      // Connect FX loop pedals
+      for (let i = 0; i < inAmpLoop.length - 1; i++) {
+        const from = inAmpLoop[i];
+        const to = inAmpLoop[i + 1];
+        const fromPedal = pedalsById[from.pedalId] || from.pedal;
+        const toPedal = pedalsById[to.pedalId] || to.pedal;
+        if (fromPedal && toPedal) {
+          const fromJack = findJack(fromPedal, 'output');
+          const toJack = findJack(toPedal, 'input');
+          addCable(cables, 'pedal', from.id, 'output', 'pedal', to.id, 'input',
+            calculateDistance(getJackPosition(from, fromJack, fromPedal), getJackPosition(to, toJack, toPedal)) * ROUTING_OVERHEAD,
+            'patch', sortOrder++);
+        }
+      }
+
+      // Last FX → HUB RETURN
+      const lastFx = inAmpLoop[inAmpLoop.length - 1];
+      const lastFxPedal = pedalsById[lastFx.pedalId] || lastFx.pedal;
+      if (lastFxPedal) {
+        const outJack = findJack(lastFxPedal, 'output');
+        addCable(cables, 'pedal', lastFx.id, 'output', 'pedal', hubPedal.id, 'return',
+          calculateDistance(getJackPosition(lastFx, outJack, lastFxPedal), getJackPosition(hubPedal, hubReturnJack, hubPedalData)) * ROUTING_OVERHEAD,
+          'patch', sortOrder++);
+      }
+    } else {
+      // No FX loop pedals - AMP SEND goes directly to HUB RETURN
+      addCable(cables, 'amp_send', null, null, 'pedal', hubPedal.id, 'return',
+        calculateDistance(getAmpSendPosition(board), getJackPosition(hubPedal, hubReturnJack, hubPedalData)) * ROUTING_OVERHEAD,
+        'instrument', sortOrder++);
+    }
+
+    // 4. HUB OUTPUT → afterHub (looper) → AMP RETURN
+    const hubOutputJack = findJack(hubPedalData, 'output');
+    if (afterHub.length > 0) {
+      const firstAfter = afterHub[0];
+      const firstAfterPedal = pedalsById[firstAfter.pedalId] || firstAfter.pedal;
+      if (firstAfterPedal) {
+        const inputJack = findJack(firstAfterPedal, 'input');
+        addCable(cables, 'pedal', hubPedal.id, 'output', 'pedal', firstAfter.id, 'input',
+          calculateDistance(getJackPosition(hubPedal, hubOutputJack, hubPedalData), getJackPosition(firstAfter, inputJack, firstAfterPedal)) * ROUTING_OVERHEAD,
+          'patch', sortOrder++);
+      }
+
+      // Connect afterHub pedals
+      for (let i = 0; i < afterHub.length - 1; i++) {
+        const from = afterHub[i];
+        const to = afterHub[i + 1];
+        const fromPedal = pedalsById[from.pedalId] || from.pedal;
+        const toPedal = pedalsById[to.pedalId] || to.pedal;
+        if (fromPedal && toPedal) {
+          const fromJack = findJack(fromPedal, 'output');
+          const toJack = findJack(toPedal, 'input');
+          addCable(cables, 'pedal', from.id, 'output', 'pedal', to.id, 'input',
+            calculateDistance(getJackPosition(from, fromJack, fromPedal), getJackPosition(to, toJack, toPedal)) * ROUTING_OVERHEAD,
+            'patch', sortOrder++);
+        }
+      }
+
+      // Last afterHub → AMP RETURN
+      const lastAfter = afterHub[afterHub.length - 1];
+      const lastAfterPedal = pedalsById[lastAfter.pedalId] || lastAfter.pedal;
+      if (lastAfterPedal) {
+        const outJack = findJack(lastAfterPedal, 'output');
+        addCable(cables, 'pedal', lastAfter.id, 'output', 'amp_return', null, null,
+          calculateDistance(getJackPosition(lastAfter, outJack, lastAfterPedal), getAmpReturnPosition(board)) * ROUTING_OVERHEAD,
+          'instrument', sortOrder++);
+      }
+    } else {
+      // No afterHub - HUB OUTPUT goes directly to AMP RETURN
+      addCable(cables, 'pedal', hubPedal.id, 'output', 'amp_return', null, null,
+        calculateDistance(getJackPosition(hubPedal, hubOutputJack, hubPedalData), getAmpReturnPosition(board)) * ROUTING_OVERHEAD,
+        'instrument', sortOrder++);
+    }
+
+    return cables;
+  }
+
+  // === ROUTING WITH LOOP PEDAL (NS-2 style) - Standard (non-4-cable) ===
   if (loopPedal && loopPedalData && inLoop.length > 0) {
     // Guitar to first pedal (either before loop or the loop pedal itself)
     const firstPedal = beforeLoop.length > 0 ? beforeLoop[0] : loopPedal;

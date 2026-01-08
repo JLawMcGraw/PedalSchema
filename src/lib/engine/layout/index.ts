@@ -1,6 +1,7 @@
 import type { Board, Pedal, PlacedPedal, RoutingConfig, JointOptimizationResult, PedalPlacement } from '@/types';
 import { optimizeForCableLength, optimizeJointly } from './optimizer';
 import { identifySwappableGroups } from '../signal-chain';
+import { COLLISION_SPACING } from '../collision';
 
 interface PlacedBox {
   x: number;
@@ -9,19 +10,18 @@ interface PlacedBox {
   height: number;
 }
 
-const MIN_SPACING = 0.5; // minimum inches between pedals (for cable access)
-
 /**
- * Calculate optimal layout positions for all pedals based on signal chain order
+ * Calculate greedy initial placement for pedals WITHOUT optimization.
  * Signal flows right-to-left: Guitar (right) → Pedals → Amp (left)
  *
  * Layout zones:
  * - Front of amp pedals: placed from right side (closer to guitar)
  * - Effects loop pedals: placed from left side (closer to amp send/return)
  *
- * Uses greedy first-fit for initial placement, then simulated annealing optimization.
+ * This is the first phase of layout - use calculateOptimalLayout or
+ * calculateOptimalLayoutJoint for optimized results.
  */
-export function calculateOptimalLayout(
+export function calculateGreedyPlacement(
   placedPedals: PlacedPedal[],
   pedalsById: Record<string, Pedal>,
   board: Board,
@@ -92,7 +92,30 @@ export function calculateOptimalLayout(
     }
   }
 
+  return placements;
+}
+
+/**
+ * Calculate optimal layout positions for all pedals based on signal chain order.
+ * Uses greedy first-fit for initial placement, then simulated annealing optimization.
+ *
+ * For joint optimization with chain reordering, use calculateOptimalLayoutJoint instead.
+ */
+export function calculateOptimalLayout(
+  placedPedals: PlacedPedal[],
+  pedalsById: Record<string, Pedal>,
+  board: Board,
+  routingConfig?: RoutingConfig
+): PedalPlacement[] {
+  // Get greedy initial placement
+  const placements = calculateGreedyPlacement(placedPedals, pedalsById, board, routingConfig);
+
+  if (placements.length === 0) {
+    return [];
+  }
+
   // Optimize placements to minimize cable length using simulated annealing
+  const useEffectsLoop = routingConfig?.useEffectsLoop ?? false;
   const optimizedPlacements = optimizeForCableLength(
     placements,
     placedPedals,
@@ -176,7 +199,7 @@ function isValidPlacement(candidate: PlacedBox, placedBoxes: PlacedBox[], board:
   if (candidate.y < 0 || candidate.y + candidate.height > board.depthInches) return false;
 
   // Check collisions
-  return !placedBoxes.some(box => boxesOverlap(candidate, box, MIN_SPACING));
+  return !placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
 }
 
 /**
@@ -206,7 +229,7 @@ function findValidPosition(
       if (y < 0 || y + depth > board.depthInches) continue;
 
       // Check collision with all existing placements
-      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, MIN_SPACING));
+      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
       if (!hasCollision) {
         return { x, y };
       }
@@ -217,7 +240,7 @@ function findValidPosition(
   for (let y = 0; y <= board.depthInches - depth; y += STEP) {
     for (let x = board.widthInches - width; x >= 0; x -= STEP) {
       const candidate: PlacedBox = { x, y, width, height: depth };
-      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, MIN_SPACING));
+      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
       if (!hasCollision) {
         return { x, y };
       }
@@ -305,7 +328,7 @@ function placePedalGroupSnake(
   const backRowBottom = backY + backRowMaxDepth;
 
   // Check if front row can fit below back row
-  const minFrontY = backRowBottom + MIN_SPACING;
+  const minFrontY = backRowBottom + COLLISION_SPACING;
   const maxFrontY = board.depthInches - frontRowDepth;
   const canFitFrontRow = minFrontY <= maxFrontY;
 
@@ -342,15 +365,15 @@ function placePedalGroupSnake(
       ?? findAnyValidPosition(info.width, info.depth, placedBoxes, board, railYPositions, candidateX);
     placements.push({ id: info.id, x: pos.x, y: pos.y });
     placedBoxes.push({ x: pos.x, y: pos.y, width: info.width, height: info.depth });
-    xCursor = pos.x - MIN_SPACING;
+    xCursor = pos.x - COLLISION_SPACING;
   }
 
   // Calculate spacing for normal back row pedals
   const normalBackAvailableWidth = xCursor - EDGE_MARGIN;
   const effectiveNormalBackWidth = effectiveNormalBackInfos.reduce((s, p) => s + p.width, 0);
   const normalBackSpacing = effectiveNormalBackInfos.length > 1
-    ? Math.max(MIN_SPACING, (normalBackAvailableWidth - effectiveNormalBackWidth) / (effectiveNormalBackInfos.length - 1))
-    : MIN_SPACING;
+    ? Math.max(COLLISION_SPACING, (normalBackAvailableWidth - effectiveNormalBackWidth) / (effectiveNormalBackInfos.length - 1))
+    : COLLISION_SPACING;
 
   // Place normal back row pedals (spread from right to left) with collision checking
   for (const info of effectiveNormalBackInfos) {
@@ -382,13 +405,13 @@ function placePedalGroupSnake(
     const boxBottom = box.y + box.height;
     // Check if this box extends into front row Y range
     if (boxBottom > frontY) {
-      maxFrontX = Math.min(maxFrontX, box.x - MIN_SPACING);
+      maxFrontX = Math.min(maxFrontX, box.x - COLLISION_SPACING);
     }
   }
 
   // Front row pedals stay close together on the left (minimal spacing)
   // This creates shorter cable runs from the back row
-  const frontSpacing = MIN_SPACING;
+  const frontSpacing = COLLISION_SPACING;
 
   // Place front row pedals from left edge, in REVERSE order
   // so that higher chain positions (closer to amp) are on the left
@@ -420,7 +443,7 @@ function tryPlaceAtPosition(
   if (y < 0 || y + depth > board.depthInches) return null;
 
   const candidate: PlacedBox = { x, y, width, height: depth };
-  const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, MIN_SPACING));
+  const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
 
   if (!hasCollision) {
     return { x, y };
@@ -457,7 +480,7 @@ function findAnyValidPosition(
     const searchLimit = Math.min(maxX, board.widthInches - width);
     for (let x = 0; x <= searchLimit; x += 0.5) {
       const candidate: PlacedBox = { x, y, width, height: depth };
-      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, MIN_SPACING));
+      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
       if (!hasCollision) {
         return { x, y };
       }
@@ -472,7 +495,7 @@ function findAnyValidPosition(
   for (let y = minRailY; y <= yEnd; y += 0.5) {
     for (let x = 0; x <= board.widthInches - width; x += 0.5) {
       const candidate: PlacedBox = { x, y, width, height: depth };
-      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, MIN_SPACING));
+      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
       if (!hasCollision) {
         return { x, y };
       }
@@ -483,16 +506,16 @@ function findAnyValidPosition(
   for (let y = minRailY - 0.5; y >= 0; y -= 0.5) {
     for (let x = 0; x <= board.widthInches - width; x += 0.5) {
       const candidate: PlacedBox = { x, y, width, height: depth };
-      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, MIN_SPACING));
+      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
       if (!hasCollision) {
         return { x, y };
       }
     }
   }
 
-  // Final fallback - no valid position found with MIN_SPACING
+  // Final fallback - no valid position found with COLLISION_SPACING
   // Try with half the spacing as a compromise
-  const reducedSpacing = MIN_SPACING / 2;
+  const reducedSpacing = COLLISION_SPACING / 2;
 
   for (let y = 0; y <= yEnd; y += 0.5) {
     for (let x = 0; x <= board.widthInches - width; x += 0.5) {
@@ -543,7 +566,7 @@ export function calculateSimpleLayout(
     const width = isRotated ? pedal.depthInches : pedal.widthInches;
     const depth = isRotated ? pedal.widthInches : pedal.depthInches;
 
-    currentX -= width + MIN_SPACING;
+    currentX -= width + COLLISION_SPACING;
     currentX = Math.max(0, currentX);
 
     placements.push({
@@ -560,9 +583,10 @@ export function calculateSimpleLayout(
  * Calculate optimal layout with joint topology + geometry optimization.
  *
  * This is the recommended function for optimize layout - it:
- * 1. Detects swappable groups (consecutive pedals of same category)
- * 2. Runs simulated annealing with both position swaps AND chain reordering
- * 3. Returns optimized placements AND optimized signal chain order
+ * 1. Gets greedy initial placement (NO SA yet)
+ * 2. Detects swappable groups (consecutive pedals of same category)
+ * 3. Runs simulated annealing ONCE with both position swaps AND chain reordering
+ * 4. Returns optimized placements AND optimized signal chain order
  */
 export function calculateOptimalLayoutJoint(
   placedPedals: PlacedPedal[],
@@ -578,8 +602,9 @@ export function calculateOptimalLayoutJoint(
     };
   }
 
-  // First, calculate the base layout (greedy placement)
-  const basePlacements = calculateOptimalLayout(placedPedals, pedalsById, board, routingConfig);
+  // Get greedy initial placement (WITHOUT SA optimization)
+  // This fixes the double-optimization bug where SA was run twice
+  const basePlacements = calculateGreedyPlacement(placedPedals, pedalsById, board, routingConfig);
 
   // Get the initial chain order from placedPedals (sorted by chainPosition)
   const sortedPedals = [...placedPedals].sort((a, b) => a.chainPosition - b.chainPosition);
@@ -588,17 +613,9 @@ export function calculateOptimalLayoutJoint(
   // Identify swappable groups
   const swappableGroups = identifySwappableGroups(sortedPedals, pedalsById);
 
-  // If no swappable groups, return base layout
-  if (swappableGroups.length === 0) {
-    return {
-      placements: basePlacements,
-      chainOrder: initialChainOrder,
-      swappableGroups: [],
-    };
-  }
-
-  // Run joint optimization
+  // Run joint optimization (this is the ONLY SA run)
   const useEffectsLoop = routingConfig?.useEffectsLoop ?? false;
+  const use4CableMethod = routingConfig?.use4CableMethod ?? false;
   const result = optimizeJointly(
     basePlacements,
     initialChainOrder,
@@ -606,7 +623,8 @@ export function calculateOptimalLayoutJoint(
     pedalsById,
     board,
     swappableGroups,
-    useEffectsLoop
+    useEffectsLoop,
+    use4CableMethod
   );
 
   return result;

@@ -5,6 +5,7 @@ import {
   Point,
   Box,
   STANDOFF,
+  OBSTACLE_MARGIN,
   getStandoffPoint,
   dist,
   findPathAStar,
@@ -15,6 +16,78 @@ import {
 
 // Debug flags - set to false for production
 const DEBUG_PATHS = false;
+
+/**
+ * Find a simple L-shaped path between two points.
+ * Tries horizontal-then-vertical and vertical-then-horizontal.
+ * Falls back to A* only if simple paths don't work.
+ *
+ * IMPORTANT: No exclusions - cables must never go through ANY pedal.
+ */
+function findSimpleLPath(
+  from: Point,
+  to: Point,
+  boxes: Box[],
+  excludeSet: Set<number>
+): Point[] {
+  const validBoxes = boxes.filter(b => b.width > 0 && b.height > 0);
+
+  // Option 1: Horizontal first, then vertical (go across, then up/down)
+  const midH = { x: to.x, y: from.y };
+  const pathH = [from, midH, to];
+  if (validateRoute(pathH, boxes, excludeSet)) {
+    return pathH;
+  }
+
+  // Option 2: Vertical first, then horizontal (go up/down, then across)
+  const midV = { x: from.x, y: to.y };
+  const pathV = [from, midV, to];
+  if (validateRoute(pathV, boxes, excludeSet)) {
+    return pathV;
+  }
+
+  // Option 3: Route through a horizontal channel between pedal rows
+  if (validBoxes.length > 0) {
+    const yRanges = validBoxes.map(b => ({ top: b.y, bottom: b.y + b.height }));
+    yRanges.sort((a, b) => a.top - b.top);
+
+    // Try routing through Y gaps
+    for (let i = 0; i < yRanges.length - 1; i++) {
+      const gap = yRanges[i + 1].top - yRanges[i].bottom;
+      if (gap > OBSTACLE_MARGIN * 2) {
+        const channelY = yRanges[i].bottom + gap / 2;
+        const pathChannel = [
+          from,
+          { x: from.x, y: channelY },
+          { x: to.x, y: channelY },
+          to
+        ];
+        if (validateRoute(pathChannel, boxes, excludeSet)) {
+          return pathChannel;
+        }
+      }
+    }
+
+    // Try routing above all pedals
+    const minY = Math.min(...yRanges.map(r => r.top));
+    const aboveY = Math.max(10, minY - STANDOFF);
+    const pathAbove = [from, { x: from.x, y: aboveY }, { x: to.x, y: aboveY }, to];
+    if (validateRoute(pathAbove, boxes, excludeSet)) {
+      return pathAbove;
+    }
+
+    // Try routing below all pedals
+    const maxY = Math.max(...yRanges.map(r => r.bottom));
+    const belowY = maxY + STANDOFF;
+    const pathBelow = [from, { x: from.x, y: belowY }, { x: to.x, y: belowY }, to];
+    if (validateRoute(pathBelow, boxes, excludeSet)) {
+      return pathBelow;
+    }
+  }
+
+  // Fallback: Use A* pathfinding with NO exclusions (must avoid all pedals)
+  return findPathAStar(from, to, boxes, -1, -1);
+}
 
 // ============================================================================
 // CABLE RENDERER COMPONENT
@@ -136,178 +209,24 @@ export function CableRenderer({ cable, placedPedals, pedalsById, board, scale, u
     console.log(`[BOXES] ${boxStr}`);
   }
 
-  // Calculate distance between jack positions
-  const jackDistance = dist(fromPos, toPos);
+  // NO EXCLUSIONS - cables must never go through ANY pedal
+  const noExclusions = new Set<number>();
 
-  const fromBox = fromBoxIdx >= 0 ? boxes[fromBoxIdx] : null;
-  const toBox = toBoxIdx >= 0 ? boxes[toBoxIdx] : null;
-
-  // Determine routing strategy:
-  // - Short distances (< 60px): direct routing, no standoffs needed - reduced from 120
-  // - External connections: use standoff only on pedal side
-  // - Long pedal-to-pedal: use standoffs on both sides
-  const isShortDistance = jackDistance <= 60;
-  const isFromExternal = !fromBox; // From guitar/amp
-  const isToExternal = !toBox;     // To guitar/amp
-
+  // SIMPLIFIED ROUTING: Try simple paths first, only use A* as fallback
   let path: Point[];
 
-  if (isShortDistance) {
-    // Short distance: route directly between jacks, excluding source/dest pedals
-    path = findPathAStar(fromPos, toPos, boxes, fromBoxIdx, toBoxIdx);
-  } else if (isFromExternal || isToExternal) {
-    // External connection: try L-shaped routing first, fall back to A* if it collides
-    const pedalBox = fromBox || toBox;
-    const externalPos = fromBox ? toPos : fromPos;
-    const pedalBoxIdx = fromBox ? fromBoxIdx : toBoxIdx;
-
-    // Build exclude set for validation
-    const extExcludeSet = new Set<number>();
-    if (pedalBoxIdx >= 0) extExcludeSet.add(pedalBoxIdx);
-
-    // Try multiple L-shaped path orientations
-    let lPath: Point[] | null = null;
-
-    if (fromBox) {
-      // Pedal → External: jack → standoff → L-shape to external
-      const pedalStandoff = getStandoffPoint(fromPos, fromBox, STANDOFF);
-      const standoffIsVertical = Math.abs(pedalStandoff.x - fromPos.x) < 5;
-      const midPoint = standoffIsVertical
-        ? { x: externalPos.x, y: pedalStandoff.y }
-        : { x: pedalStandoff.x, y: externalPos.y };
-      const candidate = [fromPos, pedalStandoff, midPoint, externalPos];
-      if (validateRoute(candidate, boxes, extExcludeSet)) {
-        lPath = candidate;
-      }
-    } else {
-      // External → Pedal: route through the open channel between pedal rows
-      const box = boxes[toBoxIdx];
-
-      // Find the best approach: from below the pedal (through the channel)
-      const belowY = box.y + box.height + STANDOFF; // Below the pedal
-      const aboveY = box.y - STANDOFF; // Above the pedal
-
-      // Calculate approach point - prefer going through the channel
-      const useBelow = fromPos.y > box.y; // External is below the pedal's top
-      const approachY = useBelow ? belowY : aboveY;
-
-      // Create approach point directly below/above the jack
-      const approachPoint = { x: toPos.x, y: approachY };
-
-      // Route: external → down to approach level → across to below pedal → up to jack
-      const candidates: Point[][] = [];
-
-      // Option 1: Go to approach Y first, then across, then to jack
-      const route1Mid = { x: fromPos.x, y: approachY };
-      candidates.push([fromPos, route1Mid, approachPoint, toPos]);
-
-      // Option 2: Go across first, then down to approach, then to jack
-      const route2Mid1 = { x: toPos.x, y: fromPos.y };
-      candidates.push([fromPos, route2Mid1, approachPoint, toPos]);
-
-      // Option 3: Use standoff-based approach as fallback
-      const pedalStandoff = getStandoffPoint(toPos, toBox, STANDOFF);
-      const horizMid = { x: pedalStandoff.x, y: fromPos.y };
-      candidates.push([fromPos, horizMid, pedalStandoff, toPos]);
-
-      for (const candidate of candidates) {
-        if (validateRoute(candidate, boxes, extExcludeSet)) {
-          lPath = candidate;
-          break;
-        }
-      }
-    }
-
-    if (lPath) {
-      path = lPath;
-      if (DEBUG_PATHS) {
-        console.log(`  [L-EXT] Using validated L-shaped external path`);
-      }
-    } else {
-      // L-shaped paths collide - use A* pathfinding
-      if (DEBUG_PATHS) {
-        console.log(`  [A*-EXT] L-paths invalid, using A* for external connection`);
-      }
-      path = findPathAStar(fromPos, toPos, boxes, fromBoxIdx, toBoxIdx);
-    }
+  // Strategy 1: Direct line (for very close jacks)
+  const jackDistance = dist(fromPos, toPos);
+  if (jackDistance <= 80 && validateRoute([fromPos, toPos], boxes, noExclusions)) {
+    path = [fromPos, toPos];
   } else {
-    // Long distance between two pedals: use standoffs on both sides
-    const fromStandoff = getStandoffPoint(fromPos, fromBox, STANDOFF);
-    const toStandoff = getStandoffPoint(toPos, toBox, STANDOFF);
-
-    // Route between standoff points (which are outside pedal boxes)
-    const routePath = findPathAStar(fromStandoff, toStandoff, boxes, -1, -1);
-
-    // Build complete path: jack → standoff → [route] → standoff → jack
-    path = [];
-
-    // Add starting jack position
-    path.push(fromPos);
-
-    // Add from standoff if we have a source pedal
-    if (fromBox) {
-      path.push(fromStandoff);
-    }
-
-    // Add intermediate route points, skipping duplicates
-    for (let i = 0; i < routePath.length; i++) {
-      const pt = routePath[i];
-      const lastPt = path[path.length - 1];
-      // Skip if too close to last point
-      if (Math.abs(pt.x - lastPt.x) > 15 || Math.abs(pt.y - lastPt.y) > 15) {
-        path.push(pt);
-      }
-    }
-
-    // Add to standoff if we have a destination pedal
-    if (toBox) {
-      const lastPt = path[path.length - 1];
-      if (Math.abs(toStandoff.x - lastPt.x) > 15 || Math.abs(toStandoff.y - lastPt.y) > 15) {
-        path.push(toStandoff);
-      }
-    }
-
-    // Add ending jack position
-    const lastPt = path[path.length - 1];
-    if (Math.abs(toPos.x - lastPt.x) > 5 || Math.abs(toPos.y - lastPt.y) > 5) {
-      path.push(toPos);
-    }
-
-    // Smooth out small zigzags
-    path = smoothPath(path);
+    // Strategy 2: Simple L-shaped routing
+    path = findSimpleLPath(fromPos, toPos, boxes, noExclusions);
   }
 
-  // Build exclude set for validation - ONLY exclude source and destination pedals
-  const excludeSet = new Set<number>();
-  if (fromBoxIdx >= 0) excludeSet.add(fromBoxIdx);
-  if (toBoxIdx >= 0) excludeSet.add(toBoxIdx);
-
-  // POST-VALIDATION: Check if the path collides with any non-excluded boxes
-  const collisions: string[] = [];
-  for (let i = 0; i < path.length - 1; i++) {
-    const p1 = path[i];
-    const p2 = path[i + 1];
-    for (let boxIdx = 0; boxIdx < boxes.length; boxIdx++) {
-      if (excludeSet.has(boxIdx)) continue;
-      const box = boxes[boxIdx];
-      if (box.width === 0 || box.height === 0) continue;
-      if (lineIntersectsBox(p1, p2, box, 0)) {
-        const pedalName = pedalsById[placedPedals[boxIdx].pedalId]?.name || `box${boxIdx}`;
-        collisions.push(`seg${i} hits ${pedalName}`);
-      }
-    }
-  }
-  const srcName = fromBoxIdx >= 0 ? (pedalsById[placedPedals[fromBoxIdx].pedalId]?.name || 'unknown') : cable.fromType;
-  const dstName = toBoxIdx >= 0 ? (pedalsById[placedPedals[toBoxIdx].pedalId]?.name || 'unknown') : cable.toType;
-
-  if (DEBUG_PATHS && collisions.length > 0) {
-    console.error(`[COLLISION] ${srcName} → ${dstName}: ${collisions.join(', ')}`);
-    console.error(`  Path: ${path.map(p => `(${p.x.toFixed(0)},${p.y.toFixed(0)})`).join(' → ')}`);
-    console.error(`  Exclude set: [${Array.from(excludeSet).join(',')}]`);
-  }
-
-  // Log all paths for debugging
   if (DEBUG_PATHS) {
+    const srcName = fromBoxIdx >= 0 ? (pedalsById[placedPedals[fromBoxIdx].pedalId]?.name || 'unknown') : cable.fromType;
+    const dstName = toBoxIdx >= 0 ? (pedalsById[placedPedals[toBoxIdx].pedalId]?.name || 'unknown') : cable.toType;
     console.log(`[PATH] ${srcName} → ${dstName} (${path.length}pts): ${path.map(p => `(${p.x.toFixed(0)},${p.y.toFixed(0)})`).join(' → ')}`);
   }
 

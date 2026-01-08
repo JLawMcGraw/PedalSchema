@@ -319,6 +319,8 @@ export const useConfigurationStore = create<ConfigurationState>()(
           const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
           if (pedal) {
             pedal.location = location;
+            // Mark as manually overridden so signal chain rules don't auto-assign
+            pedal.locationOverride = true;
             state.isDirty = true;
           }
         });
@@ -350,7 +352,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       recalculateCables: () => {
-        const { board, placedPedals, pedalsById, amp, useEffectsLoop, routingConfig } = get();
+        const { board, placedPedals, pedalsById, amp, useEffectsLoop, routingConfig, use4CableMethod } = get();
 
         if (!board || placedPedals.length === 0) {
           set({ cables: [] });
@@ -363,7 +365,8 @@ export const useConfigurationStore = create<ConfigurationState>()(
           board,
           amp,
           useEffectsLoop,
-          routingConfig
+          routingConfig,
+          use4CableMethod
         );
 
         // Convert to Cable type with generated IDs
@@ -471,7 +474,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       optimizeLayout: () => {
-        const { board, placedPedals, pedalsById, routingConfig, useEffectsLoop } = get();
+        const { board, placedPedals, pedalsById, routingConfig, useEffectsLoop, use4CableMethod } = get();
 
         if (!board || placedPedals.length === 0) return;
 
@@ -480,8 +483,37 @@ export const useConfigurationStore = create<ConfigurationState>()(
           placedPedals,
           pedalsById,
           board,
-          { ...routingConfig, useEffectsLoop }
+          { ...routingConfig, useEffectsLoop, use4CableMethod }
         );
+
+        // Validate chain order integrity before applying
+        const validateChainOrder = (chainOrder: string[], pedals: PlacedPedal[]): boolean => {
+          // Check all IDs in chainOrder exist in placedPedals
+          const pedalIds = new Set(pedals.map(p => p.id));
+          for (const id of chainOrder) {
+            if (!pedalIds.has(id)) {
+              console.warn(`[optimizeLayout] Chain order contains unknown pedal ID: ${id}`);
+              return false;
+            }
+          }
+
+          // Check chainOrder has correct length
+          if (chainOrder.length !== pedals.length) {
+            console.warn(`[optimizeLayout] Chain order length mismatch: ${chainOrder.length} vs ${pedals.length}`);
+            return false;
+          }
+
+          // Check for duplicates in chainOrder
+          const uniqueIds = new Set(chainOrder);
+          if (uniqueIds.size !== chainOrder.length) {
+            console.warn(`[optimizeLayout] Chain order contains duplicates`);
+            return false;
+          }
+
+          return true;
+        };
+
+        const chainOrderValid = validateChainOrder(result.chainOrder, placedPedals);
 
         // Apply the new positions and chain order
         set((state) => {
@@ -494,8 +526,8 @@ export const useConfigurationStore = create<ConfigurationState>()(
             }
           }
 
-          // Apply chain order changes if any swappable groups were optimized
-          if (result.swappableGroups.length > 0) {
+          // Apply chain order changes only if valid and swappable groups exist
+          if (chainOrderValid && result.swappableGroups.length > 0) {
             for (let i = 0; i < result.chainOrder.length; i++) {
               const pedal = state.placedPedals.find((p) => p.id === result.chainOrder[i]);
               if (pedal) {

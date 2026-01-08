@@ -152,6 +152,8 @@ export interface PlacedPedal {
   rotationDegrees: number;
   chainPosition: number;
   location: ChainLocation;
+  /** When true, user manually set location - signal chain rules won't override it */
+  locationOverride?: boolean;
   isActive: boolean;
   /** For pedals with send/return (like NS-2), whether to use the loop routing */
   useLoop: boolean;

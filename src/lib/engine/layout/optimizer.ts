@@ -9,6 +9,7 @@
 
 import type { Board, Pedal, PlacedPedal, SwappableGroup, JointOptimizationResult, PedalPlacement } from '@/types';
 import { calculateRoutingCost, calculateEuclideanDistance } from './routing-cost';
+import { COLLISION_SPACING } from '../collision';
 
 // Re-export for backwards compatibility
 export type { PedalPlacement } from '@/types';
@@ -27,11 +28,14 @@ function createSeededRandom(seed: number): () => number {
 }
 
 /**
- * Generate a seed from placement IDs for deterministic optimization
+ * Generate a seed from placement IDs AND positions for deterministic optimization.
+ * Including positions ensures that if the user moves pedals and re-optimizes,
+ * a different random sequence is used (rather than always the same sequence).
  */
 function generateSeed(placements: PedalPlacement[]): number {
   let hash = 0;
-  const str = placements.map(p => p.id).join('|');
+  // Include both ID and position in hash for true position-dependent determinism
+  const str = placements.map(p => `${p.id}:${p.x.toFixed(2)},${p.y.toFixed(2)}`).join('|');
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
@@ -46,8 +50,6 @@ interface PlacedBox {
   width: number;
   height: number;
 }
-
-const MIN_SPACING = 0.5;
 
 /**
  * Simulated Annealing Configuration
@@ -151,7 +153,8 @@ export function optimizeJointly(
   pedalsById: Record<string, Pedal>,
   board: Board,
   swappableGroups: SwappableGroup[],
-  useEffectsLoop: boolean = false
+  useEffectsLoop: boolean = false,
+  use4CableMethod: boolean = false
 ): JointOptimizationResult {
   if (initialPlacements.length <= 1) {
     return {
@@ -171,7 +174,8 @@ export function optimizeJointly(
     board,
     swappableGroups,
     config,
-    useEffectsLoop
+    useEffectsLoop,
+    use4CableMethod
   );
 }
 
@@ -202,7 +206,8 @@ export function optimizeWithSimulatedAnnealing(
   board: Board,
   swappableGroups: SwappableGroup[],
   config: SAConfig = DEFAULT_CONFIG,
-  useEffectsLoop: boolean = false
+  useEffectsLoop: boolean = false,
+  use4CableMethod: boolean = false
 ): JointOptimizationResult {
   // Create seeded random for deterministic results
   const seed = generateSeed(initialPlacements);
@@ -212,7 +217,7 @@ export function optimizeWithSimulatedAnnealing(
     placements: [...initialPlacements],
     chainOrder: [...initialChainOrder],
   };
-  let currentScore = calculateScoreWithChain(current, placedPedals, pedalsById, board, config.useRoutingCost, useEffectsLoop);
+  let currentScore = calculateScoreWithChain(current, placedPedals, pedalsById, board, config.useRoutingCost, useEffectsLoop, use4CableMethod);
 
   let best: OptimizationState = {
     placements: [...current.placements],
@@ -240,7 +245,7 @@ export function optimizeWithSimulatedAnnealing(
         continue;
       }
 
-      const neighborScore = calculateScoreWithChain(neighbor, placedPedals, pedalsById, board, config.useRoutingCost, useEffectsLoop);
+      const neighborScore = calculateScoreWithChain(neighbor, placedPedals, pedalsById, board, config.useRoutingCost, useEffectsLoop, use4CableMethod);
       const delta = neighborScore - currentScore;
 
       // Accept if better, or probabilistically if worse
@@ -282,10 +287,11 @@ function calculateScore(
   pedalsById: Record<string, Pedal>,
   board: Board,
   useRoutingCost: boolean,
-  useEffectsLoop: boolean = false
+  useEffectsLoop: boolean = false,
+  use4CableMethod: boolean = false
 ): number {
   if (useRoutingCost) {
-    const result = calculateRoutingCost(placements, placedPedals, pedalsById, board, undefined, useEffectsLoop);
+    const result = calculateRoutingCost(placements, placedPedals, pedalsById, board, undefined, useEffectsLoop, use4CableMethod);
     return result.totalScore;
   } else {
     return calculateEuclideanDistance(placements, placedPedals, pedalsById, board);
@@ -302,13 +308,14 @@ function calculateScoreWithChain(
   pedalsById: Record<string, Pedal>,
   board: Board,
   useRoutingCost: boolean,
-  useEffectsLoop: boolean = false
+  useEffectsLoop: boolean = false,
+  use4CableMethod: boolean = false
 ): number {
   // Reorder placedPedals according to the chain order
   const reorderedPedals = reorderPedalsByChain(placedPedals, state.chainOrder);
 
   if (useRoutingCost) {
-    const result = calculateRoutingCost(state.placements, reorderedPedals, pedalsById, board, undefined, useEffectsLoop);
+    const result = calculateRoutingCost(state.placements, reorderedPedals, pedalsById, board, undefined, useEffectsLoop, use4CableMethod);
     return result.totalScore;
   } else {
     return calculateEuclideanDistance(state.placements, reorderedPedals, pedalsById, board);
@@ -348,13 +355,14 @@ function reorderPedalsByChain(placedPedals: PlacedPedal[], chainOrder: string[])
 
 /**
  * Generate a neighboring solution by applying a random move.
- * Now supports chain swaps for joint optimization.
+ * Now supports chain swaps and combined chain+position swaps for joint optimization.
  *
- * Move probabilities:
- * - Swap positions: 30%
- * - Nudge: 30%
+ * Move probabilities (with swappable groups):
+ * - Swap positions: 25%
+ * - Nudge: 25%
  * - Row change: 15%
- * - Chain swap: 25% (only if swappable groups exist)
+ * - Chain swap (order only): 15%
+ * - Chain+Position swap (both): 20%
  */
 function generateNeighborJoint(
   state: OptimizationState,
@@ -370,22 +378,25 @@ function generateNeighborJoint(
 
   // Adjust probabilities based on whether chain swaps are possible
   if (hasSwappableGroups) {
-    if (moveType < 0.30) {
-      // Swap positions (30%)
+    if (moveType < 0.25) {
+      // Swap positions (25%)
       const newPlacements = trySwap(state.placements, random);
       return newPlacements ? { placements: newPlacements, chainOrder: state.chainOrder } : null;
-    } else if (moveType < 0.60) {
-      // Nudge (30%)
+    } else if (moveType < 0.50) {
+      // Nudge (25%)
       const newPlacements = tryNudge(state.placements, board, random);
       return newPlacements ? { placements: newPlacements, chainOrder: state.chainOrder } : null;
-    } else if (moveType < 0.75) {
+    } else if (moveType < 0.65) {
       // Row change (15%)
       const newPlacements = tryRowChange(state.placements, placedPedals, pedalsById, board, rowYPositions, random);
       return newPlacements ? { placements: newPlacements, chainOrder: state.chainOrder } : null;
-    } else {
-      // Chain swap (25%)
+    } else if (moveType < 0.80) {
+      // Chain swap - order only (15%)
       const newChainOrder = tryChainSwap(state.chainOrder, swappableGroups, random);
       return newChainOrder ? { placements: state.placements, chainOrder: newChainOrder } : null;
+    } else {
+      // Chain+Position swap - both order AND positions (20%)
+      return tryChainAndPositionSwap(state, swappableGroups, random);
     }
   } else {
     // No swappable groups - use original distribution
@@ -469,6 +480,68 @@ function tryChainSwap(
   newOrder[posB] = pedalA;
 
   return newOrder;
+}
+
+/**
+ * Try to swap BOTH chain order AND physical positions of two pedals
+ * within the same swappable group.
+ *
+ * This is more aggressive than just chain swap - it physically moves the pedals
+ * to each other's positions AND swaps them in the signal chain. This can help
+ * when two pedals of the same type are better positioned for each other's
+ * connections.
+ */
+function tryChainAndPositionSwap(
+  state: OptimizationState,
+  swappableGroups: SwappableGroup[],
+  random: () => number
+): OptimizationState | null {
+  if (swappableGroups.length === 0) return null;
+
+  // Pick a random swappable group
+  const groupIdx = Math.floor(random() * swappableGroups.length);
+  const group = swappableGroups[groupIdx];
+
+  if (group.pedalIds.length < 2) return null;
+
+  // Pick two different pedals within the group
+  const i = Math.floor(random() * group.pedalIds.length);
+  let j = Math.floor(random() * group.pedalIds.length);
+  while (j === i) {
+    j = Math.floor(random() * group.pedalIds.length);
+  }
+
+  const pedalA = group.pedalIds[i];
+  const pedalB = group.pedalIds[j];
+
+  // Find their positions in the chain order
+  const chainPosA = state.chainOrder.indexOf(pedalA);
+  const chainPosB = state.chainOrder.indexOf(pedalB);
+
+  if (chainPosA === -1 || chainPosB === -1) return null;
+
+  // Find their physical positions
+  const placementIdxA = state.placements.findIndex(p => p.id === pedalA);
+  const placementIdxB = state.placements.findIndex(p => p.id === pedalB);
+
+  if (placementIdxA === -1 || placementIdxB === -1) return null;
+
+  const placementA = state.placements[placementIdxA];
+  const placementB = state.placements[placementIdxB];
+
+  // Swap both chain order AND physical positions
+  const newChainOrder = [...state.chainOrder];
+  newChainOrder[chainPosA] = pedalB;
+  newChainOrder[chainPosB] = pedalA;
+
+  const newPlacements = [...state.placements];
+  newPlacements[placementIdxA] = { ...placementA, x: placementB.x, y: placementB.y };
+  newPlacements[placementIdxB] = { ...placementB, x: placementA.x, y: placementA.y };
+
+  return {
+    placements: newPlacements,
+    chainOrder: newChainOrder,
+  };
 }
 
 /**
@@ -620,9 +693,9 @@ function hasAnyCollision(
     if (box.x < 0 || box.x + box.width > board.widthInches) return true;
     if (box.y < 0 || box.y + box.height > board.depthInches) return true;
 
-    // Check collision with existing boxes
+    // Check collision with existing boxes (use COLLISION_SPACING for consistency with UI)
     for (const existing of boxes) {
-      if (boxesOverlap(box, existing, MIN_SPACING)) return true;
+      if (boxesOverlap(box, existing, COLLISION_SPACING)) return true;
     }
 
     boxes.push(box);

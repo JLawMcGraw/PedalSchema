@@ -4,6 +4,60 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-01-08
+
+### Summary
+Fixed cable routing optimization: aligned cost function with visual renderer and increased penalties to force the optimizer to place pedals with clear cable channels.
+
+### What Was Accomplished
+- [x] Aligned cost function routing logic with visual renderer (uses same L-path strategy)
+- [x] Added cable collision penalty function to detect cables going through pedals
+- [x] Increased spacing penalty from 50 to 200 inches per close pedal pair
+- [x] Increased minimum cable clearance from 62.5px to 75px
+- [x] Added complex routing penalty (30 inches for paths needing more than 3 points)
+- [x] Imported `validateRoute` and `lineIntersectsBox` for consistent collision detection
+- [x] Verified both standard and 4-cable method produce cleaner layouts
+
+### Key Changes
+| File | Change |
+|------|--------|
+| `src/lib/engine/layout/routing-cost.ts` | Rewrote `routeCable()` to match visual renderer's L-path logic; added `calculateCableCollisionPenalty()`; increased spacing penalty to 200; added complex routing penalty of 30 |
+| `src/components/editor/canvas/cable-renderer.tsx` | Simplified to use L-shaped routing with no exclusions |
+| `src/lib/engine/pathfinding/index.ts` | Fixed emergency fallback to stay on board (positive Y values) |
+
+### Technical Decisions
+1. **Cost-renderer alignment**: Root cause of cables through pedals was mismatch between how cost function (A* routing) and visual renderer (L-paths) computed paths. Now both use same strategy.
+2. **Heavy spacing penalty (200 inches)**: Forces optimizer to leave 75px (~1.9 inch) gaps between pedals for clean L-path cable routes.
+3. **Complex routing penalty**: Discourages layouts requiring fallback routing strategies (channels, perimeter, A*).
+4. **No exclusions in routing**: Changed from excluding source/destination boxes to checking ALL boxes for collisions.
+
+### Architecture Notes
+**Cable Routing Strategy (now consistent in both files):**
+```
+1. Direct line (if distance <= 80px and validates)
+2. L-path horizontal-first (from → mid → to)
+3. L-path vertical-first (from → mid → to)
+4. Channel routing through gaps between pedal rows
+5. Route above/below all pedals
+6. A* fallback with no exclusions
+```
+
+**Cost Function Penalties:**
+```
+totalScore = routedLength
+           + crossings * 6
+           + spacingPenalty (200 per close pair)
+           + collisionPenalty (100 per intersection)
+           + complexRoutingPenalty (30 per complex cable)
+```
+
+### Next Tasks
+- [ ] Consider adding visual feedback when cables have to use fallback routing
+- [ ] Test with even more crowded pedalboard layouts
+- [ ] May need to tune penalties further based on real-world usage
+
+---
+
 ## Session: 2026-01-07 (Very Late Night)
 
 ### Summary

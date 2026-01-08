@@ -619,6 +619,7 @@ export function findPathAStar(
   }
 
   // STRATEGY 4: Perimeter fallback (validated)
+  // Route around all obstacles via perimeter, staying close to the board
   let perimMinX = Infinity, perimMaxX = -Infinity;
   let perimMinY = Infinity, perimMaxY = -Infinity;
   for (const box of boxes) {
@@ -628,11 +629,13 @@ export function findPathAStar(
     perimMaxY = Math.max(perimMaxY, box.y + box.height);
   }
 
-  const margin = 50;
-  const perimTop = perimMinY - margin;
-  const perimBottom = perimMaxY + margin;
-  const perimLeft = perimMinX - margin;
-  const perimRight = perimMaxX + margin;
+  // Use smaller margin to stay closer to the board (just outside obstacle zone)
+  // But constrain to stay on the board (positive coordinates)
+  const perimMargin = OBSTACLE_MARGIN + 10;
+  const perimTop = Math.max(5, perimMinY - perimMargin); // Stay on board
+  const perimBottom = perimMaxY + perimMargin;
+  const perimLeft = Math.max(5, perimMinX - perimMargin); // Stay on board
+  const perimRight = perimMaxX + perimMargin;
 
   // Try various perimeter routes and validate each
   const perimeterRoutes = [
@@ -660,9 +663,10 @@ export function findPathAStar(
     }
   }
 
-  // ULTIMATE FALLBACK: Return a path that goes way outside
+  // ULTIMATE FALLBACK: Return a path that stays at the edge of obstacles
+  // but still on the board
   console.warn('Cable routing: All strategies failed, using emergency fallback');
-  const emergencyY = perimTop - 100;
+  const emergencyY = Math.max(5, perimTop); // Stay on board
   return [
     start,
     { x: start.x, y: emergencyY },
@@ -685,14 +689,14 @@ export function isDirectPathClear(p1: Point, p2: Point, boxes: Box[], excludeSet
 }
 
 /**
- * Check if a point is inside any non-excluded box
+ * Check if a point is inside any non-excluded box (with optional margin)
  */
-export function isPointInAnyBox(p: Point, boxes: Box[], excludeSet: Set<number>): boolean {
+export function isPointInAnyBox(p: Point, boxes: Box[], excludeSet: Set<number>, margin: number = 0): boolean {
   for (let i = 0; i < boxes.length; i++) {
     if (excludeSet.has(i)) continue;
     const box = boxes[i];
-    if (p.x >= box.x && p.x <= box.x + box.width &&
-        p.y >= box.y && p.y <= box.y + box.height) {
+    if (p.x >= box.x - margin && p.x <= box.x + box.width + margin &&
+        p.y >= box.y - margin && p.y <= box.y + box.height + margin) {
       return true;
     }
   }
@@ -710,9 +714,9 @@ export function validateRoute(route: Point[], boxes: Box[], excludeSet: Set<numb
     }
   }
 
-  // Check that intermediate points aren't inside any box
+  // Check that intermediate points aren't inside any box (including margin zone)
   for (let i = 1; i < route.length - 1; i++) {
-    if (isPointInAnyBox(route[i], boxes, excludeSet)) {
+    if (isPointInAnyBox(route[i], boxes, excludeSet, OBSTACLE_MARGIN)) {
       return false;
     }
   }
