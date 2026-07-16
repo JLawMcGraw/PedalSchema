@@ -218,12 +218,12 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
                   <div className="flex items-center gap-1 text-muted-foreground flex-wrap">
                     <span>Amp Send</span>
                     <ArrowRight className="w-3 h-3 shrink-0" />
-                    <span>FX</span>
-                    <ArrowRight className="w-3 h-3 shrink-0" />
                     <span className="text-orange-500">NS-2 Return</span>
                   </div>
                   <div className="flex items-center gap-1 text-muted-foreground flex-wrap">
                     <span className="text-orange-500">NS-2 Out</span>
+                    <ArrowRight className="w-3 h-3 shrink-0" />
+                    <span>FX</span>
                     <ArrowRight className="w-3 h-3 shrink-0" />
                     <span>Looper</span>
                     <ArrowRight className="w-3 h-3 shrink-0" />

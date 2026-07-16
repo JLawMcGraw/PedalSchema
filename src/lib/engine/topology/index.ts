@@ -112,6 +112,16 @@ export function deriveSignalTopology(
       else inHubLoop.push(placed); // default: in front of the preamp
     }
 
+    // The BOSS-documented 4-cable method: the hub's noise-reduction loop
+    // encloses ONLY the noise sources (drives + the amp preamp):
+    //   guitar -> beforeHub -> HUB IN
+    //   HUB SEND -> drives -> AMP IN            (inside the gate's loop)
+    //   AMP SEND -> HUB RETURN                  (closes the gated loop)
+    //   HUB OUT -> time FX -> loopers -> AMP RETURN   (post-gate: trails survive)
+    // Time-based effects sit AFTER the gate so delay/reverb tails are never
+    // chopped by the noise reduction.
+    const postGate = [...inAmpLoop, ...afterHub].sort((a, b) => a.chainPosition - b.chainPosition);
+
     return {
       mode: '4cm',
       hub: hubPedal,
@@ -119,8 +129,8 @@ export function deriveSignalTopology(
       segments: [
         { id: 'before-hub', pedals: beforeHub, from: ext('guitar'), to: pedalAnchor(hubPedal.id, 'input') },
         { id: 'hub-loop', pedals: inHubLoop, from: pedalAnchor(hubPedal.id, 'send'), to: ext('amp_input') },
-        { id: 'amp-loop', pedals: inAmpLoop, from: ext('amp_send'), to: pedalAnchor(hubPedal.id, 'return') },
-        { id: 'after-hub', pedals: afterHub, from: pedalAnchor(hubPedal.id, 'output'), to: ext('amp_return') },
+        { id: 'amp-loop', pedals: [], from: ext('amp_send'), to: pedalAnchor(hubPedal.id, 'return') },
+        { id: 'after-hub', pedals: postGate, from: pedalAnchor(hubPedal.id, 'output'), to: ext('amp_return') },
       ],
     };
   }
