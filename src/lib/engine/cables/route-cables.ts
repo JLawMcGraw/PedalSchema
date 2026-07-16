@@ -135,33 +135,69 @@ function separateParallelRuns(
     if (rc.valid) {
       let path = rc.path;
 
+      const inBounds = (seg: LaneSegment, fixed: number): boolean =>
+        seg.horizontal ? fixed >= minY && fixed <= maxY : fixed >= minX && fixed <= maxX;
+
+      const shifted = (base: Point[], i: number, horizontal: boolean, fixed: number): Point[] => {
+        const candidate = base.map((p) => ({ ...p }));
+        if (horizontal) {
+          candidate[i].y = fixed;
+          candidate[i + 1].y = fixed;
+        } else {
+          candidate[i].x = fixed;
+          candidate[i + 1].x = fixed;
+        }
+        return candidate;
+      };
+
+      /** Smallest perpendicular distance to any overlapping registered run */
+      const separationAt = (seg: LaneSegment, fixed: number): number => {
+        let sep = Infinity;
+        for (const r of registered) {
+          if (r.horizontal !== seg.horizontal) continue;
+          if (Math.min(r.hi, seg.hi) - Math.max(r.lo, seg.lo) <= MIN_PARALLEL_OVERLAP) continue;
+          sep = Math.min(sep, Math.abs(r.fixed - fixed));
+        }
+        return sep;
+      };
+
       // Only middle segments are lane-shiftable (never the jack stubs:
       // segments 0 and path.length-2)
       for (let i = 1; i < path.length - 2; i++) {
         const seg = toLaneSegment(path[i], path[i + 1]);
         if (!seg || !conflictsAt(seg, seg.fixed)) continue;
 
+        // Preferred: whole-lane jumps
+        let resolved = false;
         for (const delta of [1, -1, 2, -2, 3, -3].map((k) => k * LANE_SPACING)) {
           const fixed = seg.fixed + delta;
-          if (conflictsAt(seg, fixed)) continue;
-
-          // Only the PERPENDICULAR coordinate moves; bound just that axis
-          // (the run may legitimately extend off-board toward guitar/amp)
-          if (seg.horizontal ? (fixed < minY || fixed > maxY) : (fixed < minX || fixed > maxX)) continue;
-
-          const candidate = path.map((p) => ({ ...p }));
-          if (seg.horizontal) {
-            candidate[i].y = fixed;
-            candidate[i + 1].y = fixed;
-          } else {
-            candidate[i].x = fixed;
-            candidate[i + 1].x = fixed;
-          }
-
+          if (conflictsAt(seg, fixed) || !inBounds(seg, fixed)) continue;
+          const candidate = shifted(path, i, seg.horizontal, fixed);
           if (!isPathValid(candidate, obstacles, rc.cable.fromPedalId, rc.cable.toPedalId)) continue;
-
           path = candidate;
+          resolved = true;
           break;
+        }
+
+        // Fallback for narrow corridors where no whole lane fits: fine-scan
+        // for the position that MAXIMIZES separation from existing runs
+        // (e.g., two cables sharing a 20px gap can still sit ~18px apart)
+        if (!resolved) {
+          let bestFixed: number | null = null;
+          let bestSep = separationAt(seg, seg.fixed);
+          for (let delta = -3 * LANE_SPACING; delta <= 3 * LANE_SPACING; delta += 1) {
+            const fixed = seg.fixed + delta;
+            if (!inBounds(seg, fixed)) continue;
+            const sep = separationAt(seg, fixed);
+            if (sep <= bestSep) continue;
+            const candidate = shifted(path, i, seg.horizontal, fixed);
+            if (!isPathValid(candidate, obstacles, rc.cable.fromPedalId, rc.cable.toPedalId)) continue;
+            bestFixed = fixed;
+            bestSep = sep;
+          }
+          if (bestFixed !== null) {
+            path = shifted(path, i, seg.horizontal, bestFixed);
+          }
         }
       }
 

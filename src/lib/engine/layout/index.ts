@@ -57,9 +57,24 @@ export function calculateGreedyPlacement(
     return Math.max(max, depth);
   }, 0);
 
-  if (rowYPositions.length >= 2) {
-    const gap = Math.abs(rowYPositions[0] - rowYPositions[1]);
-    if (maxDepth > 0 && gap < maxDepth + COLLISION_SPACING) {
+  if (rowYPositions.length >= 2 && maxDepth > 0) {
+    // Evaluate the gap between the rows as pedals would actually OCCUPY
+    // them: rows get clamped so pedals fit the board depth, which can
+    // silently shrink the real gap (e.g., rail 8 on a 12.5" board clamps to
+    // 7.42 for 5.08" pedals, leaving 0.34" to a row at 2). Fall back to safe
+    // rows whenever any adjacent pair of occupied bands violates spacing.
+    const clamped = rowYPositions
+      .map((r) => Math.max(0, Math.min(r, board.depthInches - maxDepth)))
+      .sort((a, b) => b - a);
+    let tooClose = false;
+    for (let i = 0; i < clamped.length - 1; i++) {
+      const bandGap = clamped[i] - (clamped[i + 1] + maxDepth);
+      if (bandGap < COLLISION_SPACING - 1e-6) {
+        tooClose = true;
+        break;
+      }
+    }
+    if (tooClose) {
       rowYPositions = [
         Math.max(0, board.depthInches - maxDepth),
         0,
@@ -159,12 +174,23 @@ export function calculateGreedyPlacement(
     // LEFT edge). Pack the whole loop chain against the amp side so the
     // last pedal (into amp return) lands at x=0.
     // Returns the desired left edge for the pedal at startIdx.
-    const packedLoopStartX = (startIdx: number): number => {
+    const getLoopDepth = (placed: PlacedPedal): number => {
+      const pedal = pedalsById[placed.pedalId] || placed.pedal;
+      const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
+      return pedal ? (isRotated ? pedal.widthInches : pedal.depthInches) : 5.12;
+    };
+    const packedLoopStartX = (startIdx: number, rowY: number): number => {
       let total = 0;
+      let depthNeeded = 0;
       for (let j = startIdx; j < loopSorted.length; j++) {
         total += getLoopWidth(loopSorted[j]) + (j > startIdx ? COLLISION_SPACING : 0);
+        depthNeeded = Math.max(depthNeeded, getLoopDepth(loopSorted[j]));
       }
       const firstWidth = getLoopWidth(loopSorted[startIdx]);
+      const stripX = findStripStart(total, depthNeeded, rowY, placedBoxes, board, 0);
+      if (stripX !== null) {
+        return Math.min(loopZoneMax - firstWidth, stripX + total - firstWidth);
+      }
       return Math.max(0, Math.min(loopZoneMax - firstWidth, total - firstWidth));
     };
 
@@ -182,7 +208,7 @@ export function calculateGreedyPlacement(
       .map((r) => r.index);
 
     let loopRowPos = 0; // position within loopRowOrder
-    let loopX = packedLoopStartX(0);
+    let loopX = packedLoopStartX(0, rowYPositions[loopRowOrder[0]] ?? board.depthInches * 0.5);
 
     for (let loopIdx = 0; loopIdx < loopSorted.length; loopIdx++) {
       const placed = loopSorted[loopIdx];
@@ -195,15 +221,15 @@ export function calculateGreedyPlacement(
       let spot = findValidPositionInRowStartingFrom(
         width, depth, placedBoxes, board, loopRowY,
         0, loopZoneMax,
-        loopX,
+        loopIdx === 0 ? loopX : loopX - width,
         'right-to-left',
         false
       );
 
       if (!spot && loopRowPos < loopRowOrder.length - 1) {
         loopRowPos++;
-        loopX = packedLoopStartX(loopIdx);
         const nextLoopRowY = rowYPositions[loopRowOrder[loopRowPos]] ?? board.depthInches * 0.5;
+        loopX = packedLoopStartX(loopIdx, nextLoopRowY);
         spot = findValidPositionInRowStartingFrom(
           width, depth, placedBoxes, board, nextLoopRowY,
           0, loopZoneMax,
@@ -221,7 +247,7 @@ export function calculateGreedyPlacement(
           spot = findValidPositionInRowStartingFrom(
             width, depth, placedBoxes, board, tryRowY,
             0, loopZoneMax,
-            packedLoopStartX(loopIdx),
+            packedLoopStartX(loopIdx, tryRowY),
             'right-to-left',
             true
           );
@@ -252,10 +278,11 @@ export function calculateGreedyPlacement(
     // Inflate the loop cluster's boxes before the front chain places around
     // it: the loop's send/return cables need a corridor next to the cluster
     // (both jacks often face the adjacent front pedal), and the minimum
-    // pedal spacing (0.5") only fits ONE cable lane. The extra 0.4" gives
-    // the gap room for two separated lanes. Recorded placements keep the
-    // real coordinates - this only affects collision checks from here on.
-    const LOOP_CABLE_CLEARANCE = 0.4;
+    // pedal spacing (0.5") only fits ONE cable lane. The extra 0.7" gives
+    // the gap room for up to three separated lanes (loop send/return plus a
+    // front chain hop routinely share this corridor). Recorded placements
+    // keep the real coordinates - this only affects collision checks.
+    const LOOP_CABLE_CLEARANCE = 0.7;
     for (let b = 0; b < placedBoxes.length; b++) {
       placedBoxes[b] = {
         x: placedBoxes[b].x - LOOP_CABLE_CLEARANCE,
@@ -276,17 +303,31 @@ export function calculateGreedyPlacement(
     const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
     return pedal ? (isRotated ? pedal.depthInches : pedal.widthInches) : 2.87;
   };
+  const getFrontDepth = (placed: PlacedPedal): number => {
+    const pedal = pedalsById[placed.pedalId] || placed.pedal;
+    const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
+    return pedal ? (isRotated ? pedal.widthInches : pedal.depthInches) : 5.12;
+  };
 
   // When overflowing to a new row, the remaining chain pedals should pack
-  // against the LEFT (amp-side) edge of the zone in right-to-left chain
+  // against the LEFT (amp-side) edge of the row in right-to-left chain
   // order, so the last pedal of the chain ends up closest to the amp.
+  // Strip-aware: existing boxes on the row (e.g., the FX loop cluster)
+  // shift the pack start so the whole remaining chain still fits as one
+  // contiguous run instead of scattering.
   // Returns the desired left edge for the pedal at startIdx.
-  const packedOverflowStartX = (startIdx: number): number => {
+  const packedOverflowStartX = (startIdx: number, rowY: number): number => {
     let total = 0;
+    let depthNeeded = 0;
     for (let j = startIdx; j < frontSorted.length; j++) {
       total += getFrontWidth(frontSorted[j]) + (j > startIdx ? COLLISION_SPACING : 0);
+      depthNeeded = Math.max(depthNeeded, getFrontDepth(frontSorted[j]));
     }
     const firstWidth = getFrontWidth(frontSorted[startIdx]);
+    const stripX = findStripStart(total, depthNeeded, rowY, placedBoxes, board, frontZoneMin);
+    if (stripX !== null) {
+      return stripX + total - firstWidth;
+    }
     return Math.min(board.widthInches - firstWidth, frontZoneMin + total - firstWidth);
   };
 
@@ -297,13 +338,16 @@ export function calculateGreedyPlacement(
     const width = pedal ? (isRotated ? pedal.depthInches : pedal.widthInches) : 2.87;
     const depth = pedal ? (isRotated ? pedal.widthInches : pedal.depthInches) : 5.12;
 
-    // Try to place in current row, starting near the previous pedal X to preserve chain order
+    // Try to place in current row. The desired left edge is EXACTLY tight
+    // against the previous pedal (cursor - width): the search tries it
+    // before grid-stepping, so packed rows don't leak up to 0.25" per pedal
+    // (which starved the last pedal of its slot on full rows).
     const rowY = rowYPositions[currentRowIndex] ?? board.depthInches * 0.5;
     let spot = findValidPositionInRowStartingFrom(
       width, depth, placedBoxes, board,
       rowY,
       frontZoneMin, board.widthInches,
-      currentX,
+      currentX - width,
       'right-to-left',
       false
     );
@@ -313,11 +357,11 @@ export function calculateGreedyPlacement(
     // the amp (e.g., [.., BF-3, RC-1] -> BF-3 right of RC-1, RC-1 at x=0)
     if (!spot && currentRowIndex < rowYPositions.length - 1) {
       currentRowIndex++;
-      currentX = packedOverflowStartX(pedalIdx);
+      const nextRowY = rowYPositions[currentRowIndex] ?? board.depthInches * 0.5;
+      currentX = packedOverflowStartX(pedalIdx, nextRowY);
       if (DEBUG_PLACEMENT) {
         console.log(`[GREEDY] Moving to row ${currentRowIndex}, packed startX=${currentX.toFixed(2)}`);
       }
-      const nextRowY = rowYPositions[currentRowIndex] ?? board.depthInches * 0.5;
       spot = findValidPositionInRowStartingFrom(
         width, depth, placedBoxes, board,
         nextRowY,
@@ -332,11 +376,11 @@ export function calculateGreedyPlacement(
     if (!spot) {
       for (let tryRowIdx = currentRowIndex + 1; tryRowIdx < rowYPositions.length && !spot; tryRowIdx++) {
         currentRowIndex = tryRowIdx;
-        currentX = packedOverflowStartX(pedalIdx);
+        const tryRowY = rowYPositions[tryRowIdx] ?? board.depthInches * 0.5;
+        currentX = packedOverflowStartX(pedalIdx, tryRowY);
         if (DEBUG_PLACEMENT) {
           console.log(`[GREEDY] Trying row ${tryRowIdx}`);
         }
-        const tryRowY = rowYPositions[tryRowIdx] ?? board.depthInches * 0.5;
         spot = findValidPositionInRowStartingFrom(
           width, depth, placedBoxes, board,
           tryRowY,
@@ -457,6 +501,60 @@ function findValidPositionInRowStartingFrom(
 }
 
 /**
+ * Find the leftmost x where a contiguous strip of the given total width fits
+ * on the row, respecting existing boxes. Used by packed placement so a chain
+ * segment lands as one tight run even when other clusters (e.g., the FX loop)
+ * already occupy part of the row. Returns null when the row can't hold the
+ * whole strip.
+ */
+function findStripStart(
+  totalWidth: number,
+  depth: number,
+  rowY: number,
+  placedBoxes: PlacedBox[],
+  board: Board,
+  zoneMinX: number
+): number | null {
+  const STEP = 0.25;
+  const y = Math.max(0, Math.min(rowY, board.depthInches - depth));
+  for (let x = Math.max(0, zoneMinX); x + totalWidth <= board.widthInches + 1e-6; x += STEP) {
+    const strip: PlacedBox = { x, y, width: totalWidth, height: depth };
+    if (isValidPlacement(strip, placedBoxes, board)) {
+      return x;
+    }
+  }
+  return null;
+}
+
+/**
+ * Absolute fallback: any free spot on the board, relaxing the spacing
+ * requirement progressively (0.5" -> 0.25" -> touching) before giving up.
+ * Prevents the pedal-stacking failure mode where multiple pedals land on
+ * the same clamped coordinate.
+ */
+function findAnyFreeSpot(
+  width: number,
+  depth: number,
+  placedBoxes: PlacedBox[],
+  board: Board
+): { x: number; y: number } | null {
+  const STEP = 0.25;
+  for (const spacing of [COLLISION_SPACING, 0.25, 0]) {
+    for (let y = 0; y <= board.depthInches - depth + 1e-6; y += STEP) {
+      for (let x = 0; x <= board.widthInches - width + 1e-6; x += STEP) {
+        const candidate: PlacedBox = { x, y, width, height: depth };
+        if (
+          !placedBoxes.some((box) => boxesOverlap(candidate, box, spacing))
+        ) {
+          return { x, y };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Find a valid position within a specific zone of the board
  */
 function findValidPositionInZone(
@@ -521,7 +619,11 @@ function findValidPositionInZone(
     }
   }
 
-  // Last resort: clamp within board bounds
+  // Any free spot anywhere on the board (progressively relaxed spacing)
+  const anywhere = findAnyFreeSpot(width, depth, placedBoxes, board);
+  if (anywhere) return anywhere;
+
+  // Truly full board - clamp within bounds (will show as a collision)
   const fallbackX = Math.max(0, Math.min(board.widthInches - width, direction === 'right-to-left' ? maxXForWidth : safeMinX));
   const fallbackY = Math.max(0, Math.min(board.depthInches - depth, 0));
   return { x: fallbackX, y: fallbackY };
