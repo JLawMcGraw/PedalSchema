@@ -1,6 +1,8 @@
 'use client';
 
+import { useShallow } from 'zustand/react/shallow';
 import { useConfigurationStore } from '@/store/configuration-store';
+import { useDerivedConfiguration } from '@/store/derived';
 import { useEditorStore } from '@/store/editor-store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,7 +19,9 @@ import { getCategoryColor, getCategoryLabel } from '@/lib/constants/pedal-catego
 import type { ChainLocation } from '@/types';
 
 export function PropertiesPanel() {
-  const { selectedPedalId } = useEditorStore();
+  const { selectedPedalId } = useEditorStore(
+    useShallow((s) => ({ selectedPedalId: s.selectedPedalId }))
+  );
   const {
     placedPedals,
     pedalsById,
@@ -27,8 +31,10 @@ export function PropertiesPanel() {
     setUseLoop,
     amp,
     useEffectsLoop,
-    collisions,
-  } = useConfigurationStore();
+  } = useConfigurationStore(
+    useShallow((s) => ({ placedPedals: s.placedPedals, pedalsById: s.pedalsById, removePedal: s.removePedal, rotatePedal: s.rotatePedal, updatePedalLocation: s.updatePedalLocation, setUseLoop: s.setUseLoop, amp: s.amp, useEffectsLoop: s.useEffectsLoop }))
+  );
+  const { collisions } = useDerivedConfiguration((d) => ({ collisions: d.collisions }));
 
   const selectedPlaced = placedPedals.find((p) => p.id === selectedPedalId);
   const selectedPedal = selectedPlaced
@@ -89,7 +95,7 @@ export function PropertiesPanel() {
             <div className="p-3 space-y-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Size</span>
-                <span>{selectedPedal.widthInches}" × {selectedPedal.depthInches}" × {selectedPedal.heightInches}"</span>
+                <span>{selectedPedal.widthInches}&quot; × {selectedPedal.depthInches}&quot; × {selectedPedal.heightInches}&quot;</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Power</span>
@@ -97,7 +103,7 @@ export function PropertiesPanel() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Position</span>
-                <span>X: {selectedPlaced.xInches.toFixed(1)}", Y: {selectedPlaced.yInches.toFixed(1)}"</span>
+                <span>X: {selectedPlaced.xInches.toFixed(1)}&quot;, Y: {selectedPlaced.yInches.toFixed(1)}&quot;</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Chain #</span>

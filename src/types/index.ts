@@ -154,6 +154,8 @@ export interface PlacedPedal {
   location: ChainLocation;
   /** When true, user manually set location - signal chain rules won't override it */
   locationOverride?: boolean;
+  /** When true, user manually pinned this pedal's chain position - rules won't reorder it */
+  chainPositionLocked?: boolean;
   isActive: boolean;
   /** For pedals with send/return (like NS-2), whether to use the loop routing */
   useLoop: boolean;

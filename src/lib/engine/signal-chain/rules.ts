@@ -25,6 +25,34 @@ export const SIGNAL_CHAIN_RULES: ChainRule[] = [
     },
   },
 
+  // Rule: 4-Cable method puts time-based effects in amp's FX loop
+  {
+    id: 'four-cable-fx-loop',
+    name: '4-Cable FX Loop Effects',
+    description: 'In 4-cable method, modulation, delay, and reverb go in the amp\'s effects loop for post-preamp processing',
+    priority: 104, // Just below hub priority
+    condition: (pedal, context) =>
+      ['modulation', 'tremolo', 'delay', 'reverb'].includes(pedal.category) &&
+      context.use4CableMethod === true &&
+      context.ampHasEffectsLoop === true,
+    apply: (pedals, context) => {
+      // In 4-cable method, time-based effects always go in amp's FX loop
+      return pedals.map((p) => {
+        if (p.locationOverride) return p; // Respect manual override
+        const pedal = p.pedal;
+        if (
+          pedal &&
+          ['modulation', 'tremolo', 'delay', 'reverb'].includes(pedal.category) &&
+          context.use4CableMethod &&
+          context.ampHasEffectsLoop
+        ) {
+          return { ...p, location: 'effects_loop' as const };
+        }
+        return p;
+      });
+    },
+  },
+
   // Rule: Fuzz pedals that need direct pickup signal go FIRST
   {
     id: 'fuzz-first',

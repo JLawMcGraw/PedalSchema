@@ -1,12 +1,9 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import type { Board, Pedal, Amp, PlacedPedal, Cable, Collision, ChainWarning, ChainSuggestion, Position, ChainLocation, ChainContext, RoutingConfig, PedalRoutingConfig } from '@/types';
-import { detectCollisions } from '@/lib/engine/collision';
-import { getCategoryDefaultOrder } from '@/lib/constants/pedal-categories';
+import type { Board, Pedal, Amp, PlacedPedal, Position, ChainLocation, ChainContext, RoutingConfig, PedalRoutingConfig } from '@/types';
 import { signalChainEngine } from '@/lib/engine/signal-chain';
-import { calculateCables } from '@/lib/engine/cables';
-import { calculateOptimalLayout, calculateOptimalLayoutJoint } from '@/lib/engine/layout';
+import { calculateOptimalLayoutJoint } from '@/lib/engine/layout';
 
 interface ConfigurationState {
   // Configuration data
@@ -28,12 +25,6 @@ interface ConfigurationState {
 
   // Routing configuration
   routingConfig: RoutingConfig;
-
-  // Calculated data
-  cables: Cable[];
-  collisions: Collision[];
-  warnings: ChainWarning[];
-  suggestions: ChainSuggestion[];
 
   // Dirty state
   isDirty: boolean;
@@ -66,12 +57,17 @@ interface ConfigurationState {
   removePedal: (placedPedalId: string) => void;
   rotatePedal: (placedPedalId: string) => void;
   updatePedalChainPosition: (placedPedalId: string, newPosition: number) => void;
+  setChainPositionLocked: (placedPedalId: string, locked: boolean) => void;
   updatePedalLocation: (placedPedalId: string, location: ChainLocation) => void;
   setUseLoop: (placedPedalId: string, useLoop: boolean) => void;
 
-  recalculateCollisions: () => void;
-  recalculateCables: () => void;
-  recalculateSignalChain: () => void;
+  /**
+   * Run the signal chain rules engine and write back normalized
+   * chainPosition/location (respecting locked pedals). Call after
+   * chain-affecting mutations only. Everything else (cables, collisions,
+   * warnings) is DERIVED - see src/store/derived.ts.
+   */
+  normalizeChain: () => void;
 
   // Routing actions
   setPedalRoutingMode: (placedPedalId: string, mode: 'standard' | 'loop', loopPedalIds?: string[]) => void;
@@ -106,10 +102,6 @@ export const useConfigurationStore = create<ConfigurationState>()(
         use4CableMethod: false,
         pedalConfigs: [],
       },
-      cables: [],
-      collisions: [],
-      warnings: [],
-      suggestions: [],
       isDirty: false,
       isSaving: false,
 
@@ -126,14 +118,9 @@ export const useConfigurationStore = create<ConfigurationState>()(
           state.placedPedals = config.placedPedals || [];
           state.pedalsById = config.pedalsById || {};
           state.isDirty = false;
-          state.collisions = [];
-          state.cables = [];
-          state.warnings = [];
-          state.suggestions = [];
         });
-        // Recalculate after init
-        get().recalculateCollisions();
-        get().recalculateSignalChain();
+        // Normalize chain order for the loaded configuration
+        get().normalizeChain();
       },
 
       setBoard: (board) => {
@@ -141,7 +128,6 @@ export const useConfigurationStore = create<ConfigurationState>()(
           state.board = board;
           state.isDirty = true;
         });
-        get().recalculateCollisions();
       },
 
       setAmp: (amp) => {
@@ -154,7 +140,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
             state.use4CableMethod = false;
           }
         });
-        get().recalculateSignalChain();
+        get().normalizeChain();
       },
 
       setName: (name) => {
@@ -179,7 +165,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
             state.use4CableMethod = false;
           }
         });
-        get().recalculateSignalChain();
+        get().normalizeChain();
       },
 
       setUse4CableMethod: (use) => {
@@ -190,7 +176,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
             state.useEffectsLoop = true;
           }
         });
-        get().recalculateSignalChain();
+        get().normalizeChain();
       },
 
       setModulationInLoop: (inLoop) => {
@@ -202,7 +188,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
             state.useEffectsLoop = true;
           }
         });
-        get().recalculateSignalChain();
+        get().normalizeChain();
       },
 
       addPedal: (pedal, position) => {
@@ -228,8 +214,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           state.isDirty = true;
         });
 
-        get().recalculateCollisions();
-        get().recalculateSignalChain();
+        get().normalizeChain();
       },
 
       movePedal: (placedPedalId, position) => {
@@ -254,8 +239,6 @@ export const useConfigurationStore = create<ConfigurationState>()(
           }
         });
 
-        get().recalculateCollisions();
-        get().recalculateCables();
       },
 
       removePedal: (placedPedalId) => {
@@ -267,8 +250,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           }
         });
 
-        get().recalculateCollisions();
-        get().recalculateSignalChain();
+        get().normalizeChain();
       },
 
       rotatePedal: (placedPedalId) => {
@@ -280,7 +262,6 @@ export const useConfigurationStore = create<ConfigurationState>()(
           }
         });
 
-        get().recalculateCollisions();
       },
 
       updatePedalChainPosition: (placedPedalId, newPosition) => {
@@ -306,12 +287,28 @@ export const useConfigurationStore = create<ConfigurationState>()(
             }
 
             pedal.chainPosition = newPosition;
+            // Pin the pedal so signal chain rules won't reorder it on the
+            // next recalculation (persisted as chain_position_locked)
+            pedal.chainPositionLocked = true;
             state.isDirty = true;
           }
         });
 
-        // Recalculate warnings after manual reorder (but don't auto-reorder again)
-        get().recalculateCables();
+      },
+
+      setChainPositionLocked: (placedPedalId, locked) => {
+        set((state) => {
+          const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
+          if (pedal) {
+            pedal.chainPositionLocked = locked;
+            state.isDirty = true;
+          }
+        });
+
+        // Unlocking hands the pedal back to the rules engine
+        if (!locked) {
+          get().normalizeChain();
+        }
       },
 
       updatePedalLocation: (placedPedalId, location) => {
@@ -325,7 +322,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           }
         });
 
-        get().recalculateSignalChain();
+        get().normalizeChain();
       },
 
       setUseLoop: (placedPedalId, useLoop) => {
@@ -336,65 +333,12 @@ export const useConfigurationStore = create<ConfigurationState>()(
             state.isDirty = true;
           }
         });
-
-        get().recalculateCables();
       },
 
-      recalculateCollisions: () => {
-        const { board, placedPedals, pedalsById } = get();
-        if (!board) {
-          set({ collisions: [] });
-          return;
-        }
-
-        const collisions = detectCollisions(placedPedals, pedalsById, board);
-        set({ collisions });
-      },
-
-      recalculateCables: () => {
-        const { board, placedPedals, pedalsById, amp, useEffectsLoop, routingConfig, use4CableMethod } = get();
-
-        if (!board || placedPedals.length === 0) {
-          set({ cables: [] });
-          return;
-        }
-
-        const cableConnections = calculateCables(
-          placedPedals,
-          pedalsById,
-          board,
-          amp,
-          useEffectsLoop,
-          routingConfig,
-          use4CableMethod
-        );
-
-        // Convert to Cable type with generated IDs
-        const cables: Cable[] = cableConnections.map((c, index) => ({
-          id: `cable-${index}`,
-          configurationId: get().id || '',
-          fromType: c.fromType,
-          fromPedalId: c.fromPedalId,
-          fromJack: c.fromJackType,
-          toType: c.toType,
-          toPedalId: c.toPedalId,
-          toJack: c.toJackType,
-          calculatedLengthInches: c.calculatedLengthInches,
-          cableType: c.cableType,
-          sortOrder: c.sortOrder,
-          createdAt: new Date().toISOString(),
-        }));
-
-        set({ cables });
-      },
-
-      recalculateSignalChain: () => {
+      normalizeChain: () => {
         const { placedPedals, pedalsById, amp, useEffectsLoop, use4CableMethod, modulationInLoop } = get();
 
-        if (placedPedals.length === 0) {
-          set({ warnings: [], suggestions: [] });
-          return;
-        }
+        if (placedPedals.length === 0) return;
 
         const context: ChainContext = {
           ampHasEffectsLoop: amp?.hasEffectsLoop || false,
@@ -407,14 +351,11 @@ export const useConfigurationStore = create<ConfigurationState>()(
         const result = signalChainEngine.calculate(placedPedals, pedalsById, context);
 
         set((state) => {
-          // Update placed pedals with new chain positions and locations
+          // Write back normalized chain positions and locations.
+          // Cables, collisions, and warnings are derived from this
+          // (src/store/derived.ts) - nothing else to update.
           state.placedPedals = result.orderedPedals;
-          state.warnings = result.warnings;
-          state.suggestions = result.suggestions;
         });
-
-        // Recalculate cables after chain update
-        get().recalculateCables();
       },
 
       setPedalRoutingMode: (placedPedalId, mode, loopPedalIds = []) => {
@@ -436,7 +377,6 @@ export const useConfigurationStore = create<ConfigurationState>()(
           }
           state.isDirty = true;
         });
-        get().recalculateCables();
       },
 
       togglePedalInLoop: (loopPedalId, targetPedalId) => {
@@ -470,7 +410,6 @@ export const useConfigurationStore = create<ConfigurationState>()(
 
           state.isDirty = true;
         });
-        get().recalculateCables();
       },
 
       optimizeLayout: () => {
@@ -539,9 +478,6 @@ export const useConfigurationStore = create<ConfigurationState>()(
           state.isDirty = true;
         });
 
-        // Recalculate everything
-        get().recalculateCollisions();
-        get().recalculateCables();
       },
 
       markClean: () => {
@@ -554,3 +490,14 @@ export const useConfigurationStore = create<ConfigurationState>()(
     }))
   )
 );
+
+// Debug helper: load a repro snapshot from the browser console.
+// Usage: fetch('/repro/repro-state.json').then(r => r.json()).then(s => window.__loadPedalSchemaRepro(s))
+if (typeof window !== 'undefined') {
+  type ReproSnapshot = Parameters<ConfigurationState['initConfiguration']>[0];
+  (window as unknown as { __loadPedalSchemaRepro: (s: ReproSnapshot) => void }).__loadPedalSchemaRepro = (
+    snapshot: ReproSnapshot
+  ) => {
+    useConfigurationStore.getState().initConfiguration(snapshot);
+  };
+}

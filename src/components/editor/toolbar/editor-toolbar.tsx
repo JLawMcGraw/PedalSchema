@@ -1,7 +1,9 @@
 'use client';
 
+import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '@/store/editor-store';
 import { useConfigurationStore } from '@/store/configuration-store';
+import { useDerivedConfiguration } from '@/store/derived';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
@@ -26,8 +28,13 @@ interface EditorToolbarProps {
 
 export function EditorToolbar({ onSave }: EditorToolbarProps) {
   const { zoom, zoomIn, zoomOut, resetZoom, gridVisible, toggleGrid, cablesVisible, toggleCables } =
-    useEditorStore();
-  const { name, isDirty, isSaving, collisions, placedPedals, optimizeLayout } = useConfigurationStore();
+    useEditorStore(
+    useShallow((s) => ({ zoom: s.zoom, zoomIn: s.zoomIn, zoomOut: s.zoomOut, resetZoom: s.resetZoom, gridVisible: s.gridVisible, toggleGrid: s.toggleGrid, cablesVisible: s.cablesVisible, toggleCables: s.toggleCables }))
+  );
+  const { name, isDirty, isSaving, placedPedals, optimizeLayout } = useConfigurationStore(
+    useShallow((s) => ({ name: s.name, isDirty: s.isDirty, isSaving: s.isSaving, placedPedals: s.placedPedals, optimizeLayout: s.optimizeLayout }))
+  );
+  const { collisions } = useDerivedConfiguration((d) => ({ collisions: d.collisions }));
 
   return (
     <TooltipProvider>

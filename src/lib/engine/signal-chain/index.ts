@@ -27,10 +27,18 @@ export class SignalChainEngine {
     context: ChainContext
   ): SignalChainResult {
     // Attach pedal data to placed pedals for easier processing
-    let pedals: PlacedPedal[] = placedPedals.map((p) => ({
+    const allPedals: PlacedPedal[] = placedPedals.map((p) => ({
       ...p,
       pedal: pedalsById[p.pedalId] || p.pedal,
     }));
+
+    // Locked pedals (chainPositionLocked) are fully pinned by the user:
+    // they are excluded from rule processing (both ordering AND location
+    // assignment) and re-inserted at their pinned slot afterwards.
+    const locked = allPedals
+      .filter((p) => p.chainPositionLocked)
+      .sort((a, b) => a.chainPosition - b.chainPosition);
+    let pedals = allPedals.filter((p) => !p.chainPositionLocked);
 
     // Step 1: Apply category-based default ordering
     pedals = this.applyDefaultOrdering(pedals);
@@ -41,16 +49,23 @@ export class SignalChainEngine {
       pedals = rule.apply(pedals, context);
     }
 
-    // Step 3: Split by location
-    const { frontOfAmp, effectsLoop } = this.splitByLocation(pedals, context);
+    // Step 3: Re-insert locked pedals at their pinned slots
+    for (const lockedPedal of locked) {
+      const index = Math.max(0, Math.min(lockedPedal.chainPosition - 1, pedals.length));
+      pedals.splice(index, 0, lockedPedal);
+    }
 
     // Step 4: Assign final chain positions
     pedals = this.assignChainPositions(pedals);
 
-    // Step 5: Detect warnings
+    // Step 5: Split by location (AFTER position assignment, so the split
+    // chains carry the final numbering)
+    const { frontOfAmp, effectsLoop } = this.splitByLocation(pedals, context);
+
+    // Step 6: Detect warnings
     const warnings = this.detectWarnings(pedals, pedalsById, context);
 
-    // Step 6: Generate suggestions
+    // Step 7: Generate suggestions
     const suggestions = this.generateSuggestions(pedals, pedalsById, context);
 
     return {
@@ -59,6 +74,26 @@ export class SignalChainEngine {
       effectsLoopChain: effectsLoop,
       warnings,
       suggestions,
+    };
+  }
+
+  /**
+   * Analyze a chain WITHOUT reordering it: returns warnings and suggestions
+   * for the pedals in their current (already normalized) order.
+   * Used by derived state - derivation must never mutate chain order.
+   */
+  analyze(
+    placedPedals: PlacedPedal[],
+    pedalsById: Record<string, Pedal>,
+    context: ChainContext
+  ): { warnings: ChainWarning[]; suggestions: ChainSuggestion[] } {
+    const pedals = [...placedPedals]
+      .sort((a, b) => a.chainPosition - b.chainPosition)
+      .map((p) => ({ ...p, pedal: pedalsById[p.pedalId] || p.pedal }));
+
+    return {
+      warnings: this.detectWarnings(pedals, pedalsById, context),
+      suggestions: this.generateSuggestions(pedals, pedalsById, context),
     };
   }
 

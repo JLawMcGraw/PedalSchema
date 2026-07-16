@@ -1,15 +1,37 @@
 'use client';
 
+import { useShallow } from 'zustand/react/shallow';
 import { useConfigurationStore } from '@/store/configuration-store';
+import { useDerivedConfiguration } from '@/store/derived';
 import { useEditorStore } from '@/store/editor-store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { getCategoryColor } from '@/lib/constants/pedal-categories';
-import { AlertTriangle, Lightbulb } from 'lucide-react';
+import { AlertTriangle, Lightbulb, Lock, ChevronUp, ChevronDown } from 'lucide-react';
+import type { PlacedPedal } from '@/types';
 
 export function SignalChainPanel() {
-  const { placedPedals, pedalsById, removePedal, amp, useEffectsLoop, warnings, suggestions } = useConfigurationStore();
-  const { selectedPedalId, selectPedal } = useEditorStore();
+  const {
+    placedPedals, pedalsById, removePedal, amp, useEffectsLoop,
+    updatePedalChainPosition, setChainPositionLocked,
+  } = useConfigurationStore(
+    useShallow((s) => ({
+      placedPedals: s.placedPedals,
+      pedalsById: s.pedalsById,
+      removePedal: s.removePedal,
+      amp: s.amp,
+      useEffectsLoop: s.useEffectsLoop,
+      updatePedalChainPosition: s.updatePedalChainPosition,
+      setChainPositionLocked: s.setChainPositionLocked,
+    }))
+  );
+  const { warnings, suggestions } = useDerivedConfiguration((d) => ({
+    warnings: d.warnings,
+    suggestions: d.suggestions,
+  }));
+  const { selectedPedalId, selectPedal } = useEditorStore(
+    useShallow((s) => ({ selectedPedalId: s.selectedPedalId, selectPedal: s.selectPedal }))
+  );
 
   const sortedPedals = [...placedPedals].sort((a, b) => a.chainPosition - b.chainPosition);
 
@@ -21,11 +43,14 @@ export function SignalChainPanel() {
     ? sortedPedals.filter((p) => p.location === 'effects_loop')
     : [];
 
-  const renderPedalItem = (placed: typeof placedPedals[0]) => {
+  const renderPedalItem = (placed: PlacedPedal, index: number, list: PlacedPedal[]) => {
     const pedal = pedalsById[placed.pedalId] || placed.pedal;
     if (!pedal) return null;
 
     const isSelected = selectedPedalId === placed.id;
+    // Moving swaps chain positions with the neighbor in this section
+    const moveUp = index > 0 ? () => updatePedalChainPosition(placed.id, list[index - 1].chainPosition) : null;
+    const moveDown = index < list.length - 1 ? () => updatePedalChainPosition(placed.id, list[index + 1].chainPosition) : null;
 
     return (
       <div
@@ -43,8 +68,46 @@ export function SignalChainPanel() {
             {placed.chainPosition}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-xs truncate">{pedal.name}</div>
+            <div className="font-medium text-xs truncate flex items-center gap-1">
+              <span className="truncate">{pedal.name}</span>
+              {placed.chainPositionLocked && (
+                <button
+                  title="Position pinned - click to let chain rules order this pedal again"
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setChainPositionLocked(placed.id, false);
+                  }}
+                >
+                  <Lock className="h-3 w-3" />
+                </button>
+              )}
+            </div>
             <div className="text-xs text-muted-foreground truncate">{pedal.manufacturer}</div>
+          </div>
+          <div className="flex flex-col shrink-0">
+            <button
+              title="Move earlier in chain"
+              disabled={!moveUp}
+              className="text-muted-foreground hover:text-foreground disabled:opacity-25"
+              onClick={(e) => {
+                e.stopPropagation();
+                moveUp?.();
+              }}
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+            </button>
+            <button
+              title="Move later in chain"
+              disabled={!moveDown}
+              className="text-muted-foreground hover:text-foreground disabled:opacity-25"
+              onClick={(e) => {
+                e.stopPropagation();
+                moveDown?.();
+              }}
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
           </div>
           <Button
             variant="ghost"

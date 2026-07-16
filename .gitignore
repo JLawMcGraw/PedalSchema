@@ -43,3 +43,7 @@ next-env.d.ts
 # Claude screenshots
 .claude/screenshots/
 scraper/
+supabase/backups/
+.dev.db
+supabase/.temp/
+public/repro/

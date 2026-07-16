@@ -2,10 +2,8 @@ import type {
   Pedal,
   PlacedPedal,
   Cable,
-  PedalJack,
   Board,
   Amp,
-  ChainLocation,
   RoutingConfig,
 } from '@/types';
 
@@ -14,9 +12,6 @@ const STANDARD_CABLE_LENGTHS = [6, 12, 18, 24, 36, 48, 72, 120];
 
 // Overhead factor for cable routing (cables don't go in straight lines)
 const ROUTING_OVERHEAD = 1.2;
-
-// PIXELS_PER_INCH for consistency with visual editor
-const PIXELS_PER_INCH = 40;
 
 interface JackPosition {
   x: number; // in inches
@@ -35,57 +30,11 @@ interface CableConnection {
   sortOrder: number;
 }
 
-/**
- * Calculate the position of a jack on a placed pedal
- */
-export function getJackPosition(
-  placedPedal: PlacedPedal,
-  jack: PedalJack,
-  pedal: Pedal
-): JackPosition {
-  const isRotated = placedPedal.rotationDegrees === 90 || placedPedal.rotationDegrees === 270;
-
-  // Get effective dimensions after rotation
-  const effectiveWidth = isRotated ? pedal.depthInches : pedal.widthInches;
-  const effectiveDepth = isRotated ? pedal.widthInches : pedal.depthInches;
-
-  // Calculate jack position based on side and position percent
-  let jackOffsetX = 0;
-  let jackOffsetY = 0;
-
-  // Map the original jack side through rotation
-  const rotationSteps = placedPedal.rotationDegrees / 90;
-  const sides: Array<'top' | 'right' | 'bottom' | 'left'> = ['top', 'right', 'bottom', 'left'];
-  const originalSideIndex = sides.indexOf(jack.side);
-  const rotatedSideIndex = (originalSideIndex + rotationSteps) % 4;
-  const rotatedSide = sides[rotatedSideIndex];
-
-  const positionRatio = jack.positionPercent / 100;
-
-  switch (rotatedSide) {
-    case 'top':
-      jackOffsetX = effectiveWidth * positionRatio;
-      jackOffsetY = 0;
-      break;
-    case 'bottom':
-      jackOffsetX = effectiveWidth * positionRatio;
-      jackOffsetY = effectiveDepth;
-      break;
-    case 'left':
-      jackOffsetX = 0;
-      jackOffsetY = effectiveDepth * positionRatio;
-      break;
-    case 'right':
-      jackOffsetX = effectiveWidth;
-      jackOffsetY = effectiveDepth * positionRatio;
-      break;
-  }
-
-  return {
-    x: placedPedal.xInches + jackOffsetX,
-    y: placedPedal.yInches + jackOffsetY,
-  };
-}
+// Jack position and endpoint geometry live in ./endpoints (single source of
+// truth shared with the renderer and optimizer). Re-exported for existing
+// importers.
+import { getJackPosition, findJack, getExternalEndpointInches } from './endpoints';
+export { getJackPosition, findJack } from './endpoints';
 
 /**
  * Calculate the distance between two points
@@ -110,47 +59,6 @@ export function roundToStandardLength(lengthInches: number): number {
 }
 
 /**
- * Find a jack of a specific type on a pedal
- * Returns a synthetic jack if not found (for pedals without that jack type)
- */
-function findJack(pedal: Pedal, jackType: 'input' | 'output' | 'send' | 'return'): PedalJack {
-  // Try to find the actual jack
-  const jack = pedal.jacks?.find((j) => j.jackType === jackType);
-  if (jack) return jack;
-
-  // For send/return, only return synthetic if pedal supports it
-  if (jackType === 'send' || jackType === 'return') {
-    // Check if pedal actually has send/return capability
-    const hasSend = pedal.jacks?.some(j => j.jackType === 'send');
-    const hasReturn = pedal.jacks?.some(j => j.jackType === 'return');
-    if (!hasSend && !hasReturn && !pedal.supports4Cable) {
-      // This pedal doesn't have loop jacks - return a dummy that won't be used
-      // but won't cause null errors
-      return {
-        id: `synthetic-${jackType}`,
-        pedalId: pedal.id,
-        jackType: jackType,
-        side: jackType === 'send' ? 'right' : 'left',
-        positionPercent: jackType === 'send' ? 25 : 25,
-        label: jackType.toUpperCase(),
-      };
-    }
-  }
-
-  // Create synthetic jack for input/output (all pedals have these)
-  // Input/send on right side, output/return on left side (standard layout)
-  const isInput = jackType === 'input' || jackType === 'send';
-  return {
-    id: `synthetic-${jackType}`,
-    pedalId: pedal.id,
-    jackType: jackType,
-    side: isInput ? 'right' : 'left',
-    positionPercent: 50,
-    label: jackType.toUpperCase(),
-  };
-}
-
-/**
  * Check if a pedal category should go in a noise gate loop
  */
 function shouldGoInNoiseGateLoop(category: string): boolean {
@@ -158,43 +66,23 @@ function shouldGoInNoiseGateLoop(category: string): boolean {
 }
 
 /**
- * Get guitar input position (assumed to be off-board to the right)
+ * External endpoint positions (guitar/amp), delegated to the shared
+ * endpoints module so length estimates match what is actually drawn.
  */
 function getGuitarPosition(board: Board): JackPosition {
-  return {
-    x: board.widthInches + 3, // 3 inches to the right of the board
-    y: board.depthInches / 2,
-  };
+  return getExternalEndpointInches('guitar', board);
 }
 
-/**
- * Get amp input position (assumed to be off-board to the left)
- */
-function getAmpInputPosition(board: Board): JackPosition {
-  return {
-    x: -3, // 3 inches to the left of the board
-    y: board.depthInches / 2,
-  };
+function getAmpInputPosition(board: Board, useEffectsLoop: boolean = false): JackPosition {
+  return getExternalEndpointInches('amp_input', board, useEffectsLoop);
 }
 
-/**
- * Get amp effects loop send position
- */
 function getAmpSendPosition(board: Board): JackPosition {
-  return {
-    x: -3,
-    y: board.depthInches * 0.3,
-  };
+  return getExternalEndpointInches('amp_send', board);
 }
 
-/**
- * Get amp effects loop return position
- */
 function getAmpReturnPosition(board: Board): JackPosition {
-  return {
-    x: -3,
-    y: board.depthInches * 0.7,
-  };
+  return getExternalEndpointInches('amp_return', board);
 }
 
 /**
@@ -368,9 +256,9 @@ export function calculateCables(
   }
 
   // Split pedals based on loop pedal presence
-  let beforeLoop: PlacedPedal[] = [];
-  let inLoop: PlacedPedal[] = [];
-  let afterLoop: PlacedPedal[] = [];
+  const beforeLoop: PlacedPedal[] = [];
+  const inLoop: PlacedPedal[] = [];
+  const afterLoop: PlacedPedal[] = [];
 
   if (loopPedal && loopPedalData && configuredLoopPedalIds.length > 0) {
     // Categorize pedals relative to the loop pedal using configured IDs
@@ -492,13 +380,13 @@ export function calculateCables(
       if (lastDrivePedal) {
         const outJack = findJack(lastDrivePedal, 'output');
         addCable(cables, 'pedal', lastDrive.id, 'output', 'amp_input', null, null,
-          calculateDistance(getJackPosition(lastDrive, outJack, lastDrivePedal), getAmpInputPosition(board)) * ROUTING_OVERHEAD,
+          calculateDistance(getJackPosition(lastDrive, outJack, lastDrivePedal), getAmpInputPosition(board, useEffectsLoop)) * ROUTING_OVERHEAD,
           'instrument', sortOrder++);
       }
     } else {
       // No drives - HUB SEND goes directly to AMP INPUT
       addCable(cables, 'pedal', hubPedal.id, 'send', 'amp_input', null, null,
-        calculateDistance(getJackPosition(hubPedal, hubSendJack, hubPedalData), getAmpInputPosition(board)) * ROUTING_OVERHEAD,
+        calculateDistance(getJackPosition(hubPedal, hubSendJack, hubPedalData), getAmpInputPosition(board, useEffectsLoop)) * ROUTING_OVERHEAD,
         'instrument', sortOrder++);
     }
 
@@ -719,7 +607,7 @@ export function calculateCables(
       } else {
         // Loop pedal to amp
         addCable(cables, 'pedal', loopPedal.id, 'output', 'amp_input', null, null,
-          calculateDistance(getJackPosition(loopPedal, loopOutputJack, loopPedalData), getAmpInputPosition(board)) * ROUTING_OVERHEAD,
+          calculateDistance(getJackPosition(loopPedal, loopOutputJack, loopPedalData), getAmpInputPosition(board, useEffectsLoop)) * ROUTING_OVERHEAD,
           'instrument', sortOrder++);
       }
     }
@@ -758,7 +646,7 @@ export function calculateCables(
         const outJack = findJack(lastAfterPedal, 'output');
         if (outJack) {
           addCable(cables, 'pedal', lastAfter.id, 'output', 'amp_input', null, null,
-            calculateDistance(getJackPosition(lastAfter, outJack, lastAfterPedal), getAmpInputPosition(board)) * ROUTING_OVERHEAD,
+            calculateDistance(getJackPosition(lastAfter, outJack, lastAfterPedal), getAmpInputPosition(board, useEffectsLoop)) * ROUTING_OVERHEAD,
             'instrument', sortOrder++);
         }
       }
@@ -830,13 +718,13 @@ export function calculateCables(
       pedalPos = { x: lastPlaced.xInches, y: lastPlaced.yInches + 2 };
     }
 
-    const ampPos = getAmpInputPosition(board);
+    const ampPos = getAmpInputPosition(board, useEffectsLoop);
     addCable(cables, 'pedal', lastPlaced.id, 'output', 'amp_input', null, null,
       calculateDistance(pedalPos, ampPos) * ROUTING_OVERHEAD, 'instrument', sortOrder++);
   } else {
     // No pedals, guitar straight to amp
     const guitarPos = getGuitarPosition(board);
-    const ampPos = getAmpInputPosition(board);
+    const ampPos = getAmpInputPosition(board, useEffectsLoop);
     addCable(cables, 'guitar', null, null, 'amp_input', null, null,
       calculateDistance(guitarPos, ampPos) * ROUTING_OVERHEAD, 'instrument', sortOrder++);
   }

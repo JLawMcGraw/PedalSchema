@@ -4,6 +4,145 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-01-22
+
+### Summary
+Major cable routing and layout optimization fixes from nextstep.md plan. Unified routing logic, fixed cables through pedals, improved zone sizing, and added 4-cable method rule.
+
+### What Was Accomplished
+- [x] Removed "expanded exclude" logic that was allowing cables through adjacent pedals
+- [x] Added endpoint tolerance (4px) for first/last cable segments
+- [x] Enforced board bounds in cable routing (cables stay on board)
+- [x] Tightened L-path shortcuts (80px max with obstacles, was 150px)
+- [x] Implemented cable grouping by from/to pair and jack type for offset calculation
+- [x] Increased cable offset from 4px to 8px for better visual separation
+- [x] Dynamic standoff based on pedal size
+- [x] Dynamic FX loop zone sizing based on actual pedal widths
+- [x] Snake pattern layout (right-to-left on all rows)
+- [x] Added `four-cable-fx-loop` rule for auto-routing modulation/delay/reverb to loop
+- [x] Unified cable-renderer to use routing-strategies (single source of truth)
+- [x] Added debug helper `window.__loadPedalSchemaRepro()` for loading repro snapshots
+
+### Key Changes
+| File | Change |
+|------|--------|
+| `src/lib/engine/cables/validation.ts` | NEW: Removed expanded exclude logic; now only excludes source/dest pedals; added ENDPOINT_TOLERANCE (4px) |
+| `src/lib/engine/cables/routing-strategies.ts` | NEW: Added `computeCableGroups()` with jack-type grouping; `isPathWithinBounds()` helper; off-board endpoint handling; increased CABLE_OFFSET to 8px |
+| `src/lib/engine/pathfinding/index.ts` | Added `BoardBounds` interface; dynamic standoff based on pedal size; tightened L-path shortcuts when obstacles present |
+| `src/components/editor/canvas/cable-renderer.tsx` | Unified to use `routeCableWithObstacles()`; removed duplicate routing logic; added `useMemo` for performance |
+| `src/components/editor/canvas/editor-canvas.tsx` | Uses `computeCableGroups()` for per-group cable offsets |
+| `src/lib/engine/layout/index.ts` | Snake pattern placement (right-to-left on all rows); dynamic zone sizing based on pedal widths; zone overlap handling |
+| `src/lib/engine/layout/optimizer-v2.ts` | NEW: Dynamic ampZoneBoundary; overflow into opposite zone instead of (0,0) fallback |
+| `src/lib/engine/signal-chain/rules.ts` | Added `four-cable-fx-loop` rule (modulation/delay/reverb → effects loop when 4-cable method enabled) |
+| `src/store/configuration-store.ts` | Added `window.__loadPedalSchemaRepro()` debug helper |
+
+### Technical Decisions
+1. **No expanded excludes**: Cables must route around ALL pedals except source/destination. Previous logic was excluding adjacent pedals if their margin zones overlapped endpoints - this was wrong.
+2. **Off-board endpoint handling**: Amp connections (guitar, amp_input, amp_send, amp_return) have endpoints outside board bounds. `allowOffBoard` flag skips bounds checking for these cables.
+3. **Jack-type cable grouping**: Cables to different jacks on the same pedal are now separate groups (e.g., NS-2 input vs send/return). Prevents unnecessary spreading.
+4. **Dynamic standoff**: `max(minStandoff, max(halfWidth, halfHeight) * 0.6)` ensures cables clear larger pedals.
+5. **Snake pattern**: Always place right-to-left on all rows. Later chain positions stay closer to amp. No direction flip between rows.
+6. **Dynamic zone boundary**: Zone split calculated from actual pedal widths, not fixed 35%. Allows overflow when zones are full.
+
+### Architecture Notes
+**Cable Validation (validation.ts):**
+```
+- excludePedalIds: ONLY source and destination pedals
+- First/last segments: use reduced margin (OBSTACLE_MARGIN - ENDPOINT_TOLERANCE)
+- Middle segments: use full OBSTACLE_MARGIN
+- No expanded excludes for adjacent pedals
+```
+
+**Cable Grouping (routing-strategies.ts):**
+```
+getCableGroupKey():
+- Pedal-to-pedal: `pedal:${id1}:${id2}:jack:${jackPair}`
+- External→pedal: `ext:${fromType}:${toPedalId}:jack:${toJack}`
+- Pedal→external: `ext:${fromPedalId}:${toType}:jack:${fromJack}`
+```
+
+**Layout Zone Sizing (layout/index.ts):**
+```
+frontRequired = sum(front pedal widths) + spacing
+loopRequired = sum(loop pedal widths) + spacing
+ampZoneBoundary = max(minLoop, min(loopRequired, maxLoop))
+If zones don't fit, zonesOverlap = true (pedals can overflow)
+```
+
+### Next Tasks
+- [ ] Test with crowded boards to verify cable routing improvements
+- [ ] Consider visual indicator for invalid cable paths (currently red)
+- [ ] Add tests for cable validation edge cases
+- [ ] Verify 4-cable method rule works with various pedal configurations
+
+---
+
+## Session: 2026-01-08 (Afternoon)
+
+### Summary
+Fixed cable routing: cables no longer go off-screen or appear to pass through pedals.
+
+### What Was Accomplished
+- [x] Fixed cables going off-screen (y=-20 → y=236)
+- [x] Added universal standoff from jack positions before routing
+- [x] Added boardBounds constraint to keep cables within visible area
+- [x] Verified fixes mathematically using extracted path coordinates
+- [x] Created cable log capture script for verification
+- [x] Disabled DEBUG_PATHS flag for production
+
+### Key Changes
+| File | Change |
+|------|--------|
+| `src/lib/engine/cables/routing-strategies.ts` | Added `boardBounds`, `fromBox`, `toBox` parameters; uses `getStandoffPoint()` for universal standoff; added `constrainY`/`constrainX` helpers |
+| `src/lib/engine/pathfinding/index.ts` | Added `BoardBounds` interface and `boardBounds` parameter to `findPathAStar()`; constrains A* grid to board bounds |
+| `src/components/editor/canvas/cable-renderer.tsx` | Passes pedal boxes and board bounds to `routeCablePath()`; disabled DEBUG_PATHS |
+| `.claude/scripts/capture-cable-logs.js` | New script to capture cable routing console output for verification |
+| `.claude/scripts/get-config-url.js` | New script to get configuration URL from dashboard |
+
+### Technical Decisions
+1. **Board bounds constraint**: All routing strategies now constrain Y coordinates to `[boardBounds.minY + 20, boardBounds.maxY - 20]` to keep cables visible on the board.
+2. **Universal standoffs**: Every cable path now starts with a standoff point that moves 25px AWAY from the source/destination pedal before any routing occurs. This prevents cables from appearing to go through pedals.
+3. **Standoff direction from `getStandoffPoint()`**: Uses jack position relative to pedal box to determine which direction to move (left edge → move left, right edge → move right, etc.).
+4. **A* grid constrained to board**: When `boardBounds` is provided, A* pathfinding grid is constrained to `[minY + 10, maxY + 20]` to prevent routing above the board.
+
+### Architecture Notes
+**Cable Routing with Standoffs (routing-strategies.ts):**
+```
+1. Calculate standoff points using getStandoffPoint(from, fromBox, 25)
+2. Build path: from → fromStandoff → [routing channel] → toStandoff → to
+3. constrainY() ensures all Y values stay within [minY+20, maxY-20]
+4. Validate route; if fails, try above/below routing
+5. Fallback to A* with board bounds constraint
+```
+
+**Verification Method (per CLAUDE.md):**
+```
+1. Extract path coordinates from console logs
+2. Verify all Y values are within [0, 500] (board bounds)
+3. Verify routing channel Y (236, 276) is in gap between pedal rows
+4. Construct ASCII diagram from extracted data
+```
+
+### Verification Results
+```
+BEFORE: Cable 7 path: (-60,250) → (-60,-20) → (580,-20) → (580,102)
+                                    ^^^^^        ^^^^^
+                                    OFF SCREEN (y < 0)
+
+AFTER:  Cable 7 path: (-60,250) → (-60,236) → (604,236) → (605,102) → (580,102)
+                                     ^^^         ^^^
+                                     IN GAP (y=236 is between rows)
+
+All 9 cables verified: Y ∈ [100, 400] (within board [0, 500]) ✓
+```
+
+### Next Tasks
+- [ ] Consider cable color coding by signal path type
+- [ ] Test with more complex/crowded board layouts
+- [ ] May want to add visual indicator when standoff routing is active
+
+---
+
 ## Session: 2026-01-08
 
 ### Summary

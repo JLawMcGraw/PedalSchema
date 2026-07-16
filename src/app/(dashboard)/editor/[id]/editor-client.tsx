@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useCallback, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useConfigurationStore } from '@/store/configuration-store';
 import { useEditorStore } from '@/store/editor-store';
@@ -13,7 +12,7 @@ import { PropertiesPanel } from '@/components/editor/panels/properties-panel';
 import { CableListPanel } from '@/components/editor/panels/cable-list-panel';
 import { RoutingOptionsPanel } from '@/components/editor/panels/routing-options-panel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import { PlusCircle, List } from 'lucide-react';
@@ -48,9 +47,8 @@ export function EditorClient({
   availablePedals,
   availableAmps,
 }: EditorClientProps) {
-  const router = useRouter();
   const initConfiguration = useConfigurationStore((s) => s.initConfiguration);
-  const configStore = useConfigurationStore();
+  const isDirty = useConfigurationStore((s) => s.isDirty);
   const { selectedPedalId } = useEditorStore();
   const [activeTab, setActiveTab] = useState('chain');
   const [leftPanelOpen, setLeftPanelOpen] = useState(false);
@@ -90,15 +88,24 @@ export function EditorClient({
     amp,
     useEffectsLoop,
     use4CableMethod,
+    modulationInLoop,
     initialPlacedPedals,
     initialPedalsById,
     initConfiguration,
   ]);
 
   // Save handler
+  // Everything is read from getState() at call time (never from render closures -
+  // a stale closure here previously saved modulation_in_loop's initial value forever).
+  // Pedal rows are upserted with their client ids and stale rows pruned AFTERWARDS,
+  // so a mid-save failure can no longer wipe the board (the old delete-then-insert
+  // had a data-loss window).
   const handleSave = useCallback(async () => {
-    const { id, name, description, placedPedals, amp, useEffectsLoop, use4CableMethod, setSaving, markClean } =
-      useConfigurationStore.getState();
+    const {
+      id, name, description, placedPedals, amp,
+      useEffectsLoop, use4CableMethod, modulationInLoop,
+      setSaving, markClean,
+    } = useConfigurationStore.getState();
 
     if (!id) return;
 
@@ -107,8 +114,7 @@ export function EditorClient({
     try {
       const supabase = createClient();
 
-      // Update configuration
-      await supabase
+      const { error: configError } = await supabase
         .from('configurations')
         .update({
           name,
@@ -116,32 +122,49 @@ export function EditorClient({
           amp_id: amp?.id || null,
           use_effects_loop: useEffectsLoop,
           use_4_cable_method: use4CableMethod,
-          modulation_in_loop: configStore.modulationInLoop,
+          modulation_in_loop: modulationInLoop,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);
+      if (configError) throw configError;
 
-      // Delete existing pedals and re-insert
-      await supabase.from('configuration_pedals').delete().eq('configuration_id', id);
-
+      // Upsert current pedals (stable ids), then prune rows no longer present.
       if (placedPedals.length > 0) {
-        await supabase.from('configuration_pedals').insert(
-          placedPedals.map((p) => ({
-            configuration_id: id,
-            pedal_id: p.pedalId,
-            x_inches: p.xInches,
-            y_inches: p.yInches,
-            rotation_degrees: p.rotationDegrees,
-            chain_position: p.chainPosition,
-            location: p.location,
-            is_active: p.isActive,
-            use_loop: p.useLoop,
-          }))
-        );
+        const { error: upsertError } = await supabase
+          .from('configuration_pedals')
+          .upsert(
+            placedPedals.map((p) => ({
+              id: p.id,
+              configuration_id: id,
+              pedal_id: p.pedalId,
+              x_inches: p.xInches,
+              y_inches: p.yInches,
+              rotation_degrees: p.rotationDegrees,
+              chain_position: p.chainPosition,
+              location: p.location,
+              chain_position_locked: p.chainPositionLocked ?? false,
+              is_active: p.isActive,
+              use_loop: p.useLoop,
+            })),
+            { onConflict: 'id' }
+          );
+        if (upsertError) throw upsertError;
       }
+
+      let pruneQuery = supabase
+        .from('configuration_pedals')
+        .delete()
+        .eq('configuration_id', id);
+      if (placedPedals.length > 0) {
+        const keepIds = placedPedals.map((p) => `"${p.id}"`).join(',');
+        pruneQuery = pruneQuery.not('id', 'in', `(${keepIds})`);
+      }
+      const { error: pruneError } = await pruneQuery;
+      if (pruneError) throw pruneError;
 
       markClean();
     } catch (error) {
+      // Config stays dirty so the toolbar keeps showing the unsaved state.
       console.error('Failed to save:', error);
     } finally {
       setSaving(false);
@@ -151,7 +174,7 @@ export function EditorClient({
   // Warn before leaving with unsaved changes
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (configStore.isDirty) {
+      if (isDirty) {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -159,7 +182,7 @@ export function EditorClient({
 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [configStore.isDirty]);
+  }, [isDirty]);
 
   // Right panel tabs content - shared between desktop and mobile
   const rightPanelContent = (

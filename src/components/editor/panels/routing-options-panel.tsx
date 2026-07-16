@@ -1,5 +1,6 @@
 'use client';
 
+import { useShallow } from 'zustand/react/shallow';
 import { useMemo } from 'react';
 import { useConfigurationStore } from '@/store/configuration-store';
 import { Badge } from '@/components/ui/badge';
@@ -34,7 +35,9 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
     setUse4CableMethod,
     modulationInLoop,
     setModulationInLoop,
-  } = useConfigurationStore();
+  } = useConfigurationStore(
+    useShallow((s) => ({ placedPedals: s.placedPedals, pedalsById: s.pedalsById, routingConfig: s.routingConfig, togglePedalInLoop: s.togglePedalInLoop, amp: s.amp, setAmp: s.setAmp, useEffectsLoop: s.useEffectsLoop, setUseEffectsLoop: s.setUseEffectsLoop, use4CableMethod: s.use4CableMethod, setUse4CableMethod: s.setUse4CableMethod, modulationInLoop: s.modulationInLoop, setModulationInLoop: s.setModulationInLoop }))
+  );
 
   const handleAmpChange = (ampId: string) => {
     if (ampId === 'none') {

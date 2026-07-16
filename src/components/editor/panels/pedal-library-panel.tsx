@@ -1,5 +1,6 @@
 'use client';
 
+import { useShallow } from 'zustand/react/shallow';
 import { useState, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -22,8 +23,12 @@ interface PedalLibraryPanelProps {
 export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const { pedalToAdd, setPedalToAdd } = useEditorStore();
-  const { board, placedPedals } = useConfigurationStore();
+  const { pedalToAdd, setPedalToAdd } = useEditorStore(
+    useShallow((s) => ({ pedalToAdd: s.pedalToAdd, setPedalToAdd: s.setPedalToAdd }))
+  );
+  const { board, placedPedals } = useConfigurationStore(
+    useShallow((s) => ({ board: s.board, placedPedals: s.placedPedals }))
+  );
 
   // Get categories that have pedals
   const availableCategories = useMemo(() => {

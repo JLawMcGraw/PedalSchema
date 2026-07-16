@@ -1,15 +1,17 @@
 'use client';
 
+import { useShallow } from 'zustand/react/shallow';
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useEditorStore } from '@/store/editor-store';
 import { useConfigurationStore } from '@/store/configuration-store';
+import { useDerivedConfiguration, INCHES_TO_PIXELS } from '@/store/derived';
 import { BoardRenderer } from './board-renderer';
 import { PedalRenderer } from './pedal-renderer';
 import { CableRenderer } from './cable-renderer';
 import { snapToRail, findEmptySpot } from '@/lib/engine/collision';
 import { getCategoryDefaultOrder } from '@/lib/constants/pedal-categories';
+import { getExternalEndpointPx } from '@/lib/engine/cables/endpoints';
 
-const INCHES_TO_PIXELS = 40; // 40px per inch at zoom 1
 const PADDING_INCHES = 2;
 
 interface DragState {
@@ -26,10 +28,23 @@ export function EditorCanvas() {
   const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
 
   const { zoom, pan, gridVisible, cablesVisible, selectedPedalId, selectPedal, mode, pedalToAdd, setPedalToAdd } =
-    useEditorStore();
+    useEditorStore(
+    useShallow((s) => ({ zoom: s.zoom, pan: s.pan, gridVisible: s.gridVisible, cablesVisible: s.cablesVisible, selectedPedalId: s.selectedPedalId, selectPedal: s.selectPedal, mode: s.mode, pedalToAdd: s.pedalToAdd, setPedalToAdd: s.setPedalToAdd }))
+  );
 
-  const { board, placedPedals, pedalsById, cables, collisions, addPedal, movePedal, amp, useEffectsLoop } =
-    useConfigurationStore();
+  const { board, placedPedals, pedalsById, addPedal, movePedal, amp, useEffectsLoop } =
+    useConfigurationStore(
+    useShallow((s) => ({ board: s.board, placedPedals: s.placedPedals, pedalsById: s.pedalsById, addPedal: s.addPedal, movePedal: s.movePedal, amp: s.amp, useEffectsLoop: s.useEffectsLoop }))
+  );
+
+  // Routed cables and collisions are derived state - computed once per
+  // configuration change and shared by every subscriber.
+  const { routedCables, collisions } = useDerivedConfiguration((d) => ({
+    routedCables: d.routedCables,
+    collisions: d.collisions,
+  }));
+
+  const fxLoopActive = useEffectsLoop && !!amp?.hasEffectsLoop;
 
   // Convert screen coordinates to board coordinates
   const screenToBoard = useCallback(
@@ -244,11 +259,55 @@ export function EditorCanvas() {
         {/* Board */}
         <BoardRenderer board={board} scale={INCHES_TO_PIXELS} />
 
-        {/* Signal chain endpoints - Guitar (right) and Amp (left) */}
+        {/* Signal chain endpoints, layered around the cables:
+            1. Amp panel BODY renders UNDER cables (a cable crossing the
+               panel edge reads as entering the amp)
+            2. Cables
+            3. Jack circles + labels (IN/SND/RTN) and the guitar icon render
+               ON TOP so labels stay readable and cable ends look plugged in.
+            Positions come from the shared endpoints module so the icons sit
+            exactly where cables terminate. */}
         {cablesVisible && placedPedals.length > 0 && (
+          <g transform={`translate(${getExternalEndpointPx('amp_input', board, INCHES_TO_PIXELS, fxLoopActive).x}, 0)`}>
+            <rect
+              x={-30}
+              y={boardHeight * 0.1}
+              width={60}
+              height={boardHeight * 0.8}
+              rx={8}
+              fill="#1f2937"
+              stroke="#374151"
+              strokeWidth={2}
+            />
+            <text
+              x={0}
+              y={boardHeight * 0.1 - 8}
+              textAnchor="middle"
+              fill="#9ca3af"
+              fontSize={11}
+              fontWeight="bold"
+            >
+              AMP
+            </text>
+          </g>
+        )}
+
+        {/* Cables (above the amp panel body, under pedals and jack labels) */}
+        {cablesVisible &&
+          routedCables.map((routed) => (
+            <CableRenderer key={routed.cable.id} routed={routed} />
+          ))}
+
+        {/* Jack circles + labels and guitar icon - on top of cables */}
+        {cablesVisible && placedPedals.length > 0 && (() => {
+          const guitarPos = getExternalEndpointPx('guitar', board, INCHES_TO_PIXELS, fxLoopActive);
+          const ampInputPos = getExternalEndpointPx('amp_input', board, INCHES_TO_PIXELS, fxLoopActive);
+          const ampSendPos = getExternalEndpointPx('amp_send', board, INCHES_TO_PIXELS, fxLoopActive);
+          const ampReturnPos = getExternalEndpointPx('amp_return', board, INCHES_TO_PIXELS, fxLoopActive);
+          return (
           <>
             {/* Guitar icon on right */}
-            <g transform={`translate(${boardWidth + 60}, ${boardHeight / 2})`}>
+            <g transform={`translate(${guitarPos.x}, ${guitarPos.y})`}>
               <circle r={20} fill="#374151" stroke="#f59e0b" strokeWidth={2} />
               <text
                 x={0}
@@ -271,33 +330,11 @@ export function EditorCanvas() {
               </text>
             </g>
 
-            {/* Amp panel on left - shows jacks based on FX loop state */}
-            <g transform="translate(-60, 0)">
-              {/* Amp panel background */}
-              <rect
-                x={-30}
-                y={boardHeight * 0.1}
-                width={60}
-                height={boardHeight * 0.8}
-                rx={8}
-                fill="#1f2937"
-                stroke="#374151"
-                strokeWidth={2}
-              />
-              <text
-                x={0}
-                y={boardHeight * 0.1 - 8}
-                textAnchor="middle"
-                fill="#9ca3af"
-                fontSize={11}
-                fontWeight="bold"
-              >
-                AMP
-              </text>
-
+            {/* Amp jacks - shown based on FX loop state */}
+            <g transform={`translate(${ampInputPos.x}, 0)`}>
               {/* Return jack (top) - only show when FX loop enabled */}
-              {useEffectsLoop && amp?.hasEffectsLoop && (
-                <g transform={`translate(0, ${boardHeight * 0.2})`}>
+              {fxLoopActive && (
+                <g transform={`translate(0, ${ampReturnPos.y})`}>
                   <circle r={12} fill="#374151" stroke="#22c55e" strokeWidth={2} />
                   <text x={0} y={4} textAnchor="middle" fill="#22c55e" fontSize={8} fontWeight="bold">
                     RTN
@@ -306,8 +343,8 @@ export function EditorCanvas() {
               )}
 
               {/* Send jack (middle) - only show when FX loop enabled */}
-              {useEffectsLoop && amp?.hasEffectsLoop && (
-                <g transform={`translate(0, ${boardHeight * 0.5})`}>
+              {fxLoopActive && (
+                <g transform={`translate(0, ${ampSendPos.y})`}>
                   <circle r={12} fill="#374151" stroke="#3b82f6" strokeWidth={2} />
                   <text x={0} y={4} textAnchor="middle" fill="#3b82f6" fontSize={8} fontWeight="bold">
                     SND
@@ -316,7 +353,7 @@ export function EditorCanvas() {
               )}
 
               {/* Input jack (bottom or center if no FX loop) */}
-              <g transform={`translate(0, ${useEffectsLoop && amp?.hasEffectsLoop ? boardHeight * 0.8 : boardHeight * 0.5})`}>
+              <g transform={`translate(0, ${ampInputPos.y})`}>
                 <circle r={12} fill="#374151" stroke="#f59e0b" strokeWidth={2} />
                 <text x={0} y={4} textAnchor="middle" fill="#f59e0b" fontSize={8} fontWeight="bold">
                   IN
@@ -324,23 +361,8 @@ export function EditorCanvas() {
               </g>
             </g>
           </>
-        )}
-
-        {/* Cables (under pedals) */}
-        {cablesVisible &&
-          cables.map((cable, index) => (
-            <CableRenderer
-              key={cable.id}
-              cable={cable}
-              placedPedals={placedPedals}
-              pedalsById={pedalsById}
-              board={board}
-              scale={INCHES_TO_PIXELS}
-              cableIndex={index}
-              totalCables={cables.length}
-              useEffectsLoop={useEffectsLoop && !!amp?.hasEffectsLoop}
-            />
-          ))}
+          );
+        })()}
 
         {/* Pedals */}
         {placedPedals.map((placed) => {

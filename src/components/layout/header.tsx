@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -21,14 +21,16 @@ interface HeaderProps {
   user: User | null;
 }
 
+const subscribeNoop = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
 export function Header({ user }: HeaderProps) {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
+  // Hydration guard: false during SSR/first paint, true after hydration.
+  // The dropdown (radix ids) only renders client-side to avoid mismatches.
+  const mounted = useSyncExternalStore(subscribeNoop, getClientSnapshot, getServerSnapshot);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const handleSignOut = async () => {
     const supabase = createClient();

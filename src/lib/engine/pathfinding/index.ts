@@ -2,31 +2,51 @@
  * A* Pathfinding Module
  *
  * Provides grid-based A* pathfinding for cable routing with obstacle avoidance.
- * Extracted from cable-renderer.tsx for reuse in layout optimization.
+ *
+ * All geometric types, constants, and the validation policy live in
+ * ../geometry — this module only owns the grid search and path
+ * simplification. Everything geometric is re-exported for convenience.
  */
 
-// Core types
-export interface Point { x: number; y: number }
-export interface Box { x: number; y: number; width: number; height: number }
+import {
+  Point,
+  Box,
+  OBSTACLE_MARGIN,
+  GRID_CELL_SIZE,
+  isPathClear,
+  lineIntersectsBox,
+} from '../geometry';
 
-// Grid-based A* configuration
-export const GRID_CELL_SIZE = 8; // 8px per grid cell - finer grid for better routing
-export const OBSTACLE_MARGIN = 25; // Margin around pedals in pixels - must be large enough to prevent visual clipping
-export const STANDOFF = 40; // Distance from jack to first routing point - must be outside pedal box
+// Re-export the shared geometry API so existing importers keep working
+export type { Point, Box, BoardBounds } from '../geometry';
+export {
+  OBSTACLE_MARGIN,
+  ENDPOINT_TOLERANCE,
+  STANDOFF,
+  GRID_CELL_SIZE,
+  dist,
+  calculatePathLength,
+  lineIntersectsBox,
+  segmentsIntersect,
+  getSegmentIntersection,
+  isPathClear,
+  findPathViolations,
+} from '../geometry';
 
-// Debug flags - set to false for production
-const DEBUG_PATHS = false;
-const DEBUG_GRID = false;
+import type { BoardBounds } from '../geometry';
+import { STANDOFF } from '../geometry';
 
 /**
- * Calculate a standoff point outside the pedal box based on which edge the jack is on
+ * Calculate a standoff point outside the pedal box based on which edge the
+ * jack is on. Fixed distance: a standoff only needs to exit the jack before
+ * the path turns; large or dynamic standoffs land inside neighboring pedals
+ * at minimum spacing.
  */
-export function getStandoffPoint(jackPos: Point, box: Box | null, standoff: number): Point {
+export function getStandoffPoint(jackPos: Point, box: Box | null, standoff: number = STANDOFF): Point {
   if (!box) return jackPos; // No box = external connection, no standoff needed
 
   const tolerance = 5; // How close to edge to consider "on" that edge
 
-  // Determine which edge the jack is on
   const onLeft = Math.abs(jackPos.x - box.x) < tolerance;
   const onRight = Math.abs(jackPos.x - (box.x + box.width)) < tolerance;
   const onTop = Math.abs(jackPos.y - box.y) < tolerance;
@@ -45,111 +65,6 @@ export function getStandoffPoint(jackPos: Point, box: Box | null, standoff: numb
   const len = Math.sqrt(dx * dx + dy * dy) || 1;
   return { x: jackPos.x + (dx / len) * standoff, y: jackPos.y + (dy / len) * standoff };
 }
-
-/**
- * Distance between two points
- */
-export function dist(a: Point, b: Point): number {
-  return Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
-}
-
-/**
- * Check if a line segment from p1 to p2 intersects a box (with margin)
- */
-export function lineIntersectsBox(p1: Point, p2: Point, box: Box, margin: number = 8): boolean {
-  const left = box.x - margin;
-  const right = box.x + box.width + margin;
-  const top = box.y - margin;
-  const bottom = box.y + box.height + margin;
-
-  // Quick bounding box rejection
-  const minX = Math.min(p1.x, p2.x);
-  const maxX = Math.max(p1.x, p2.x);
-  const minY = Math.min(p1.y, p2.y);
-  const maxY = Math.max(p1.y, p2.y);
-
-  if (maxX < left || minX > right || maxY < top || minY > bottom) {
-    return false;
-  }
-
-  // Check if either endpoint is inside the box
-  if (p1.x >= left && p1.x <= right && p1.y >= top && p1.y <= bottom) return true;
-  if (p2.x >= left && p2.x <= right && p2.y >= top && p2.y <= bottom) return true;
-
-  // Check line against each edge of the box
-  const edges = [
-    [{ x: left, y: top }, { x: right, y: top }],     // Top edge
-    [{ x: right, y: top }, { x: right, y: bottom }], // Right edge
-    [{ x: right, y: bottom }, { x: left, y: bottom }], // Bottom edge
-    [{ x: left, y: bottom }, { x: left, y: top }],  // Left edge
-  ];
-
-  for (const [e1, e2] of edges) {
-    if (segmentsIntersect(p1, p2, e1, e2)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-/**
- * Check if two line segments intersect
- */
-export function segmentsIntersect(a1: Point, a2: Point, b1: Point, b2: Point): boolean {
-  const d1 = direction(b1, b2, a1);
-  const d2 = direction(b1, b2, a2);
-  const d3 = direction(a1, a2, b1);
-  const d4 = direction(a1, a2, b2);
-
-  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-      ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
-    return true;
-  }
-
-  if (d1 === 0 && onSegment(b1, b2, a1)) return true;
-  if (d2 === 0 && onSegment(b1, b2, a2)) return true;
-  if (d3 === 0 && onSegment(a1, a2, b1)) return true;
-  if (d4 === 0 && onSegment(a1, a2, b2)) return true;
-
-  return false;
-}
-
-/**
- * Get the intersection point of two line segments, if they intersect
- */
-export function getSegmentIntersection(a1: Point, a2: Point, b1: Point, b2: Point): Point | null {
-  const d1 = direction(b1, b2, a1);
-  const d2 = direction(b1, b2, a2);
-  const d3 = direction(a1, a2, b1);
-  const d4 = direction(a1, a2, b2);
-
-  if (!(((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
-        ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)))) {
-    return null;
-  }
-
-  // Calculate intersection point
-  const denom = (a1.x - a2.x) * (b1.y - b2.y) - (a1.y - a2.y) * (b1.x - b2.x);
-  if (Math.abs(denom) < 0.0001) return null;
-
-  const t = ((a1.x - b1.x) * (b1.y - b2.y) - (a1.y - b1.y) * (b1.x - b2.x)) / denom;
-
-  return {
-    x: a1.x + t * (a2.x - a1.x),
-    y: a1.y + t * (a2.y - a1.y)
-  };
-}
-
-function direction(p1: Point, p2: Point, p3: Point): number {
-  return (p3.x - p1.x) * (p2.y - p1.y) - (p2.x - p1.x) * (p3.y - p1.y);
-}
-
-function onSegment(p1: Point, p2: Point, p: Point): boolean {
-  return p.x >= Math.min(p1.x, p2.x) && p.x <= Math.max(p1.x, p2.x) &&
-         p.y >= Math.min(p1.y, p2.y) && p.y <= Math.max(p1.y, p2.y);
-}
-
 
 // ============================================================================
 // GRID-BASED A* PATHFINDING
@@ -197,8 +112,7 @@ function manhattanDistance(a: GridCell, b: GridCell): number {
 // Build blocked cell set from boxes with margin
 function buildBlockedCells(
   boxes: Box[],
-  excludeIndices: Set<number>,
-  gridBounds: { minX: number; maxX: number; minY: number; maxY: number }
+  excludeIndices: Set<number>
 ): Set<string> {
   const blocked = new Set<string>();
 
@@ -432,45 +346,6 @@ export function simplifyPath(path: Point[]): Point[] {
 }
 
 /**
- * Remove small zigzags from path
- */
-export function smoothPath(path: Point[]): Point[] {
-  if (path.length <= 2) return path;
-
-  const result: Point[] = [path[0]];
-
-  for (let i = 1; i < path.length - 1; i++) {
-    const prev = result[result.length - 1];
-    const curr = path[i];
-    const next = path[i + 1];
-
-    // Calculate the deviation: how far does curr deviate from the prev→next line?
-    const dx = next.x - prev.x;
-    const dy = next.y - prev.y;
-    const len = Math.sqrt(dx * dx + dy * dy);
-
-    if (len < 1) {
-      // prev and next are basically the same point, skip curr
-      continue;
-    }
-
-    // Project curr onto line prev→next
-    const t = ((curr.x - prev.x) * dx + (curr.y - prev.y) * dy) / (len * len);
-    const projX = prev.x + t * dx;
-    const projY = prev.y + t * dy;
-    const deviation = Math.sqrt((curr.x - projX) ** 2 + (curr.y - projY) ** 2);
-
-    // Keep point only if it creates significant deviation (> 20px)
-    if (deviation > 20) {
-      result.push(curr);
-    }
-  }
-
-  result.push(path[path.length - 1]);
-  return result;
-}
-
-/**
  * Simplify path by removing only collinear points, validate every removal
  */
 export function simplifyPathValidated(path: Point[], boxes: Box[], excludeSet: Set<number>): Point[] {
@@ -509,57 +384,66 @@ export function simplifyPathValidated(path: Point[], boxes: Box[], excludeSet: S
 
 /**
  * Main pathfinding function - uses A* with fallback strategies
+ *
+ * @param start - Start point in pixels
+ * @param end - End point in pixels
+ * @param boxes - Array of obstacle boxes
+ * @param fromBoxIdx - Index of source pedal box (will be excluded from obstacles)
+ * @param toBoxIdx - Index of destination pedal box (will be excluded from obstacles)
+ * @param boardBounds - Optional board bounds to constrain routing (cables stay on board)
  */
 export function findPathAStar(
   start: Point,
   end: Point,
   boxes: Box[],
   fromBoxIdx: number = -1,
-  toBoxIdx: number = -1
+  toBoxIdx: number = -1,
+  boardBounds?: BoardBounds
 ): Point[] {
-  // Build exclude set - ONLY exclude source and destination pedals
-  // Do NOT exclude other pedals even if start/end is inside them - this was causing
-  // cables to go through pedals when jack positions overlapped with adjacent pedal boxes
+  // Exclude ONLY source and destination pedals. With source/dest excluded the
+  // grid search can start from the actual jack position instead of being
+  // BFS-relocated out of its own pedal's blocked cells.
   const excludeSet = new Set<number>();
   if (fromBoxIdx >= 0) excludeSet.add(fromBoxIdx);
   if (toBoxIdx >= 0) excludeSet.add(toBoxIdx);
 
   // STRATEGY 1: Check for direct line path (fastest)
-  // Only use direct path for VERY short distances where there's no room for obstacles
   const dx = Math.abs(end.x - start.x);
   const dy = Math.abs(end.y - start.y);
   const distance = Math.sqrt(dx * dx + dy * dy);
-  const isVeryShort = distance < 50; // Only very short distances - reduced from 80
-  const isHorizontal = dy < 20 && dx > dy; // Nearly horizontal - tightened from 30
-  const isVertical = dx < 20 && dy > dx; // Nearly vertical - tightened from 30
 
-  if ((isVeryShort || isHorizontal || isVertical) && isDirectPathClear(start, end, boxes, excludeSet)) {
-    if (DEBUG_PATHS) {
-      console.log(`  [DIRECT] Using direct path (dist=${distance.toFixed(0)}, dx=${dx.toFixed(0)}, dy=${dy.toFixed(0)})`);
-    }
+  const obstacleCount = boxes.filter((_, i) => !excludeSet.has(i)).length;
+  const hasObstacles = obstacleCount > 0;
+
+  const isVeryShort = distance < 40;
+  const isHorizontal = dy < 15 && dx > dy;
+  const isVertical = dx < 15 && dy > dx;
+
+  if ((isVeryShort || (!hasObstacles && (isHorizontal || isVertical))) &&
+      isDirectPathClear(start, end, boxes, excludeSet)) {
     return [start, end];
   }
 
-  // STRATEGY 2: Simple L-shaped paths (only for short distances)
-  if (distance < 150) { // Reduced from 200
+  // STRATEGY 2: Simple L-shaped paths for short distances
+  const maxLPathDistance = hasObstacles ? 80 : 150;
+
+  if (distance < maxLPathDistance) {
     const midH = { x: end.x, y: start.y };
     const midV = { x: start.x, y: end.y };
 
-    if (isDirectPathClear(start, midH, boxes, excludeSet) &&
-        isDirectPathClear(midH, end, boxes, excludeSet) &&
-        !isPointInAnyBox(midH, boxes, excludeSet)) {
-      if (DEBUG_PATHS) {
-        console.log(`  [L-PATH] Using L-shaped path via (${midH.x.toFixed(0)},${midH.y.toFixed(0)})`);
-      }
+    const isCornerSafe = (corner: Point): boolean => {
+      return !isPointInAnyBox(corner, boxes, excludeSet, OBSTACLE_MARGIN);
+    };
+
+    if (isCornerSafe(midH) &&
+        isDirectPathClear(start, midH, boxes, excludeSet) &&
+        isDirectPathClear(midH, end, boxes, excludeSet)) {
       return [start, midH, end];
     }
 
-    if (isDirectPathClear(start, midV, boxes, excludeSet) &&
-        isDirectPathClear(midV, end, boxes, excludeSet) &&
-        !isPointInAnyBox(midV, boxes, excludeSet)) {
-      if (DEBUG_PATHS) {
-        console.log(`  [L-PATH] Using L-shaped path via (${midV.x.toFixed(0)},${midV.y.toFixed(0)})`);
-      }
+    if (isCornerSafe(midV) &&
+        isDirectPathClear(start, midV, boxes, excludeSet) &&
+        isDirectPathClear(midV, end, boxes, excludeSet)) {
       return [start, midV, end];
     }
   }
@@ -580,6 +464,19 @@ export function findPathAStar(
 
   // Add padding for routing around obstacles
   const padding = 100;
+
+  // Clamp to board bounds if provided (keep cables on the board)
+  // Allow some margin outside board for routing, but not too far
+  const boardPadding = 50;
+  if (boardBounds) {
+    // Clamp minX/maxX to board bounds with small padding
+    // But always include start/end points (which may be off-board for guitar/amp)
+    minX = Math.min(start.x, end.x, Math.max(minX, boardBounds.minX - boardPadding));
+    maxX = Math.max(start.x, end.x, Math.min(maxX, boardBounds.maxX + boardPadding));
+    minY = Math.min(start.y, end.y, Math.max(minY, boardBounds.minY - boardPadding));
+    maxY = Math.max(start.y, end.y, Math.min(maxY, boardBounds.maxY + boardPadding));
+  }
+
   const gridBounds = {
     minX: Math.floor((minX - padding) / GRID_CELL_SIZE),
     maxX: Math.ceil((maxX + padding) / GRID_CELL_SIZE),
@@ -588,12 +485,7 @@ export function findPathAStar(
   };
 
   // Build blocked cells
-  const blocked = buildBlockedCells(boxes, excludeSet, gridBounds);
-
-  if (DEBUG_GRID) {
-    console.log(`A* Grid: ${gridBounds.maxX - gridBounds.minX} x ${gridBounds.maxY - gridBounds.minY} cells`);
-    console.log(`Blocked cells: ${blocked.size}`);
-  }
+  const blocked = buildBlockedCells(boxes, excludeSet);
 
   // Run A* search
   const gridPath = aStarSearch(start, end, blocked, gridBounds);
@@ -609,17 +501,10 @@ export function findPathAStar(
     pixelPath.push(end);
 
     // Simplify path - only remove truly collinear points, validate each step
-    const simplified = simplifyPathValidated(pixelPath, boxes, excludeSet);
-
-    if (DEBUG_PATHS) {
-      console.log(`A* found path with ${gridPath.length} grid cells, simplified to ${simplified.length} points`);
-    }
-
-    return simplified;
+    return simplifyPathValidated(pixelPath, boxes, excludeSet);
   }
 
-  // STRATEGY 4: Perimeter fallback (validated)
-  // Route around all obstacles via perimeter, staying close to the board
+  // STRATEGY 4: Perimeter fallback (validated with the shared policy)
   let perimMinX = Infinity, perimMaxX = -Infinity;
   let perimMinY = Infinity, perimMaxY = -Infinity;
   for (const box of boxes) {
@@ -629,15 +514,12 @@ export function findPathAStar(
     perimMaxY = Math.max(perimMaxY, box.y + box.height);
   }
 
-  // Use smaller margin to stay closer to the board (just outside obstacle zone)
-  // But constrain to stay on the board (positive coordinates)
   const perimMargin = OBSTACLE_MARGIN + 10;
-  const perimTop = Math.max(5, perimMinY - perimMargin); // Stay on board
+  const perimTop = Math.max(5, perimMinY - perimMargin);
   const perimBottom = perimMaxY + perimMargin;
-  const perimLeft = Math.max(5, perimMinX - perimMargin); // Stay on board
+  const perimLeft = Math.max(5, perimMinX - perimMargin);
   const perimRight = perimMaxX + perimMargin;
 
-  // Try various perimeter routes and validate each
   const perimeterRoutes = [
     // Top route
     [start, { x: start.x, y: perimTop }, { x: end.x, y: perimTop }, end],
@@ -658,21 +540,15 @@ export function findPathAStar(
   ];
 
   for (const route of perimeterRoutes) {
-    if (validateRoute(route, boxes, excludeSet)) {
+    if (isPathClear(route, boxes, { fromBoxIdx, toBoxIdx })) {
       return route;
     }
   }
 
-  // ULTIMATE FALLBACK: Return a path that stays at the edge of obstacles
-  // but still on the board
-  console.warn('Cable routing: All strategies failed, using emergency fallback');
-  const emergencyY = Math.max(5, perimTop); // Stay on board
-  return [
-    start,
-    { x: start.x, y: emergencyY },
-    { x: end.x, y: emergencyY },
-    end
-  ];
+  // ULTIMATE FALLBACK: Return direct line path
+  // This will fail validation and be shown in red by the renderer
+  console.warn('Cable routing: All strategies failed, returning direct line (will show as invalid)');
+  return [start, end];
 }
 
 /**
@@ -703,37 +579,6 @@ export function isPointInAnyBox(p: Point, boxes: Box[], excludeSet: Set<number>,
   return false;
 }
 
-/**
- * Validate that an entire route is clear
- */
-export function validateRoute(route: Point[], boxes: Box[], excludeSet: Set<number>): boolean {
-  // Check each segment
-  for (let i = 0; i < route.length - 1; i++) {
-    if (!isDirectPathClear(route[i], route[i + 1], boxes, excludeSet)) {
-      return false;
-    }
-  }
-
-  // Check that intermediate points aren't inside any box (including margin zone)
-  for (let i = 1; i < route.length - 1; i++) {
-    if (isPointInAnyBox(route[i], boxes, excludeSet, OBSTACLE_MARGIN)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-/**
- * Calculate the total length of a path
- */
-export function calculatePathLength(path: Point[]): number {
-  let total = 0;
-  for (let i = 0; i < path.length - 1; i++) {
-    total += dist(path[i], path[i + 1]);
-  }
-  return total;
-}
 
 /**
  * Detect cable crossings between multiple paths
@@ -751,7 +596,7 @@ export function detectCableCrossings(
       // Check each segment of path1 against each segment of path2
       for (let s1 = 0; s1 < path1.points.length - 1; s1++) {
         for (let s2 = 0; s2 < path2.points.length - 1; s2++) {
-          const intersection = getSegmentIntersection(
+          const intersection = getSegmentIntersectionShared(
             path1.points[s1], path1.points[s1 + 1],
             path2.points[s2], path2.points[s2 + 1]
           );
@@ -769,3 +614,6 @@ export function detectCableCrossings(
 
   return crossings;
 }
+
+// Local import alias to avoid name collision with the re-export above
+import { getSegmentIntersection as getSegmentIntersectionShared } from '../geometry';

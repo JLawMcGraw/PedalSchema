@@ -1,7 +1,9 @@
 'use client';
 
+import { useShallow } from 'zustand/react/shallow';
 import { useMemo } from 'react';
 import { useConfigurationStore } from '@/store/configuration-store';
+import { useDerivedConfiguration } from '@/store/derived';
 import {
   generateCableList,
   generateEnhancedCableList,
@@ -10,7 +12,10 @@ import {
 } from '@/lib/engine/cables';
 
 export function CableListPanel() {
-  const { cables, placedPedals, pedalsById, useEffectsLoop, amp } = useConfigurationStore();
+  const { placedPedals, pedalsById, useEffectsLoop, amp } = useConfigurationStore(
+    useShallow((s) => ({ placedPedals: s.placedPedals, pedalsById: s.pedalsById, useEffectsLoop: s.useEffectsLoop, amp: s.amp }))
+  );
+  const { cables } = useDerivedConfiguration((d) => ({ cables: d.cables }));
 
   // Transform cables to CableConnection format
   const cableConnections = useMemo(() => {
