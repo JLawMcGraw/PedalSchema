@@ -60,6 +60,12 @@ async function main() {
       await page.locator('button[role="switch"]').first().click();
       await page.waitForTimeout(1500);
       console.log('toggled Effects Loop via UI');
+      if (process.env.TOGGLE_4CM) {
+        // Switches: [0] Effects Loop, [1] Modulation, [2] 4-Cable Method
+        await page.locator('button[role="switch"]').nth(2).click();
+        await page.waitForTimeout(1500);
+        console.log('toggled 4-Cable Method via UI');
+      }
     }
 
     if (process.env.REPRO_FXLOOP) {

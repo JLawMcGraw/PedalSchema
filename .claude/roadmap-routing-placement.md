@@ -57,7 +57,23 @@ cover. The settings space is combinatorial; the tests are anecdotal.
 
 ---
 
-## Phase 2 — Topology-driven placement (single source of truth for signal flow)
+## Phase 2 — Topology-driven placement ✅ DONE (2026-07-16)
+
+Shipped: `src/lib/engine/topology/` (deriveSignalTopology + segment model).
+calculateCables became a thin topology walk (1280→618 lines; characterized
+90/90 identical before the swap, then deleted the legacy paths + duplicated
+4CM lists). routing-cost walks the same topology (its private 4CM block and
+location splits deleted; it now also scores NS-2 pedal loops, which it
+previously couldn't see). The placer is segment-driven: amp clusters first
+(row nearest their jacks, packed at the amp, corridor-inflated), then the
+primary chain (hub INLINE with a fixed 0.5" pad on both sides - four jacks
+of corridor demand), then hub-anchored clusters (right-aligned to the hub,
+edge-padded). Clearances retry in tiers (0.7/0.35/0.15) when placement
+degrades on packed boards. Lane separation gained relaxation sweeps
+(re-visit all cables until stable). The matrix lenient tier is GONE -
+all 66 scenarios strict, 91 tests total. Live 4CM verified on the user's
+board (NS-2 hub, 10 cables, 0 overlaps, 0 invalid).
+
 
 **Problem**: `calculateCables` knows the full topology (4-cable method's four
 runs, NS-2 send/return loops), but the placer only knows two crude zones

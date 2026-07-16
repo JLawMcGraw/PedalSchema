@@ -39,6 +39,7 @@ import {
   laneViolations,
   chainOrderViolations,
 } from './support/invariants';
+import { deriveSignalTopology } from '../topology';
 
 // ---------------------------------------------------------------------------
 // Scenario generation
@@ -135,12 +136,10 @@ function buildScenario(combo: Combo): Scenario | null {
 }
 
 /**
- * Combos with knowingly-naive PLACEMENT until Phase 2 (topology-driven
- * placement) lands: the placer doesn't understand 4-cable-method or NS-2
- * pedal-loop topology yet, so their layouts may force invalid cables or
- * lane crowding. Flip these to strict as Phase 2 completes.
+ * Phase 2 (topology-driven placement) flipped every combo to STRICT:
+ * the placer understands 4-cable-method and NS-2 pedal-loop topology.
  */
-const isLenient = (f: ScenarioFlags): boolean => f.use4CableMethod || f.ns2UseLoop;
+const isLenient = (_f: ScenarioFlags): boolean => false;
 
 // ---------------------------------------------------------------------------
 // Snapshots for determinism/idempotence comparison
@@ -213,9 +212,19 @@ describe(`configuration matrix (${scenarios.length} scenarios)`, () => {
         // 3. Lane separation between different cables
         expect(laneViolations(r1.derived.routedCables)).toEqual([]);
 
-        // 4. Physical chain order per segment
+        // 4. Physical chain order per topology chain
+        const topology = deriveSignalTopology(
+          r1.pedals, scenario.pedalsById, scenario.amp,
+          combo.flags.useEffectsLoop, combo.flags.use4CableMethod,
+          {
+            useLoopPedals: true,
+            use4CableMethod: combo.flags.use4CableMethod,
+            useEffectsLoop: combo.flags.useEffectsLoop,
+            pedalConfigs: [],
+          }
+        );
         expect(
-          chainOrderViolations(r1.pedals, scenario.pedalsById, combo.flags.useEffectsLoop)
+          chainOrderViolations(topology, r1.pedals, scenario.pedalsById)
         ).toEqual([]);
       }
 

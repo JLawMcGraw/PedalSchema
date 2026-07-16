@@ -9,6 +9,7 @@ import type { Board, Pedal, PlacedPedal } from '@/types';
 import type { Point, Box } from '../../geometry';
 import type { RoutedCable } from '../../cables/route-cables';
 import { generateObstacles } from '../../obstacles';
+import { primaryChain, type SignalTopology } from '../../topology';
 import { SCALE } from './fixtures';
 
 /**
@@ -165,16 +166,19 @@ export function placementViolations(
 }
 
 /**
- * Physical chain order per segment:
- * - front chain: x-centers strictly decreasing (right-to-left) WITHIN each row
- * - loop chain: same, and the cluster packed near the amp-side edge
+ * Physical chain order per topology chain:
+ * - every chain (primary run and each cluster segment) reads right-to-left
+ *   WITHIN a row (row transitions exempt)
+ * - amp-side cluster segments pack against the amp edge
+ * - hub-anchored clusters (NS-2 loop members) sit near their hub
  */
 export function chainOrderViolations(
+  topology: SignalTopology,
   placedPedals: PlacedPedal[],
-  pedalsById: Record<string, Pedal>,
-  useEffectsLoop: boolean
+  pedalsById: Record<string, Pedal>
 ): string[] {
   const violations: string[] = [];
+  const byId = new Map(placedPedals.map((p) => [p.id, p]));
 
   const centerX = (p: PlacedPedal) => {
     const pedal = pedalsById[p.pedalId];
@@ -183,34 +187,53 @@ export function chainOrderViolations(
   };
 
   const checkRowMonotonic = (chain: PlacedPedal[], name: string) => {
-    const sorted = [...chain].sort((a, b) => a.chainPosition - b.chainPosition);
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const a = sorted[i];
-      const b = sorted[i + 1];
+    for (let i = 0; i < chain.length - 1; i++) {
+      const a = byId.get(chain[i].id);
+      const b = byId.get(chain[i + 1].id);
+      if (!a || !b) continue;
       if (Math.abs(a.yInches - b.yInches) > 1) continue; // row transition - exempt
       if (centerX(b) >= centerX(a)) {
         violations.push(
-          `${name}: chain ${a.chainPosition}→${b.chainPosition} flows left-to-right within a row ` +
+          `${name}: ${a.id}→${b.id} flows left-to-right within a row ` +
           `(x ${centerX(a).toFixed(2)} → ${centerX(b).toFixed(2)})`
         );
       }
     }
   };
 
-  const front = useEffectsLoop
-    ? placedPedals.filter((p) => p.location !== 'effects_loop')
-    : placedPedals;
-  const loop = useEffectsLoop
-    ? placedPedals.filter((p) => p.location === 'effects_loop')
-    : [];
+  checkRowMonotonic(primaryChain(topology).map((p) => byId.get(p.id) ?? p), 'primary');
 
-  checkRowMonotonic(front, 'front');
-  checkRowMonotonic(loop, 'loop');
+  for (const segment of topology.segments) {
+    const inPrimary =
+      segment.id === 'front' || segment.id === 'before-hub' ||
+      (topology.mode === '4cm' && segment.id === 'hub-loop') ||
+      (topology.mode === 'pedal-loop' && segment.id === 'after-hub');
+    if (inPrimary || segment.pedals.length === 0) continue;
 
-  if (loop.length > 0) {
-    const minLoopX = Math.min(...loop.map((p) => p.xInches));
-    if (minLoopX > 0.75) {
-      violations.push(`loop cluster not packed at amp side (leftmost x=${minLoopX.toFixed(2)})`);
+    checkRowMonotonic(segment.pedals.map((p) => byId.get(p.id) ?? p), segment.id);
+
+    // Amp-side clusters pack against the amp edge
+    if (segment.id === 'amp-loop') {
+      const minX = Math.min(...segment.pedals.map((p) => (byId.get(p.id) ?? p).xInches));
+      if (minX > 0.75) {
+        violations.push(`amp-loop cluster not packed at amp side (leftmost x=${minX.toFixed(2)})`);
+      }
+    }
+
+    // Hub clusters stay near the hub (within a couple pedal-widths)
+    if (topology.mode === 'pedal-loop' && segment.id === 'hub-loop' && topology.hub) {
+      const hub = byId.get(topology.hub.id);
+      if (hub) {
+        for (const member of segment.pedals) {
+          const m = byId.get(member.id) ?? member;
+          const dx = Math.abs(m.xInches - hub.xInches);
+          if (dx > 8) {
+            violations.push(
+              `hub-loop member ${member.id} far from hub (dx=${dx.toFixed(2)}")`
+            );
+          }
+        }
+      }
     }
   }
 

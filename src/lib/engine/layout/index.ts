@@ -1,8 +1,9 @@
-import type { Board, Pedal, PlacedPedal, RoutingConfig, JointOptimizationResult, PedalPlacement, SwappableGroup } from '@/types';
+import type { Amp, Board, Pedal, PlacedPedal, RoutingConfig, JointOptimizationResult, PedalPlacement, SwappableGroup } from '@/types';
+import { deriveSignalTopology, primaryChain, ampClusters, hubClusters } from '../topology';
 import { calculateRoutingCost } from './routing-cost';
 import { identifySwappableGroups } from '../signal-chain';
 import { COLLISION_SPACING } from '../collision';
-import { AMP_RETURN_Y_FRACTION, AMP_SEND_Y_FRACTION } from '../cables/endpoints';
+import { getExternalEndpointInches } from '../cables/endpoints';
 
 interface PlacedBox {
   x: number;
@@ -12,15 +13,18 @@ interface PlacedBox {
 }
 
 /**
- * Calculate greedy initial placement for pedals using SNAKE PATTERN.
- * Signal flows right-to-left: Guitar (right) → Pedals → Amp (left)
+ * Greedy placement driven by the signal TOPOLOGY (see ../topology).
  *
- * Snake pattern minimizes cable length between rows:
- * - Row 1 (front/bottom): Right → Left
- * - Row 2 (back/top): Left → Right (continues from where row 1 ended)
- * - Row 3: Right → Left (continues from where row 2 ended)
- *
- * This ensures pedals that are adjacent in the chain are also adjacent physically.
+ * Placement groups, in order:
+ * 1. AMP-SIDE CLUSTERS (amp effects loop, 4CM after-hub run): packed
+ *    right-to-left against the amp edge on the row nearest their amp
+ *    jacks, then inflated so their cables get a corridor.
+ * 2. PRIMARY CHAIN (guitar -> ... -> amp input, hub pedal inline): placed
+ *    right-to-left, row by row; overflow packs the remaining chain against
+ *    the amp side (strip-aware around clusters already placed).
+ * 3. HUB CLUSTERS (NS-2 pedal-loop members): packed on the row adjacent to
+ *    the hub, right-aligned to the hub so send (right jack) and return
+ *    (left jack) runs stay short.
  */
 export function calculateGreedyPlacement(
   placedPedals: PlacedPedal[],
@@ -32,401 +36,278 @@ export function calculateGreedyPlacement(
     return [];
   }
 
-  // Split pedals by location for zone-based placement
-  // IMPORTANT: When effects loop is disabled, ALL pedals are front-of-amp regardless of location property
   const useEffectsLoop = routingConfig?.useEffectsLoop ?? false;
-  const frontOfAmpPedals = useEffectsLoop
-    ? placedPedals.filter(p => p.location !== 'effects_loop')
-    : [...placedPedals]; // ALL pedals when effects loop is disabled
-  const effectsLoopPedals = useEffectsLoop
-    ? placedPedals.filter(p => p.location === 'effects_loop')
-    : [];
+  const use4CableMethod = routingConfig?.use4CableMethod ?? false;
+  const pseudoAmp = useEffectsLoop ? ({ hasEffectsLoop: true } as Amp) : null;
+  const topology = deriveSignalTopology(
+    placedPedals, pedalsById, pseudoAmp, useEffectsLoop, use4CableMethod, routingConfig
+  );
 
-  // Get rail Y positions (sorted front to back - higher Y values first)
+  const dims = (placed: PlacedPedal): { width: number; depth: number } => {
+    const pedal = pedalsById[placed.pedalId] || placed.pedal;
+    const rot = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
+    return {
+      width: pedal ? (rot ? pedal.depthInches : pedal.widthInches) : 2.87,
+      depth: pedal ? (rot ? pedal.widthInches : pedal.depthInches) : 5.12,
+    };
+  };
+
+  // --- Rows (clamp-aware: see Phase 1 findings) ------------------------------
   const rails = [...(board.rails || [])].sort((a, b) => b.positionFromBackInches - a.positionFromBackInches);
   let rowYPositions = rails.length > 0
     ? rails.map(r => r.positionFromBackInches)
-    : [board.depthInches * 0.55, board.depthInches * 0.05]; // Default: 2 rows (front, back)
+    : [board.depthInches * 0.55, board.depthInches * 0.05];
 
-  // If rails are too close for the largest pedal depth, fall back to safe row positions.
-  const maxDepth = placedPedals.reduce((max, placed) => {
-    const pedal = pedalsById[placed.pedalId] || placed.pedal;
-    if (!pedal) return max;
-    const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-    const depth = isRotated ? pedal.widthInches : pedal.depthInches;
-    return Math.max(max, depth);
-  }, 0);
+  const maxDepth = placedPedals.reduce((max, placed) => Math.max(max, dims(placed).depth), 0);
 
   if (rowYPositions.length >= 2 && maxDepth > 0) {
-    // Evaluate the gap between the rows as pedals would actually OCCUPY
-    // them: rows get clamped so pedals fit the board depth, which can
-    // silently shrink the real gap (e.g., rail 8 on a 12.5" board clamps to
-    // 7.42 for 5.08" pedals, leaving 0.34" to a row at 2). Fall back to safe
-    // rows whenever any adjacent pair of occupied bands violates spacing.
     const clamped = rowYPositions
       .map((r) => Math.max(0, Math.min(r, board.depthInches - maxDepth)))
       .sort((a, b) => b - a);
     let tooClose = false;
     for (let i = 0; i < clamped.length - 1; i++) {
-      const bandGap = clamped[i] - (clamped[i + 1] + maxDepth);
-      if (bandGap < COLLISION_SPACING - 1e-6) {
+      if (clamped[i] - (clamped[i + 1] + maxDepth) < COLLISION_SPACING - 1e-6) {
         tooClose = true;
         break;
       }
     }
     if (tooClose) {
-      rowYPositions = [
-        Math.max(0, board.depthInches - maxDepth),
-        0,
-      ];
+      rowYPositions = [Math.max(0, board.depthInches - maxDepth), 0];
       console.warn('[GREEDY] Rails too close for pedal depth; using safe row positions');
     }
   }
 
   const placements: PedalPlacement[] = [];
   const placedBoxes: PlacedBox[] = [];
-
-  // Debug logging
   const DEBUG_PLACEMENT = typeof window !== 'undefined' && new URLSearchParams(window.location?.search || '').has('debug');
 
-  // Calculate zone boundaries if effects loop is active
-  // Use dynamic sizing so loop zone can actually fit its pedals
-  let ampZoneBoundary = 0;
-  let zonesOverlap = false;
-  if (useEffectsLoop && effectsLoopPedals.length > 0) {
-    const boardWidth = board.widthInches;
-    const getWidth = (placed: PlacedPedal): number => {
-      const pedal = pedalsById[placed.pedalId] || placed.pedal;
-      const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-      return pedal ? (isRotated ? pedal.depthInches : pedal.widthInches) : 2.87;
+  // Set by placePackedChain when it has to fall back to order-relaxed or
+  // anywhere-on-board placement - the signal to retry with less corridor
+  let placementDegraded = false;
+
+  /**
+   * Place a chain of pedals right-to-left as one packed run:
+   * the FIRST pedal at (packStart + total - firstWidth), subsequent pedals
+   * tight to its left, the LAST pedal ending near packMinX. Rows are tried
+   * in rowOrder; overflow re-packs the remainder strip-aware.
+   */
+  // The hub pedal (NS-2 style / 4CM wiring center) has up to four jacks
+  // pulling cable runs into the corridors on BOTH its sides - it places
+  // with extra padding so those corridors fit multiple lanes.
+  // The hub pad does NOT degrade with the clearance tier: its four jacks
+  // guarantee up to three cable runs per side, the highest corridor demand
+  // on the board.
+  const hubPad = (placed: PlacedPedal): number =>
+    topology.hub && placed.id === topology.hub.id ? 0.5 : 0;
+
+  const placePackedChain = (
+    chain: PlacedPedal[],
+    rowOrder: number[],
+    packMinX: number,
+    edgePad: number = 0
+  ): void => {
+    if (chain.length === 0) return;
+
+    // Edge pedals of a padded chain (cluster) carry corridor clearance on
+    // both sides; the hub pedal always does (four jacks worth of cables)
+    const padOf = (placed: PlacedPedal): number => {
+      const isEdge = placed.id === chain[0].id || placed.id === chain[chain.length - 1].id;
+      return Math.max(hubPad(placed), isEdge ? edgePad : 0);
     };
+    const effWidth = (placed: PlacedPedal): number => dims(placed).width + 2 * padOf(placed);
 
-    const frontWidths = frontOfAmpPedals.map(getWidth);
-    const loopWidths = effectsLoopPedals.map(getWidth);
-    const maxFrontWidth = frontWidths.length > 0 ? Math.max(...frontWidths) : 0;
-    const maxLoopWidth = loopWidths.length > 0 ? Math.max(...loopWidths) : 0;
-
-    const frontRequired = frontWidths.reduce((sum, w) => sum + w, 0) + Math.max(0, frontWidths.length - 1) * COLLISION_SPACING;
-    const loopRequired = loopWidths.reduce((sum, w) => sum + w, 0) + Math.max(0, loopWidths.length - 1) * COLLISION_SPACING;
-
-    const minFront = Math.max(maxFrontWidth + COLLISION_SPACING, boardWidth * 0.3);
-    const minLoop = Math.max(maxLoopWidth + COLLISION_SPACING, boardWidth * 0.3);
-
-    const maxLoop = Math.max(0, boardWidth - minFront);
-    if (maxLoop < minLoop) {
-      zonesOverlap = true;
-      ampZoneBoundary = Math.max(minLoop, boardWidth * 0.35);
-      ampZoneBoundary = Math.min(ampZoneBoundary, boardWidth);
-      console.warn('[GREEDY] FX loop zone overlaps front zone due to limited width');
-    } else {
-      ampZoneBoundary = Math.max(minLoop, Math.min(loopRequired, maxLoop));
-    }
-
-    const frontZoneWidth = boardWidth - ampZoneBoundary;
-    if (frontRequired > frontZoneWidth + 0.01 || loopRequired > ampZoneBoundary + 0.01) {
-      zonesOverlap = true;
-      console.warn('[GREEDY] FX loop/front zone overlap enabled to fit pedal widths');
-    }
-
-    if (DEBUG_PLACEMENT) {
-      console.log('[GREEDY] Zone sizing', {
-        boardWidth,
-        frontRequired,
-        loopRequired,
-        minFront,
-        minLoop,
-        ampZoneBoundary,
-        zonesOverlap,
-      });
-    }
-  }
-
-  // Place front-of-amp pedals using SNAKE PATTERN
-  const frontSorted = [...frontOfAmpPedals].sort((a, b) => a.chainPosition - b.chainPosition);
-  const frontZoneMin = zonesOverlap ? 0 : ampZoneBoundary;
-  const loopZoneMax = zonesOverlap ? board.widthInches : ampZoneBoundary;
-
-  if (DEBUG_PLACEMENT) {
-    console.log('[GREEDY] Starting snake placement');
-    console.log('[GREEDY] Row Y positions:', rowYPositions);
-    console.log('[GREEDY] Pedals to place:', frontSorted.map(p => `${p.chainPosition}:${pedalsById[p.pedalId]?.name || 'Unknown'}`));
-  }
-
-  // === PLACE EFFECTS LOOP PEDALS FIRST ===
-  // They get priority on the amp-side corner of the row nearest the amp's
-  // send/return jacks (upper half of the amp panel), so the loop reads as a
-  // tight cluster next to SND/RTN. The front chain places afterwards and
-  // slides in around them.
-  if (effectsLoopPedals.length > 0) {
-    if (DEBUG_PLACEMENT) {
-      console.log(`[GREEDY] Placing ${effectsLoopPedals.length} effects loop pedals in zone 0-${ampZoneBoundary.toFixed(2)}`);
-    }
-    const loopSorted = [...effectsLoopPedals].sort((a, b) => a.chainPosition - b.chainPosition);
-
-    const getLoopWidth = (placed: PlacedPedal): number => {
-      const pedal = pedalsById[placed.pedalId] || placed.pedal;
-      const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-      return pedal ? (isRotated ? pedal.depthInches : pedal.widthInches) : 2.87;
-    };
-
-    // Loop pedals flow right-to-left like the front chain (inputs are on
-    // the right edge, outputs on the left; amp send/return are both at the
-    // LEFT edge). Pack the whole loop chain against the amp side so the
-    // last pedal (into amp return) lands at x=0.
-    // Returns the desired left edge for the pedal at startIdx.
-    const getLoopDepth = (placed: PlacedPedal): number => {
-      const pedal = pedalsById[placed.pedalId] || placed.pedal;
-      const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-      return pedal ? (isRotated ? pedal.widthInches : pedal.depthInches) : 5.12;
-    };
-    const packedLoopStartX = (startIdx: number, rowY: number): number => {
+    const packedStartX = (startIdx: number, rowY: number): number => {
       let total = 0;
       let depthNeeded = 0;
-      for (let j = startIdx; j < loopSorted.length; j++) {
-        total += getLoopWidth(loopSorted[j]) + (j > startIdx ? COLLISION_SPACING : 0);
-        depthNeeded = Math.max(depthNeeded, getLoopDepth(loopSorted[j]));
+      for (let j = startIdx; j < chain.length; j++) {
+        total += effWidth(chain[j]) + (j > startIdx ? COLLISION_SPACING : 0);
+        depthNeeded = Math.max(depthNeeded, dims(chain[j]).depth);
       }
-      const firstWidth = getLoopWidth(loopSorted[startIdx]);
-      const stripX = findStripStart(total, depthNeeded, rowY, placedBoxes, board, 0);
+      const firstWidth = effWidth(chain[startIdx]);
+      const stripX = findStripStart(total, depthNeeded, rowY, placedBoxes, board, packMinX);
       if (stripX !== null) {
-        return Math.min(loopZoneMax - firstWidth, stripX + total - firstWidth);
+        return stripX + total - firstWidth;
       }
-      return Math.max(0, Math.min(loopZoneMax - firstWidth, total - firstWidth));
+      return Math.min(board.widthInches - firstWidth, packMinX + total - firstWidth);
     };
 
-    // Prefer the row whose pedal centers sit closest to the send/return
-    // jacks (upper half of the board edge)
-    const maxLoopDepth = loopSorted.reduce((max, lp) => {
-      const pedal = pedalsById[lp.pedalId] || lp.pedal;
-      const isRotated = lp.rotationDegrees === 90 || lp.rotationDegrees === 270;
-      return Math.max(max, pedal ? (isRotated ? pedal.widthInches : pedal.depthInches) : 5.12);
-    }, 0);
-    const loopAnchorY = board.depthInches * (AMP_RETURN_Y_FRACTION + AMP_SEND_Y_FRACTION) / 2;
-    const loopRowOrder = rowYPositions
-      .map((rowY, index) => ({ index, dist: Math.abs(Math.min(rowY, board.depthInches - maxLoopDepth) + maxLoopDepth / 2 - loopAnchorY) }))
-      .sort((a, b) => a.dist - b.dist)
-      .map((r) => r.index);
+    let rowPos = 0;
+    let cursorX = packedStartX(0, rowYPositions[rowOrder[0]] ?? board.depthInches * 0.5);
 
-    let loopRowPos = 0; // position within loopRowOrder
-    let loopX = packedLoopStartX(0, rowYPositions[loopRowOrder[0]] ?? board.depthInches * 0.5);
+    for (let idx = 0; idx < chain.length; idx++) {
+      const placed = chain[idx];
+      const { depth } = dims(placed);
+      const pad = padOf(placed);
+      const width = effWidth(placed); // padded footprint for hubs/cluster edges
 
-    for (let loopIdx = 0; loopIdx < loopSorted.length; loopIdx++) {
-      const placed = loopSorted[loopIdx];
-      const pedal = pedalsById[placed.pedalId] || placed.pedal;
-      const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-      const width = pedal ? (isRotated ? pedal.depthInches : pedal.widthInches) : 2.87;
-      const depth = pedal ? (isRotated ? pedal.widthInches : pedal.depthInches) : 5.12;
-
-      const loopRowY = rowYPositions[loopRowOrder[loopRowPos]] ?? board.depthInches * 0.5;
+      const rowY = rowYPositions[rowOrder[rowPos]] ?? board.depthInches * 0.5;
       let spot = findValidPositionInRowStartingFrom(
-        width, depth, placedBoxes, board, loopRowY,
-        0, loopZoneMax,
-        loopIdx === 0 ? loopX : loopX - width,
+        width, depth, placedBoxes, board, rowY,
+        packMinX, board.widthInches,
+        idx === 0 ? cursorX : cursorX - width,
         'right-to-left',
         false
       );
 
-      if (!spot && loopRowPos < loopRowOrder.length - 1) {
-        loopRowPos++;
-        const nextLoopRowY = rowYPositions[loopRowOrder[loopRowPos]] ?? board.depthInches * 0.5;
-        loopX = packedLoopStartX(loopIdx, nextLoopRowY);
+      if (!spot && rowPos < rowOrder.length - 1) {
+        rowPos++;
+        const nextRowY = rowYPositions[rowOrder[rowPos]] ?? board.depthInches * 0.5;
+        cursorX = packedStartX(idx, nextRowY);
         spot = findValidPositionInRowStartingFrom(
-          width, depth, placedBoxes, board, nextLoopRowY,
-          0, loopZoneMax,
-          loopX,
+          width, depth, placedBoxes, board, nextRowY,
+          packMinX, board.widthInches,
+          cursorX,
           'right-to-left',
-          false
+          true // packed spot may be held by a cluster - slide right of it
         );
       }
 
-      // Relax order constraint with a warning if we still can't place
       if (!spot) {
-        console.warn(`[GREEDY] FX loop order relaxed for ${pedal?.name || placed.id} - no space without breaking chain order`);
-        for (let tryRowPos = loopRowPos; tryRowPos < loopRowOrder.length && !spot; tryRowPos++) {
-          const tryRowY = rowYPositions[loopRowOrder[tryRowPos]] ?? board.depthInches * 0.5;
+        placementDegraded = true;
+        console.warn(`[GREEDY] Order relaxed for ${placed.id} - no space without breaking chain order`);
+        for (let tryPos = rowPos; tryPos < rowOrder.length && !spot; tryPos++) {
+          const tryRowY = rowYPositions[rowOrder[tryPos]] ?? board.depthInches * 0.5;
           spot = findValidPositionInRowStartingFrom(
             width, depth, placedBoxes, board, tryRowY,
-            0, loopZoneMax,
-            packedLoopStartX(loopIdx, tryRowY),
+            packMinX, board.widthInches,
+            packedStartX(idx, tryRowY),
             'right-to-left',
             true
           );
         }
       }
 
-      // Ultimate fallback if still no space
       if (!spot) {
-        console.warn(`[GREEDY] FX loop fallback placement for ${pedal?.name || placed.id} - no valid spot in zone`);
+        placementDegraded = true;
+        console.warn(`[GREEDY] Fallback placement for ${placed.id} - no valid spot`);
         spot = findValidPositionInZone(
           width, depth, placedBoxes, board, rowYPositions,
-          0, loopZoneMax,
+          0, board.widthInches,
           'right-to-left'
         );
       }
 
       if (DEBUG_PLACEMENT) {
-        console.log(`[GREEDY] FX Loop: ${placed.chainPosition}:${pedal?.name} at (${spot.x.toFixed(2)}, ${spot.y.toFixed(2)})`);
+        console.log(`[GREEDY] Placed ${placed.chainPosition}:${placed.id} at (${(spot.x + pad).toFixed(2)}, ${spot.y.toFixed(2)})`);
       }
-
-      placements.push({ id: placed.id, x: spot.x, y: spot.y });
+      // The recorded position excludes the pad; the collision box keeps it
+      // so neighbors leave the corridor free
+      placements.push({ id: placed.id, x: spot.x + pad, y: spot.y });
       placedBoxes.push({ x: spot.x, y: spot.y, width, height: depth });
-
-      // Update cursor to preserve right-to-left ordering
-      loopX = spot.x - COLLISION_SPACING;
+      cursorX = spot.x - COLLISION_SPACING;
     }
+  };
 
-    // Inflate the loop cluster's boxes before the front chain places around
-    // it: the loop's send/return cables need a corridor next to the cluster
-    // (both jacks often face the adjacent front pedal), and the minimum
-    // pedal spacing (0.5") only fits ONE cable lane. The extra 0.7" gives
-    // the gap room for up to three separated lanes (loop send/return plus a
-    // front chain hop routinely share this corridor). Recorded placements
-    // keep the real coordinates - this only affects collision checks.
-    const LOOP_CABLE_CLEARANCE = 0.7;
-    for (let b = 0; b < placedBoxes.length; b++) {
-      placedBoxes[b] = {
-        x: placedBoxes[b].x - LOOP_CABLE_CLEARANCE,
-        y: placedBoxes[b].y - LOOP_CABLE_CLEARANCE,
-        width: placedBoxes[b].width + LOOP_CABLE_CLEARANCE * 2,
-        height: placedBoxes[b].height + LOOP_CABLE_CLEARANCE * 2,
-      };
+  /** Rows ordered by pedal-center proximity to an anchor Y */
+  const rowsNearestY = (anchorY: number, clusterDepth: number): number[] =>
+    rowYPositions
+      .map((rowY, index) => ({
+        index,
+        dist: Math.abs(Math.min(rowY, board.depthInches - clusterDepth) + clusterDepth / 2 - anchorY),
+      }))
+      .sort((a, b) => a.dist - b.dist)
+      .map((r) => r.index);
+
+  /**
+   * Cables around a cluster need a corridor: the minimum pedal spacing
+   * (0.5") fits one lane; an extra 0.7" fits up to three (send/return plus
+   * a passing chain hop routinely share it). Boards packed near capacity
+   * can't afford the luxury - placement retries with tighter corridors
+   * whenever a chain had to degrade (order relaxed / fallback spots).
+   */
+  const CLEARANCE_TIERS = [0.7, 0.35, 0.15];
+  let CLUSTER_CABLE_CLEARANCE = CLEARANCE_TIERS[0];
+
+  const attemptPlacement = (): void => {
+  // === 1. AMP-SIDE CLUSTERS ===================================================
+  // Packed against the amp edge, side by side, on the row nearest their amp
+  // jacks. Their boxes are then inflated so cables get corridors.
+  const clusterBoxIndices: number[] = [];
+  let clusterPackMinX = 0;
+
+  for (const cluster of ampClusters(topology)) {
+    if (cluster.pedals.length === 0) continue;
+
+    const clusterDepth = cluster.pedals.reduce((max, p) => Math.max(max, dims(p).depth), 0);
+    // Row preference: average anchor height. Pedal anchors (the hub) have
+    // no position yet - they contribute the amp-side default (0.35 x depth,
+    // between the send and return jacks) so a hub-bound cluster still
+    // gravitates to the amp's upper row.
+    const anchorYs = [cluster.from, cluster.to].map((anchor) =>
+      anchor.kind === 'external'
+        ? getExternalEndpointInches(anchor.type, board, topology.effectsLoopEnabled).y
+        : board.depthInches * 0.35
+    );
+    const anchorY = anchorYs.reduce((a, b) => a + b, 0) / anchorYs.length;
+
+    const boxCountBefore = placedBoxes.length;
+    placePackedChain(
+      [...cluster.pedals],
+      rowsNearestY(anchorY, clusterDepth),
+      clusterPackMinX
+    );
+    for (let i = boxCountBefore; i < placedBoxes.length; i++) {
+      clusterBoxIndices.push(i);
+      clusterPackMinX = Math.max(clusterPackMinX, placedBoxes[i].x + placedBoxes[i].width + COLLISION_SPACING + CLUSTER_CABLE_CLEARANCE);
     }
   }
 
-  // Track current row and cursor position
-  // Always place right-to-left so later pedals stay closer to the amp (left)
-  let currentRowIndex = 0;
-  let currentX = board.widthInches;
+  // Inflate cluster boxes before the primary chain places around them
+  for (const i of clusterBoxIndices) {
+    placedBoxes[i] = {
+      x: placedBoxes[i].x - CLUSTER_CABLE_CLEARANCE,
+      y: placedBoxes[i].y - CLUSTER_CABLE_CLEARANCE,
+      width: placedBoxes[i].width + CLUSTER_CABLE_CLEARANCE * 2,
+      height: placedBoxes[i].height + CLUSTER_CABLE_CLEARANCE * 2,
+    };
+  }
 
-  const getFrontWidth = (placed: PlacedPedal): number => {
-    const pedal = pedalsById[placed.pedalId] || placed.pedal;
-    const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-    return pedal ? (isRotated ? pedal.depthInches : pedal.widthInches) : 2.87;
-  };
-  const getFrontDepth = (placed: PlacedPedal): number => {
-    const pedal = pedalsById[placed.pedalId] || placed.pedal;
-    const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-    return pedal ? (isRotated ? pedal.widthInches : pedal.depthInches) : 5.12;
-  };
+  // === 2. PRIMARY CHAIN =======================================================
+  // Rows in rail order (front row first), the classic right-to-left run
+  placePackedChain(
+    primaryChain(topology),
+    rowYPositions.map((_, i) => i),
+    0
+  );
 
-  // When overflowing to a new row, the remaining chain pedals should pack
-  // against the LEFT (amp-side) edge of the row in right-to-left chain
-  // order, so the last pedal of the chain ends up closest to the amp.
-  // Strip-aware: existing boxes on the row (e.g., the FX loop cluster)
-  // shift the pack start so the whole remaining chain still fits as one
-  // contiguous run instead of scattering.
-  // Returns the desired left edge for the pedal at startIdx.
-  const packedOverflowStartX = (startIdx: number, rowY: number): number => {
+  // === 3. HUB CLUSTERS (NS-2 pedal-loop members) ==============================
+  for (const cluster of hubClusters(topology)) {
+    if (cluster.pedals.length === 0 || !topology.hub) continue;
+
+    const hubPlacement = placements.find((p) => p.id === topology.hub!.id);
+    if (!hubPlacement) continue;
+    const hubDims = dims(topology.hub);
+    const hubRight = hubPlacement.x + hubDims.width;
+
+    const clusterDepth = cluster.pedals.reduce((max, p) => Math.max(max, dims(p).depth), 0);
     let total = 0;
-    let depthNeeded = 0;
-    for (let j = startIdx; j < frontSorted.length; j++) {
-      total += getFrontWidth(frontSorted[j]) + (j > startIdx ? COLLISION_SPACING : 0);
-      depthNeeded = Math.max(depthNeeded, getFrontDepth(frontSorted[j]));
-    }
-    const firstWidth = getFrontWidth(frontSorted[startIdx]);
-    const stripX = findStripStart(total, depthNeeded, rowY, placedBoxes, board, frontZoneMin);
-    if (stripX !== null) {
-      return stripX + total - firstWidth;
-    }
-    return Math.min(board.widthInches - firstWidth, frontZoneMin + total - firstWidth);
+    cluster.pedals.forEach((p, j) => {
+      total += dims(p).width + (j > 0 ? COLLISION_SPACING : 0);
+    });
+
+    // Rows nearest the hub's own row, EXCLUDING the hub's row first choice
+    // would be ideal, but simply sorting by proximity to the hub row and
+    // letting collision checks resolve works: the hub occupies its own row.
+    const hubRowCenter = hubPlacement.y + hubDims.depth / 2;
+    const rowOrder = rowsNearestY(hubRowCenter, clusterDepth);
+
+    // Right-align the member strip to the hub's right edge (send jack side):
+    // first member above the send jack, last member ends near the return
+    const packMinX = Math.max(0, Math.min(hubRight - total, board.widthInches - total));
+    placePackedChain([...cluster.pedals], rowOrder, packMinX, CLUSTER_CABLE_CLEARANCE / 2);
+  }
   };
 
-  for (let pedalIdx = 0; pedalIdx < frontSorted.length; pedalIdx++) {
-    const placed = frontSorted[pedalIdx];
-    const pedal = pedalsById[placed.pedalId] || placed.pedal;
-    const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-    const width = pedal ? (isRotated ? pedal.depthInches : pedal.widthInches) : 2.87;
-    const depth = pedal ? (isRotated ? pedal.widthInches : pedal.depthInches) : 5.12;
-
-    // Try to place in current row. The desired left edge is EXACTLY tight
-    // against the previous pedal (cursor - width): the search tries it
-    // before grid-stepping, so packed rows don't leak up to 0.25" per pedal
-    // (which starved the last pedal of its slot on full rows).
-    const rowY = rowYPositions[currentRowIndex] ?? board.depthInches * 0.5;
-    let spot = findValidPositionInRowStartingFrom(
-      width, depth, placedBoxes, board,
-      rowY,
-      frontZoneMin, board.widthInches,
-      currentX - width,
-      'right-to-left',
-      false
-    );
-
-    // If no space in current row, move to next row: pack the remaining
-    // chain against the amp-side edge so the LAST pedal lands closest to
-    // the amp (e.g., [.., BF-3, RC-1] -> BF-3 right of RC-1, RC-1 at x=0)
-    if (!spot && currentRowIndex < rowYPositions.length - 1) {
-      currentRowIndex++;
-      const nextRowY = rowYPositions[currentRowIndex] ?? board.depthInches * 0.5;
-      currentX = packedOverflowStartX(pedalIdx, nextRowY);
-      if (DEBUG_PLACEMENT) {
-        console.log(`[GREEDY] Moving to row ${currentRowIndex}, packed startX=${currentX.toFixed(2)}`);
-      }
-      spot = findValidPositionInRowStartingFrom(
-        width, depth, placedBoxes, board,
-        nextRowY,
-        frontZoneMin, board.widthInches,
-        currentX,
-        'right-to-left',
-        true // packed spot may be held by a loop pedal - slide right of it
-      );
+  for (let tier = 0; tier < CLEARANCE_TIERS.length; tier++) {
+    CLUSTER_CABLE_CLEARANCE = CLEARANCE_TIERS[tier];
+    placementDegraded = false;
+    placements.length = 0;
+    placedBoxes.length = 0;
+    attemptPlacement();
+    if (!placementDegraded) break;
+    if (tier < CLEARANCE_TIERS.length - 1 && DEBUG_PLACEMENT) {
+      console.log(`[GREEDY] Placement degraded at clearance ${CLUSTER_CABLE_CLEARANCE}, retrying tighter`);
     }
-
-    // If still no space, try remaining rows
-    if (!spot) {
-      for (let tryRowIdx = currentRowIndex + 1; tryRowIdx < rowYPositions.length && !spot; tryRowIdx++) {
-        currentRowIndex = tryRowIdx;
-        const tryRowY = rowYPositions[tryRowIdx] ?? board.depthInches * 0.5;
-        currentX = packedOverflowStartX(pedalIdx, tryRowY);
-        if (DEBUG_PLACEMENT) {
-          console.log(`[GREEDY] Trying row ${tryRowIdx}`);
-        }
-        spot = findValidPositionInRowStartingFrom(
-          width, depth, placedBoxes, board,
-          tryRowY,
-          frontZoneMin, board.widthInches,
-          currentX,
-          'right-to-left',
-          true
-        );
-      }
-    }
-
-    // Relax order constraint with a warning if we still can't place
-    if (!spot) {
-      console.warn(`[GREEDY] Order relaxed for ${pedal?.name || placed.id} - no space without breaking chain order`);
-      for (let tryRowIdx = currentRowIndex; tryRowIdx < rowYPositions.length && !spot; tryRowIdx++) {
-        const tryRowY = rowYPositions[tryRowIdx] ?? board.depthInches * 0.5;
-        spot = findValidPositionInRowStartingFrom(
-          width, depth, placedBoxes, board,
-          tryRowY,
-          frontZoneMin, board.widthInches,
-          currentX,
-          'right-to-left',
-          true
-        );
-      }
-    }
-
-    // Ultimate fallback if still no space
-    if (!spot) {
-      console.warn(`[GREEDY] Fallback placement for ${pedal?.name || placed.id} - no valid spot in zone`);
-      spot = findValidPositionInZone(
-        width, depth, placedBoxes, board, rowYPositions,
-        frontZoneMin, board.widthInches,
-        'right-to-left'
-      );
-    }
-
-    if (DEBUG_PLACEMENT) {
-      console.log(`[GREEDY] Placed ${placed.chainPosition}:${pedal?.name} at (${spot.x.toFixed(2)}, ${spot.y.toFixed(2)}) row=${currentRowIndex}`);
-    }
-
-    placements.push({ id: placed.id, x: spot.x, y: spot.y });
-    placedBoxes.push({ x: spot.x, y: spot.y, width, height: depth });
-
-    // Update cursor to preserve right-to-left ordering
-    currentX = spot.x - COLLISION_SPACING;
   }
 
   return placements;
@@ -1053,7 +934,7 @@ export function calculateOptimalLayoutJoint(
 
     const placements = calculateGreedyPlacement(reordered, pedalsById, board, routingConfig);
     const cost = calculateRoutingCost(
-      placements, reordered, pedalsById, board, undefined, useEffectsLoop, use4CableMethod
+      placements, reordered, pedalsById, board, undefined, useEffectsLoop, use4CableMethod, routingConfig
     );
 
     if (cost.totalScore < bestScore) {
