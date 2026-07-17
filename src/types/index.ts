@@ -297,4 +297,9 @@ export interface JointOptimizationResult {
   chainOrder: string[];
   /** Swappable groups that were detected */
   swappableGroups: SwappableGroup[];
+  /**
+   * Optimized rotations for pedals where rotating changed jack facing
+   * (e.g., top-jack pedals). Only pedals whose rotation CHANGED are listed.
+   */
+  rotations?: Array<{ id: string; rotationDegrees: number }>;
 }

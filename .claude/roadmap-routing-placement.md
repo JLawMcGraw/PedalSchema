@@ -150,7 +150,20 @@ uniform lane spacing, crossings ≤ old router); before/after screenshots.
 
 ---
 
-## Phase 4 — Jack- and rotation-aware placement search
+## Phase 4 — Jack- and rotation-aware placement search ✅ DONE (2026-07-16)
+
+Shipped: two-stage deterministic search in calculateOptimalLayoutJoint -
+chain orders (stage 1) then rotation coordinate descent {0,90,180,270} for
+pedals whose input/output sit on top/bottom edges (stage 2), capped at 200
+evaluations, strictly-better acceptance (idempotent). HARD collision guard:
+overlapping/out-of-bounds candidates score Infinity (the routing cost has
+no overlap term - shorter-but-colliding layouts would otherwise win).
+Same-side-jack corridor pad (0.35") when input+output share a LEFT/RIGHT
+edge after rotation. Rotations returned in JointOptimizationResult and
+applied by the store. Evidence: EQ-200 in the twelve fixture rotates 180
+(jacks into the row channel), total routed length 53.5in -> 44.2in (-17%).
+105 tests incl. rotation acceptance + idempotence.
+
 
 **Problem**: the placer assumes input-right/output-left; real jack data
 (incl. top-mounted) and 90° rotation are ignored as placement variables.

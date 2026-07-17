@@ -100,6 +100,28 @@ export function calculateGreedyPlacement(
   const hubPad = (placed: PlacedPedal): number =>
     topology.hub && placed.id === topology.hub.id ? 0.5 : 0;
 
+  // Pedals whose input AND output land on the SAME edge (after rotation,
+  // e.g. a rotated top-jack pedal) pull both cable runs into one gap -
+  // give that gap corridor room for two lanes.
+  const sameSideJackPad = (placed: PlacedPedal): number => {
+    const pedal = pedalsById[placed.pedalId] || placed.pedal;
+    if (!pedal?.jacks?.length) return 0;
+    const sides = ['top', 'right', 'bottom', 'left'] as const;
+    const effectiveSide = (jackType: 'input' | 'output'): string | null => {
+      const jack = pedal.jacks!.find((j) => j.jackType === jackType);
+      if (!jack) return null;
+      const steps = ((placed.rotationDegrees / 90) % 4 + 4) % 4;
+      return sides[(sides.indexOf(jack.side) + steps) % 4];
+    };
+    const input = effectiveSide('input');
+    const output = effectiveSide('output');
+    // Only left/right shared sides pull cables into a narrow SIDE gap;
+    // top/bottom shared sides feed the wide row channels, which have room
+    const sharedSideGap = input !== null && input === output &&
+      (input === 'left' || input === 'right');
+    return sharedSideGap ? 0.35 : 0;
+  };
+
   const placePackedChain = (
     chain: PlacedPedal[],
     rowOrder: number[],
@@ -112,7 +134,7 @@ export function calculateGreedyPlacement(
     // both sides; the hub pedal always does (four jacks worth of cables)
     const padOf = (placed: PlacedPedal): number => {
       const isEdge = placed.id === chain[0].id || placed.id === chain[chain.length - 1].id;
-      return Math.max(hubPad(placed), isEdge ? edgePad : 0);
+      return Math.max(hubPad(placed), sameSideJackPad(placed), isEdge ? edgePad : 0);
     };
     const effWidth = (placed: PlacedPedal): number => dims(placed).width + 2 * padOf(placed);
 
@@ -903,8 +925,26 @@ export function calculateOptimalLayoutJoint(
   const useEffectsLoop = routingConfig?.useEffectsLoop ?? false;
   const use4CableMethod = routingConfig?.use4CableMethod ?? false;
 
-  // If no swappable groups, just use greedy placement (no optimization needed)
-  if (swappableGroups.length === 0 || swappableGroups.every(g => g.pedalIds.length < 2)) {
+  const pedalById = new Map(placedPedals.map(p => [p.id, p]));
+
+  // Pedals where rotation changes jack FACING (input/output on top/bottom
+  // edges, e.g. EQ-200) - the only ones worth searching rotations for
+  const rotatableIds = placedPedals
+    .filter((p) => {
+      const pedal = pedalsById[p.pedalId] || p.pedal;
+      return pedal?.jacks?.some(
+        (j) =>
+          (j.jackType === 'input' || j.jackType === 'output') &&
+          (j.side === 'top' || j.side === 'bottom')
+      );
+    })
+    .map((p) => p.id);
+
+  const hasOrderSearch =
+    swappableGroups.length > 0 && swappableGroups.some(g => g.pedalIds.length >= 2);
+
+  // Nothing to search: single greedy placement
+  if (!hasOrderSearch && rotatableIds.length === 0) {
     const placements = calculateGreedyPlacement(placedPedals, pedalsById, board, routingConfig);
     return {
       placements,
@@ -913,41 +953,117 @@ export function calculateOptimalLayoutJoint(
     };
   }
 
-  // Deterministic topology search: enumerate chain orders within swappable
-  // groups, run the greedy placer for EACH candidate order, score with the
-  // routing cost, and keep the best. Every candidate is a coherent
-  // greedy-placed layout by construction - unlike the previous simulated
-  // annealing pass, which nudged positions independently of the placer and
-  // regularly degraded its layouts.
-  const pedalById = new Map(placedPedals.map(p => [p.id, p]));
-  const candidateOrders = enumerateChainOrders(initialChainOrder, swappableGroups, 48);
+  // Deterministic search over chain orders (within swappable groups) and
+  // pedal rotations (for jack-facing changes), scored by the routing cost.
+  // Every candidate is a coherent greedy-placed layout by construction.
+  const MAX_EVALUATIONS = 200;
+  let evaluations = 0;
 
-  let best: JointOptimizationResult | null = null;
-  let bestScore = Infinity;
-
-  for (const order of candidateOrders) {
-    // Rebuild placedPedals with this candidate's chain positions
+  const evaluate = (order: string[], rotations: Map<string, number>) => {
+    evaluations++;
     const reordered = order.map((id, index) => ({
       ...pedalById.get(id)!,
       chainPosition: index + 1,
+      rotationDegrees: rotations.get(id) ?? pedalById.get(id)!.rotationDegrees,
     }));
-
     const placements = calculateGreedyPlacement(reordered, pedalsById, board, routingConfig);
+
+    // HARD collision guard: a candidate whose placement overlaps or leaves
+    // the board is never eligible, no matter how short its cables score
+    // (the routing cost has no overlap term - shorter-but-colliding layouts
+    // would otherwise win)
+    if (hasPlacementCollision(placements, reordered, pedalsById, board)) {
+      return { placements, score: Infinity };
+    }
+
     const cost = calculateRoutingCost(
       placements, reordered, pedalsById, board, undefined, useEffectsLoop, use4CableMethod, routingConfig
     );
+    return { placements, score: cost.totalScore };
+  };
 
-    if (cost.totalScore < bestScore) {
-      bestScore = cost.totalScore;
-      best = { placements, chainOrder: order, swappableGroups };
+  // --- Stage 1: chain orders at current rotations -----------------------------
+  const baseRotations = new Map(placedPedals.map((p) => [p.id, p.rotationDegrees]));
+  const candidateOrders = hasOrderSearch
+    ? enumerateChainOrders(initialChainOrder, swappableGroups, 48)
+    : [initialChainOrder];
+
+  let bestOrder = initialChainOrder;
+  let bestRotations = new Map(baseRotations);
+  let best = evaluate(initialChainOrder, bestRotations);
+
+  for (const order of candidateOrders) {
+    if (order === initialChainOrder) continue;
+    if (evaluations >= MAX_EVALUATIONS) break;
+    const result = evaluate(order, bestRotations);
+    if (result.score < best.score - 1e-9) {
+      best = result;
+      bestOrder = order;
     }
   }
 
-  return best ?? {
-    placements: calculateGreedyPlacement(placedPedals, pedalsById, board, routingConfig),
-    chainOrder: initialChainOrder,
+  // --- Stage 2: rotation coordinate descent -----------------------------------
+  // One pass per rotatable pedal; only strictly-better rotations are kept,
+  // so re-optimizing an optimized layout is a no-op (idempotence).
+  for (const id of rotatableIds) {
+    const current = bestRotations.get(id) ?? 0;
+    for (const rotation of [0, 90, 180, 270]) {
+      if (rotation === current) continue;
+      if (evaluations >= MAX_EVALUATIONS) break;
+      const candidate = new Map(bestRotations);
+      candidate.set(id, rotation);
+      const result = evaluate(bestOrder, candidate);
+      if (result.score < best.score - 1e-9) {
+        best = result;
+        bestRotations = candidate;
+      }
+    }
+  }
+
+  const changedRotations = [...bestRotations]
+    .filter(([id, rot]) => rot !== (pedalById.get(id)?.rotationDegrees ?? 0))
+    .map(([id, rotationDegrees]) => ({ id, rotationDegrees }));
+
+  return {
+    placements: best.placements,
+    chainOrder: bestOrder,
     swappableGroups,
+    rotations: changedRotations.length > 0 ? changedRotations : undefined,
   };
+}
+
+/** True when any placement overlaps another or leaves the board */
+function hasPlacementCollision(
+  placements: PedalPlacement[],
+  placedPedals: PlacedPedal[],
+  pedalsById: Record<string, Pedal>,
+  board: Board
+): boolean {
+  const byId = new Map(placedPedals.map((p) => [p.id, p]));
+  const rects = placements.map((pl) => {
+    const placed = byId.get(pl.id);
+    const pedal = placed ? pedalsById[placed.pedalId] || placed.pedal : undefined;
+    const rot = placed && (placed.rotationDegrees === 90 || placed.rotationDegrees === 270);
+    const w = pedal ? (rot ? pedal.depthInches : pedal.widthInches) : 2.87;
+    const h = pedal ? (rot ? pedal.widthInches : pedal.depthInches) : 5.12;
+    return { x: pl.x, y: pl.y, w, h };
+  });
+
+  for (const r of rects) {
+    if (r.x < -0.01 || r.y < -0.01 || r.x + r.w > board.widthInches + 0.01 || r.y + r.h > board.depthInches + 0.01) {
+      return true;
+    }
+  }
+  for (let i = 0; i < rects.length; i++) {
+    for (let j = i + 1; j < rects.length; j++) {
+      const a = rects[i];
+      const b = rects[j];
+      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+      const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+      if (ox > 0.01 && oy > 0.01) return true;
+    }
+  }
+  return false;
 }
 
 /**

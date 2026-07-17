@@ -68,9 +68,14 @@ export function simulateConfiguration(scenario: Scenario): SimulationResult {
   // 2. Optimize layout (store.optimizeLayout)
   const layout = calculateOptimalLayoutJoint(pedals, pedalsById, board, routingConfig);
   const placementById = new Map(layout.placements.map((p) => [p.id, p]));
+  const rotationById = new Map((layout.rotations ?? []).map((r) => [r.id, r.rotationDegrees]));
   pedals = pedals.map((p) => {
     const placement = placementById.get(p.id);
-    return placement ? { ...p, xInches: placement.x, yInches: placement.y } : p;
+    const rotation = rotationById.get(p.id);
+    let next = p;
+    if (placement) next = { ...next, xInches: placement.x, yInches: placement.y };
+    if (rotation !== undefined) next = { ...next, rotationDegrees: rotation };
+    return next;
   });
   if (layout.swappableGroups.length > 0) {
     const orderIndex = new Map(layout.chainOrder.map((id, i) => [id, i + 1]));

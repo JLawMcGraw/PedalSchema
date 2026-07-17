@@ -465,6 +465,14 @@ export const useConfigurationStore = create<ConfigurationState>()(
             }
           }
 
+          // Apply rotation changes (jack-facing optimization)
+          for (const rotation of result.rotations ?? []) {
+            const pedal = state.placedPedals.find((p) => p.id === rotation.id);
+            if (pedal) {
+              pedal.rotationDegrees = rotation.rotationDegrees;
+            }
+          }
+
           // Apply chain order changes only if valid and swappable groups exist
           if (chainOrderValid && result.swappableGroups.length > 0) {
             for (let i = 0; i < result.chainOrder.length; i++) {
