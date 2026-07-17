@@ -15,10 +15,6 @@ interface EditorState {
   mode: 'select' | 'pan' | 'add-pedal';
   pedalToAdd: string | null; // pedal ID to add when clicking
 
-  // Undo/Redo
-  canUndo: boolean;
-  canRedo: boolean;
-
   // Actions
   setZoom: (zoom: number) => void;
   zoomIn: () => void;
@@ -42,8 +38,6 @@ export const useEditorStore = create<EditorState>()(
     selectedPedalId: null,
     mode: 'select',
     pedalToAdd: null,
-    canUndo: false,
-    canRedo: false,
 
     setZoom: (zoom) =>
       set({ zoom: Math.max(0.25, Math.min(4, zoom)) }),

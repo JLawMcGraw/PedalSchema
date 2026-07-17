@@ -185,22 +185,31 @@ matrix green; enumeration stays < ~200 evaluations.
 
 ---
 
-## Phase 5 — Quality-of-life batch (slot in alongside any phase)
+## Phase 5 — Quality-of-life batch ✅ DONE (2026-07-17)
 
-1. **Multi-row zone capacity**: required zone width = packing across the
-   zone's available rows, not a single-row sum; delete the `zonesOverlap`
-   full-width fallback.
-2. **Live rerouting during drag**: feed the drag preview position into the
-   derived pipeline (throttled ~80ms) so cables follow the pedal instead of
-   freezing until drop.
-3. **Undo/redo**: snapshot `{placedPedals, flags}` per mutation (ring buffer
-   ~20 or zundo), toolbar buttons + Cmd+Z/Shift+Cmd+Z. Cheap since the
-   derived-state refactor.
-4. **`routing_type` decision**: keep the columns; loop switchers/AB boxes
-   become representable as topology segments after Phase 2 — file as the
-   feature that validates the topology model. No code until then.
-5. **CI**: bump actions/checkout + setup-node to v5 (Node 20 deprecation
-   notice).
+1. **Multi-row zone capacity**: ✅ obsolete — the `zonesOverlap` full-width
+   fallback and zone-boundary machinery were already deleted by the Phase 2
+   topology-driven placer (verified: no references remain in the engine).
+2. **Live rerouting during drag**: ✅ editor-canvas runs `routeAllCables`
+   against the dragged pedal's preview position, throttled to 90ms
+   (trailing-edge, always settles on the latest position). Cable topology
+   is reused from derived state — only paths recompute. Live-verified:
+   mid-drag, 3/10 cable paths rerouted while the store position was still
+   uncommitted.
+3. **Undo/redo**: ✅ history snapshots in the configuration store (50-entry
+   ring; O(1) records — immer structural sharing means snapshots are just
+   references). Every board mutation records BEFORE changing, so a mutation
+   plus its normalizeChain is ONE undo step. Toolbar Undo/Redo buttons +
+   Cmd+Z / Shift+Cmd+Z / Ctrl+Y (skipped while typing in inputs). New edits
+   clear the redo stack. Name/description edits excluded (keystroke spam).
+   9 store tests. Live-verified: keyboard undo restored a dragged pedal's
+   position and all cable geometry byte-identically; redo reapplied it.
+4. **`routing_type` decision**: RESOLVED — keep the columns
+   (migration 20240109000002 stays applied), no code until a loop-switcher/
+   AB-box feature lands. That feature is now cheap to represent: it is just
+   additional topology segments (`src/lib/engine/topology/`), which is the
+   validation case for the topology model. Documented; not scheduled.
+5. **CI**: ✅ actions/checkout and actions/setup-node bumped to v5.
 
 ---
 

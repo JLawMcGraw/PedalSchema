@@ -5,6 +5,24 @@ import type { Board, Pedal, Amp, PlacedPedal, Position, ChainLocation, ChainCont
 import { signalChainEngine } from '@/lib/engine/signal-chain';
 import { calculateOptimalLayoutJoint } from '@/lib/engine/layout';
 
+/**
+ * Undo/redo snapshot of everything a board-editing action can change.
+ * Snapshots hold references to immer-frozen state (structural sharing),
+ * so recording history is O(1) - nothing is cloned.
+ */
+interface HistorySnapshot {
+  board: Board | null;
+  amp: Amp | null;
+  useEffectsLoop: boolean;
+  use4CableMethod: boolean;
+  modulationInLoop: boolean;
+  placedPedals: PlacedPedal[];
+  pedalsById: Record<string, Pedal>;
+  routingConfig: RoutingConfig;
+}
+
+const HISTORY_LIMIT = 50;
+
 interface ConfigurationState {
   // Configuration data
   id: string | null;
@@ -25,6 +43,9 @@ interface ConfigurationState {
 
   // Routing configuration
   routingConfig: RoutingConfig;
+
+  // Undo/redo history (board edits only; name/description excluded)
+  history: { past: HistorySnapshot[]; future: HistorySnapshot[] };
 
   // Dirty state
   isDirty: boolean;
@@ -76,6 +97,10 @@ interface ConfigurationState {
   // Layout optimization
   optimizeLayout: () => void;
 
+  // Undo/redo
+  undo: () => void;
+  redo: () => void;
+
   markClean: () => void;
   setSaving: (saving: boolean) => void;
 }
@@ -86,7 +111,48 @@ function generateId(): string {
 
 export const useConfigurationStore = create<ConfigurationState>()(
   subscribeWithSelector(
-    immer((set, get) => ({
+    immer((set, get) => {
+      const takeSnapshot = (): HistorySnapshot => {
+        const s = get();
+        return {
+          board: s.board,
+          amp: s.amp,
+          useEffectsLoop: s.useEffectsLoop,
+          use4CableMethod: s.use4CableMethod,
+          modulationInLoop: s.modulationInLoop,
+          placedPedals: s.placedPedals,
+          pedalsById: s.pedalsById,
+          routingConfig: s.routingConfig,
+        };
+      };
+
+      /** Call at the START of every user-initiated board mutation. */
+      const recordHistory = () => {
+        const snapshot = takeSnapshot();
+        set((state) => {
+          state.history.past.push(snapshot);
+          if (state.history.past.length > HISTORY_LIMIT) {
+            state.history.past.shift();
+          }
+          state.history.future = [];
+        });
+      };
+
+      const applySnapshot = (
+        state: { -readonly [K in keyof HistorySnapshot]: HistorySnapshot[K] },
+        snapshot: HistorySnapshot
+      ) => {
+        state.board = snapshot.board;
+        state.amp = snapshot.amp;
+        state.useEffectsLoop = snapshot.useEffectsLoop;
+        state.use4CableMethod = snapshot.use4CableMethod;
+        state.modulationInLoop = snapshot.modulationInLoop;
+        state.placedPedals = snapshot.placedPedals;
+        state.pedalsById = snapshot.pedalsById;
+        state.routingConfig = snapshot.routingConfig;
+      };
+
+      return {
       id: null,
       name: 'Untitled Board',
       description: '',
@@ -102,6 +168,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
         use4CableMethod: false,
         pedalConfigs: [],
       },
+      history: { past: [], future: [] },
       isDirty: false,
       isSaving: false,
 
@@ -117,6 +184,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           state.modulationInLoop = config.modulationInLoop || false;
           state.placedPedals = config.placedPedals || [];
           state.pedalsById = config.pedalsById || {};
+          state.history = { past: [], future: [] };
           state.isDirty = false;
         });
         // Normalize chain order for the loaded configuration
@@ -124,6 +192,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       setBoard: (board) => {
+        recordHistory();
         set((state) => {
           state.board = board;
           state.isDirty = true;
@@ -131,6 +200,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       setAmp: (amp) => {
+        recordHistory();
         set((state) => {
           state.amp = amp;
           state.isDirty = true;
@@ -158,6 +228,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       setUseEffectsLoop: (use) => {
+        recordHistory();
         set((state) => {
           state.useEffectsLoop = use;
           state.isDirty = true;
@@ -169,6 +240,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       setUse4CableMethod: (use) => {
+        recordHistory();
         set((state) => {
           state.use4CableMethod = use;
           state.isDirty = true;
@@ -180,6 +252,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       setModulationInLoop: (inLoop) => {
+        recordHistory();
         set((state) => {
           state.modulationInLoop = inLoop;
           state.isDirty = true;
@@ -192,6 +265,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       addPedal: (pedal, position) => {
+        recordHistory();
         set((state) => {
           // Add pedal with temporary chain position (will be recalculated by signal chain engine)
           const newPlacedPedal: PlacedPedal = {
@@ -218,6 +292,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       movePedal: (placedPedalId, position) => {
+        recordHistory();
         set((state) => {
           const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
           if (pedal) {
@@ -242,6 +317,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       removePedal: (placedPedalId) => {
+        recordHistory();
         set((state) => {
           const index = state.placedPedals.findIndex((p) => p.id === placedPedalId);
           if (index !== -1) {
@@ -254,6 +330,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       rotatePedal: (placedPedalId) => {
+        recordHistory();
         set((state) => {
           const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
           if (pedal) {
@@ -265,6 +342,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       updatePedalChainPosition: (placedPedalId, newPosition) => {
+        recordHistory();
         set((state) => {
           const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
           if (pedal) {
@@ -297,6 +375,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       setChainPositionLocked: (placedPedalId, locked) => {
+        recordHistory();
         set((state) => {
           const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
           if (pedal) {
@@ -312,6 +391,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       updatePedalLocation: (placedPedalId, location) => {
+        recordHistory();
         set((state) => {
           const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
           if (pedal) {
@@ -326,6 +406,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       setUseLoop: (placedPedalId, useLoop) => {
+        recordHistory();
         set((state) => {
           const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
           if (pedal) {
@@ -359,6 +440,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       setPedalRoutingMode: (placedPedalId, mode, loopPedalIds = []) => {
+        recordHistory();
         set((state) => {
           const existingIndex = state.routingConfig.pedalConfigs.findIndex(
             (c) => c.pedalId === placedPedalId
@@ -380,6 +462,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       togglePedalInLoop: (loopPedalId, targetPedalId) => {
+        recordHistory();
         set((state) => {
           let config = state.routingConfig.pedalConfigs.find(
             (c) => c.pedalId === loopPedalId
@@ -416,6 +499,8 @@ export const useConfigurationStore = create<ConfigurationState>()(
         const { board, placedPedals, pedalsById, routingConfig, useEffectsLoop, use4CableMethod } = get();
 
         if (!board || placedPedals.length === 0) return;
+
+        recordHistory();
 
         // Calculate optimal positions AND chain order using joint optimization
         const result = calculateOptimalLayoutJoint(
@@ -488,6 +573,32 @@ export const useConfigurationStore = create<ConfigurationState>()(
 
       },
 
+      undo: () => {
+        const { history } = get();
+        if (history.past.length === 0) return;
+        const current = takeSnapshot();
+        const previous = history.past[history.past.length - 1];
+        set((state) => {
+          state.history.past.pop();
+          state.history.future.push(current);
+          applySnapshot(state, previous);
+          state.isDirty = true;
+        });
+      },
+
+      redo: () => {
+        const { history } = get();
+        if (history.future.length === 0) return;
+        const current = takeSnapshot();
+        const next = history.future[history.future.length - 1];
+        set((state) => {
+          state.history.future.pop();
+          state.history.past.push(current);
+          applySnapshot(state, next);
+          state.isDirty = true;
+        });
+      },
+
       markClean: () => {
         set({ isDirty: false });
       },
@@ -495,7 +606,8 @@ export const useConfigurationStore = create<ConfigurationState>()(
       setSaving: (saving) => {
         set({ isSaving: saving });
       },
-    }))
+      };
+    })
   )
 );
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useShallow } from 'zustand/react/shallow';
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useEditorStore } from '@/store/editor-store';
 import { useConfigurationStore } from '@/store/configuration-store';
 import { useDerivedConfiguration, INCHES_TO_PIXELS } from '@/store/derived';
@@ -11,8 +11,35 @@ import { CableRenderer } from './cable-renderer';
 import { snapToRail, findEmptySpot } from '@/lib/engine/collision';
 import { getCategoryDefaultOrder } from '@/lib/constants/pedal-categories';
 import { getExternalEndpointPx } from '@/lib/engine/cables/endpoints';
+import { routeAllCables } from '@/lib/engine/cables/route-cables';
 
 const PADDING_INCHES = 2;
+
+/** How often cables reroute while a pedal is being dragged (ms) */
+const DRAG_REROUTE_INTERVAL_MS = 90;
+
+/**
+ * Trailing-edge throttle: re-emits `value` at most every `ms`, always
+ * settling on the latest value. Keeps per-mousemove state updates from
+ * re-running the cable router on every frame.
+ */
+function useThrottledValue<T>(value: T, ms: number): T {
+  const [throttled, setThrottled] = useState(value);
+  const lastEmit = useRef(0);
+
+  useEffect(() => {
+    // Always emit asynchronously (0ms on the leading edge) - a synchronous
+    // setState here would cascade renders on every mousemove.
+    const delay = Math.max(0, ms - (Date.now() - lastEmit.current));
+    const timer = setTimeout(() => {
+      lastEmit.current = Date.now();
+      setThrottled(value);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+
+  return throttled;
+}
 
 interface DragState {
   pedalId: string;
@@ -39,12 +66,29 @@ export function EditorCanvas() {
 
   // Routed cables and collisions are derived state - computed once per
   // configuration change and shared by every subscriber.
-  const { routedCables, collisions } = useDerivedConfiguration((d) => ({
+  const { cables, routedCables, collisions } = useDerivedConfiguration((d) => ({
+    cables: d.cables,
     routedCables: d.routedCables,
     collisions: d.collisions,
   }));
 
   const fxLoopActive = useEffectsLoop && !!amp?.hasEffectsLoop;
+
+  // Live rerouting while dragging: run the router against the dragged
+  // pedal's preview position (throttled - mousemove fires per frame).
+  // Cable TOPOLOGY doesn't change with position, so the derived `cables`
+  // list is reused; only paths are recomputed.
+  const throttledDragPosition = useThrottledValue(dragPosition, DRAG_REROUTE_INTERVAL_MS);
+  const previewRoutedCables = useMemo(() => {
+    if (!dragState || !throttledDragPosition || !board) return null;
+    const previewPedals = placedPedals.map((p) =>
+      p.id === dragState.pedalId
+        ? { ...p, xInches: throttledDragPosition.x, yInches: throttledDragPosition.y }
+        : p
+    );
+    return routeAllCables(cables, previewPedals, pedalsById, board, INCHES_TO_PIXELS, fxLoopActive);
+  }, [dragState, throttledDragPosition, board, placedPedals, pedalsById, cables, fxLoopActive]);
+  const displayedCables = previewRoutedCables ?? routedCables;
 
   // Convert screen coordinates to board coordinates
   const screenToBoard = useCallback(
@@ -294,7 +338,7 @@ export function EditorCanvas() {
 
         {/* Cables (above the amp panel body, under pedals and jack labels) */}
         {cablesVisible &&
-          routedCables.map((routed) => (
+          displayedCables.map((routed) => (
             <CableRenderer key={routed.cable.id} routed={routed} />
           ))}
 

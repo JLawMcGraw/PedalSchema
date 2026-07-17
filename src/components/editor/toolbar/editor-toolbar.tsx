@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '@/store/editor-store';
 import { useConfigurationStore } from '@/store/configuration-store';
@@ -20,7 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Wand2, Grid3X3, Cable, MoreHorizontal, ZoomIn, ZoomOut } from 'lucide-react';
+import { Wand2, Grid3X3, Cable, MoreHorizontal, ZoomIn, ZoomOut, Undo2, Redo2 } from 'lucide-react';
 
 interface EditorToolbarProps {
   onSave: () => void;
@@ -31,10 +32,42 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
     useEditorStore(
     useShallow((s) => ({ zoom: s.zoom, zoomIn: s.zoomIn, zoomOut: s.zoomOut, resetZoom: s.resetZoom, gridVisible: s.gridVisible, toggleGrid: s.toggleGrid, cablesVisible: s.cablesVisible, toggleCables: s.toggleCables }))
   );
-  const { name, isDirty, isSaving, placedPedals, optimizeLayout } = useConfigurationStore(
-    useShallow((s) => ({ name: s.name, isDirty: s.isDirty, isSaving: s.isSaving, placedPedals: s.placedPedals, optimizeLayout: s.optimizeLayout }))
+  const { name, isDirty, isSaving, placedPedals, optimizeLayout, undo, redo, canUndo, canRedo } = useConfigurationStore(
+    useShallow((s) => ({
+      name: s.name,
+      isDirty: s.isDirty,
+      isSaving: s.isSaving,
+      placedPedals: s.placedPedals,
+      optimizeLayout: s.optimizeLayout,
+      undo: s.undo,
+      redo: s.redo,
+      canUndo: s.history.past.length > 0,
+      canRedo: s.history.future.length > 0,
+    }))
   );
   const { collisions } = useDerivedConfiguration((d) => ({ collisions: d.collisions }));
+
+  // Cmd/Ctrl+Z to undo, Shift+Cmd/Ctrl+Z or Ctrl+Y to redo
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (key === 'y') {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [undo, redo]);
 
   return (
     <TooltipProvider>
@@ -90,6 +123,27 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
 
             <Separator orientation="vertical" className="h-6 mx-1" />
           </div>
+
+          {/* Undo / Redo */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" onClick={undo} disabled={!canUndo} className="px-2">
+                <Undo2 className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Undo (⌘Z)</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" onClick={redo} disabled={!canRedo} className="px-2">
+                <Redo2 className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Redo (⇧⌘Z)</TooltipContent>
+          </Tooltip>
+
+          <Separator orientation="vertical" className="h-6 mx-1" />
 
           {/* Layout optimization */}
           <Tooltip>
