@@ -113,7 +113,19 @@ the user's board (NS-2 as hub) shows clustered, short-cabled layout.
 
 ---
 
-## Phase 3 — Manhattan lane router (visual polish)
+## Phase 3 — Manhattan lane router ✅ DONE (2026-07-16)
+
+Shipped: `src/lib/engine/lanes/` - corridor graph derived from placement
+(horizontal row-gap bands + vertical pedal gaps + off-board amp/guitar
+columns), Dijkstra with turn penalty, per-corridor lane assignment at
+uniform spacing ordered by run midpoint (parallel flows stay parallel;
+squeeze to 9px min before falling back). Integrated in routeAllCables with
+the strategy router as per-cable fallback; fallback cables lane-relax
+around the fixed corridor lanes. Renderer gained rounded corners (6px
+quadratic bends). Acceptance test: axis-aligned segments, crossings do not
+regress vs the strategy router, corridor adoption > 30%. 103 tests. Live
+verified on the saved 4CM board - square looms, rounded bends, 0 overlaps.
+
 
 **Problem**: routing is valid but shows its origins — occasional A* grid jogs,
 non-square corners where constrained, first-come lane assignment.

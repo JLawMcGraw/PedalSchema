@@ -19,6 +19,7 @@ import { generateObstacles, type ObstacleSet } from '../obstacles';
 import { routeCableWithObstacles } from './routing-strategies';
 import { getExternalEndpointPx, getPedalJackPx, type ExternalEndpointType } from './endpoints';
 import { isPathValid, type ValidationResult } from './validation';
+import { routeCablesWithLanes, type LaneRouteRequest } from '../lanes';
 
 export interface RoutedCable {
   cable: Cable;
@@ -115,7 +116,8 @@ function separateParallelRuns(
   results: RoutedCable[],
   obstacles: ObstacleSet,
   board: Board,
-  scale: number
+  scale: number,
+  movable?: Set<number>
 ): void {
   const minX = -LANE_BOARD_OVERHANG;
   const maxX = board.widthInches * scale + LANE_BOARD_OVERHANG;
@@ -168,6 +170,7 @@ function separateParallelRuns(
   const improveCable = (ci: number): boolean => {
     const rc = results[ci];
     if (!rc.valid) return false;
+    if (movable && !movable.has(ci)) return false;
     const others = collectRuns(ci);
     let path = rc.path;
     let moved = false;
@@ -238,19 +241,27 @@ function separateParallelRuns(
 /**
  * Route every cable for the current configuration.
  */
+/**
+ * When true, cables route through the Manhattan corridor graph
+ * (src/lib/engine/lanes) with the strategy router as per-cable fallback.
+ */
+export const USE_LANE_ROUTER = true;
+
 export function routeAllCables(
   cables: Cable[],
   placedPedals: PlacedPedal[],
   pedalsById: Record<string, Pedal>,
   board: Board,
   scale: number,
-  useEffectsLoop: boolean
+  useEffectsLoop: boolean,
+  options?: { laneRouter?: boolean }
 ): RoutedCable[] {
+  const laneRouter = options?.laneRouter ?? USE_LANE_ROUTER;
   const obstacles = generateObstacles(placedPedals, pedalsById, board, scale);
   const placedById = new Map(placedPedals.map((p) => [p.id, p]));
 
-  const results: RoutedCable[] = [];
-
+  interface Resolved { cable: Cable; fromPos: Point; toPos: Point }
+  const resolved: Resolved[] = [];
   for (const cable of cables) {
     const fromPos = resolveEndpoint(
       cable.fromType, cable.fromPedalId, cable.fromJack,
@@ -261,27 +272,59 @@ export function routeAllCables(
       placedById, pedalsById, board, scale, useEffectsLoop
     );
     if (!fromPos || !toPos) continue;
-
-    const result = routeCableWithObstacles(
-      fromPos,
-      toPos,
-      obstacles,
-      cable.fromPedalId ?? null,
-      cable.toPedalId ?? null
-    );
-
-    results.push({
-      cable,
-      path: result.path,
-      valid: result.valid,
-      fromPos,
-      toPos,
-      validation: result.validation,
-    });
+    resolved.push({ cable, fromPos, toPos });
   }
 
-  // Spread overlapping parallel runs into adjacent lanes
-  separateParallelRuns(results, obstacles, board, scale);
+  // Corridor-graph routing first (when enabled); nulls fall back below
+  let lanePaths: Array<Point[] | null> = resolved.map(() => null);
+  if (laneRouter) {
+    const requests: LaneRouteRequest[] = resolved.map((r) => ({
+      from: r.fromPos,
+      to: r.toPos,
+      fromPedalId: r.cable.fromPedalId ?? null,
+      toPedalId: r.cable.toPedalId ?? null,
+    }));
+    lanePaths = routeCablesWithLanes(requests, obstacles).paths;
+  }
+
+  const results: RoutedCable[] = [];
+  const fallbackIndices = new Set<number>();
+
+  resolved.forEach((r, index) => {
+    const lanePath = lanePaths[index];
+    if (lanePath) {
+      results.push({
+        cable: r.cable,
+        path: lanePath,
+        valid: true,
+        fromPos: r.fromPos,
+        toPos: r.toPos,
+      });
+      return;
+    }
+
+    const result = routeCableWithObstacles(
+      r.fromPos,
+      r.toPos,
+      obstacles,
+      r.cable.fromPedalId ?? null,
+      r.cable.toPedalId ?? null
+    );
+    fallbackIndices.add(results.length);
+    results.push({
+      cable: r.cable,
+      path: result.path,
+      valid: result.valid,
+      fromPos: r.fromPos,
+      toPos: r.toPos,
+      validation: result.validation,
+    });
+  });
+
+  // Spread overlapping parallel runs into adjacent lanes. Lane-routed
+  // cables have coordinated lanes already and stay fixed; only fallback
+  // cables shift around them.
+  separateParallelRuns(results, obstacles, board, scale, laneRouter ? fallbackIndices : undefined);
 
   if (DEBUG_PATHS) {
     for (const rc of results) {
