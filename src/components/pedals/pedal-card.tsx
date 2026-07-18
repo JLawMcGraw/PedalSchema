@@ -67,6 +67,17 @@ export function PedalCard({ pedal, onClick, selected }: PedalCardProps) {
       className={`hover:border-primary/50 transition-colors ${onClick ? 'cursor-pointer' : ''} ${selected ? 'border-primary ring-2 ring-primary/20' : ''}`}
       onClick={onClick}
     >
+      {pedal.image_url && (
+        <div className="flex items-center justify-center h-36 mx-4 mt-4 rounded-md bg-muted/40 overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={pedal.image_url}
+            alt={`${pedal.manufacturer} ${pedal.name}`}
+            className="max-h-full max-w-full object-contain"
+            loading="lazy"
+          />
+        </div>
+      )}
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">

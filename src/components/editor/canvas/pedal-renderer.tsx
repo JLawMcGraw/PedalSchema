@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { PlacedPedal, Pedal } from '@/types';
 import { getCategoryColor } from '@/lib/constants/pedal-categories';
 
@@ -24,6 +25,8 @@ export function PedalRenderer({
   onDragStart,
   onClick,
 }: PedalRendererProps) {
+  const [imageError, setImageError] = useState(false);
+
   const isRotated = placedPedal.rotationDegrees === 90 || placedPedal.rotationDegrees === 270;
 
   const x = placedPedal.xInches * scale;
@@ -35,6 +38,12 @@ export function PedalRenderer({
   const centerY = y + height / 2;
 
   const categoryColor = getCategoryColor(pedal.category);
+
+  const showImage = !!pedal.imageUrl && !imageError;
+  // The photo shows the UNROTATED pedal face; draw it at natural dims
+  // centered in the (possibly swapped) box and rotate it with the pedal.
+  const imgWidth = pedal.widthInches * scale;
+  const imgHeight = pedal.depthInches * scale;
 
   // Truncate name to fit
   const maxChars = Math.floor(width / 8);
@@ -60,17 +69,55 @@ export function PedalRenderer({
         />
       )}
 
-      {/* Pedal body */}
+      {/* Pedal body (backdrop; visible when no photo or while it loads) */}
       <rect
         x={x}
         y={y}
         width={width}
         height={height}
         fill={categoryColor}
+        rx={4}
+        opacity={isDragging ? 0.8 : 1}
+      />
+
+      {/* Pedal photo, clipped to the body and rotated with the pedal */}
+      {showImage && (
+        <>
+          <defs>
+            <clipPath id={`pedal-clip-${placedPedal.id}`}>
+              <rect x={x} y={y} width={width} height={height} rx={4} />
+            </clipPath>
+          </defs>
+          <g clipPath={`url(#pedal-clip-${placedPedal.id})`}>
+            <image
+              href={pedal.imageUrl!}
+              x={centerX - imgWidth / 2}
+              y={centerY - imgHeight / 2}
+              width={imgWidth}
+              height={imgHeight}
+              transform={
+                placedPedal.rotationDegrees
+                  ? `rotate(${placedPedal.rotationDegrees}, ${centerX}, ${centerY})`
+                  : undefined
+              }
+              preserveAspectRatio="xMidYMid slice"
+              opacity={isDragging ? 0.8 : 1}
+              onError={() => setImageError(true)}
+            />
+          </g>
+        </>
+      )}
+
+      {/* Body border (over the photo so selection/collision reads) */}
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill="none"
         stroke={hasCollision ? '#ef4444' : isSelected ? '#3b82f6' : '#555'}
         strokeWidth={isSelected || hasCollision ? 3 : 1}
         rx={4}
-        opacity={isDragging ? 0.8 : 1}
       />
 
       {/* Inactive overlay */}
@@ -141,35 +188,37 @@ export function PedalRenderer({
         );
       })}
 
-      {/* Pedal name */}
-      <text
-        x={centerX}
-        y={centerY - 4}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        fill="white"
-        fontSize={11}
-        fontWeight={500}
-        fontFamily="system-ui"
-        className="pointer-events-none select-none"
-        style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
-      >
-        {displayName}
-      </text>
-
-      {/* Manufacturer */}
-      <text
-        x={centerX}
-        y={centerY + 10}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        fill="rgba(255,255,255,0.7)"
-        fontSize={9}
-        fontFamily="system-ui"
-        className="pointer-events-none select-none"
-      >
-        {pedal.manufacturer}
-      </text>
+      {/* Name + manufacturer - the photo already shows the pedal face */}
+      {!showImage && (
+        <>
+          <text
+            x={centerX}
+            y={centerY - 4}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="white"
+            fontSize={11}
+            fontWeight={500}
+            fontFamily="system-ui"
+            className="pointer-events-none select-none"
+            style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
+          >
+            {displayName}
+          </text>
+          <text
+            x={centerX}
+            y={centerY + 10}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="rgba(255,255,255,0.7)"
+            fontSize={9}
+            fontFamily="system-ui"
+            className="pointer-events-none select-none"
+          >
+            {pedal.manufacturer}
+          </text>
+        </>
+      )}
 
       {/* Chain position badge */}
       <circle cx={x + width - 10} cy={y + 10} r={10} fill="#1f2937" stroke="#6b7280" strokeWidth={1} />
