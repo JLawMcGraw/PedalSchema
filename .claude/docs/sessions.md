@@ -4,6 +4,40 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-07-19
+
+### Summary
+Completed non-BOSS pedal photo mirroring (64/65 coverage) and made photos render as true cut-out silhouettes on the board - no more colored/white boxes around pedals. Commit e18b990, pushed.
+
+### What Was Accomplished
+- [x] Mirrored the 8 remaining findable non-BOSS pedal photos (EHX x3, TS9, Cry Baby, RAT 2, Polytune 3, Ditto)
+- [x] Added flood-fill background knockout to the mirror pipeline; re-mirrored all 64 images as silhouette PNGs
+- [x] Renderer: no body box/border/overlay under a loaded photo; inactive = 35% photo opacity
+- [x] Cache-busted image URLs (`?v=<ts>`) - re-mirrors were invisible behind storage max-age=3600
+- [x] Verified: border-pixel scans on all 64 images, live-DOM check (7/7 photo pedals rect-free), e2e verify script
+
+### Key Changes
+| File | Change |
+|------|--------|
+| `src/components/editor/canvas/pedal-renderer.tsx` | `imageLoaded` state gates backdrop/border/drag-shadow/inactive rects; `preserveAspectRatio="none"` |
+| `scraper/mirror-pedal-images.js` (GITIGNORED - local only) | `knockOutBackground()` flood fill (gradient-following, luminance-90 floor, >90% revert), direct-image-URL sources, `?v=` versioning, `ONLY=` filter, 60s fetch timeout |
+| `package.json` | `sharp` devDependency |
+
+### Technical Decisions
+1. **Image sources when manufacturers vanish**: EHX og:images are lifestyle shots - use numbered gallery files; TC images recovered from Wayback Machine (`im_` suffix, codes P0CM0/P0DD4); ProCo lives at actentertainment.com now; procopedals.com rejected (affiliate site, Amazon photos, licensing).
+2. **Knockout safety**: gradient-following flood fill never enters pixels darker than luminance 90 (shadows/black enclosures survive); knockouts eating >90% of the frame revert.
+3. **Klon Centaur intentionally has no photo** - no manufacturer source; Wikimedia CC needs an attribution decision.
+4. **URL versioning over cache headers**: uploads reuse the same storage path, so only a changed query string reliably invalidates browsers/CDN.
+
+### Next Tasks
+- [ ] Background knockout for custom pedal uploads (/pedals/new) - user uploads still get white boxes (HIGH - same bug class just fixed for system pedals; sharp + knockout already exist)
+- [ ] Un-ignore `scraper/mirror-pedal-images.js` - curated URLs + knockout algorithm exist only on this machine
+- [ ] Klon Centaur photo: user decision on Wikimedia CC attribution
+- [ ] Investigate the red "1 Issue" Next.js dev-overlay badge seen in editor
+- [ ] Mobile touch drag-and-drop; cable-validation edge-case tests; cable bundling (older backlog)
+
+---
+
 ## Session: 2026-01-22
 
 ### Summary
