@@ -26,6 +26,7 @@ export function PedalRenderer({
   onClick,
 }: PedalRendererProps) {
   const [imageError, setImageError] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   const isRotated = placedPedal.rotationDegrees === 90 || placedPedal.rotationDegrees === 270;
 
@@ -40,6 +41,9 @@ export function PedalRenderer({
   const categoryColor = getCategoryColor(pedal.category);
 
   const showImage = !!pedal.imageUrl && !imageError;
+  // Photos are background-knocked-out silhouettes; while one is visible the
+  // board itself shows around the pedal, so no body box is drawn under it.
+  const showBodyBox = !showImage || !imageLoaded;
   // The photo shows the UNROTATED pedal face; draw it at natural dims
   // centered in the (possibly swapped) box and rotate it with the pedal.
   const imgWidth = pedal.widthInches * scale;
@@ -57,8 +61,8 @@ export function PedalRenderer({
       onTouchStart={onDragStart}
       onClick={onClick}
     >
-      {/* Shadow when dragging */}
-      {isDragging && (
+      {/* Shadow when dragging (box shadow only makes sense under the box) */}
+      {isDragging && showBodyBox && (
         <rect
           x={x + 4}
           y={y + 4}
@@ -69,16 +73,18 @@ export function PedalRenderer({
         />
       )}
 
-      {/* Pedal body (backdrop; visible when no photo or while it loads) */}
-      <rect
-        x={x}
-        y={y}
-        width={width}
-        height={height}
-        fill={categoryColor}
-        rx={4}
-        opacity={isDragging ? 0.8 : 1}
-      />
+      {/* Pedal body (only when there is no photo, or while it loads) */}
+      {showBodyBox && (
+        <rect
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          fill={categoryColor}
+          rx={4}
+          opacity={isDragging ? 0.8 : 1}
+        />
+      )}
 
       {/* Pedal photo, clipped to the body and rotated with the pedal */}
       {showImage && (
@@ -100,28 +106,31 @@ export function PedalRenderer({
                   ? `rotate(${placedPedal.rotationDegrees}, ${centerX}, ${centerY})`
                   : undefined
               }
-              preserveAspectRatio="xMidYMid slice"
-              opacity={isDragging ? 0.8 : 1}
+              preserveAspectRatio="none"
+              opacity={isDragging ? 0.8 : placedPedal.isActive ? 1 : 0.35}
+              onLoad={() => setImageLoaded(true)}
               onError={() => setImageError(true)}
             />
           </g>
         </>
       )}
 
-      {/* Body border (over the photo so selection/collision reads) */}
-      <rect
-        x={x}
-        y={y}
-        width={width}
-        height={height}
-        fill="none"
-        stroke={hasCollision ? '#ef4444' : isSelected ? '#3b82f6' : '#555'}
-        strokeWidth={isSelected || hasCollision ? 3 : 1}
-        rx={4}
-      />
+      {/* Body border: always for selection/collision, otherwise only on the box */}
+      {(showBodyBox || isSelected || hasCollision) && (
+        <rect
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          fill="none"
+          stroke={hasCollision ? '#ef4444' : isSelected ? '#3b82f6' : '#555'}
+          strokeWidth={isSelected || hasCollision ? 3 : 1}
+          rx={4}
+        />
+      )}
 
-      {/* Inactive overlay */}
-      {!placedPedal.isActive && (
+      {/* Inactive overlay (photos signal inactive via opacity instead) */}
+      {!placedPedal.isActive && showBodyBox && (
         <rect x={x} y={y} width={width} height={height} fill="rgba(0,0,0,0.5)" rx={4} />
       )}
 
