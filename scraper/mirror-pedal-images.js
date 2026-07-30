@@ -8,10 +8,19 @@
  *     with /image/ + .jpg + _hero fallbacks; any existing image_url last)
  *  - download the first candidate that returns a real image
  *  - upload to pedal-images/system/{pedal_id}.{ext}
- *  - rewrite pedals.image_url to our storage public URL
+ *  - rewrite pedals.image_url to our storage public URL, RECORDING the origin
+ *    URL, licence and fetch time alongside it
+ *
+ * Provenance is not optional: we never serve an image whose origin we cannot
+ * name. Every row we write sets image_source_url with image_url, and every row
+ * we clear nulls both together, so the two can never disagree. See the rights
+ * statement in ../README.md and ./README.md - that contract is what makes a
+ * takedown request answerable without re-running candidate search.
  *
  * Idempotent: pedals whose image_url already points at our storage are
- * skipped unless FORCE=1. Dry run with DRY=1.
+ * skipped unless FORCE=1 - but a row missing provenance is re-mirrored even
+ * when it already points at us, so one normal run backfills the legacy rows.
+ * Dry run with DRY=1.
  *
  * Usage: node scraper/mirror-pedal-images.js
  */
@@ -302,12 +311,52 @@ async function acceptCandidate(url, physicalAspect) {
   return { url, buf: processed.buf, type: 'image/png', dims: processed.dims, ratio };
 }
 
+/**
+ * Describe the terms a mirrored image arrives under, from the host it came
+ * from. Deliberately blunt: these are manufacturer product photographs and we
+ * hold no licence to them - we mirror them to identify the product on a board
+ * plan. Saying `manufacturer-proprietary` in the row is the honest record of
+ * that, and it is what makes the takedown path in README.md actionable.
+ *
+ * `attribution` is only set where the licence *requires* a displayed credit;
+ * proprietary product photos require a takedown path, not a credit line.
+ */
+const MANUFACTURER_HOSTS = [
+  'roland.com', 'boss.info', 'ibanez.com', 'jimdunlop.com', 'bigcommerce.com',
+  'ehx.com', 'actentertainment.com', 'musictribe.com', 'tcelectronic.com',
+];
+
+function provenanceFor(sourceUrl) {
+  let host;
+  try {
+    host = new URL(sourceUrl).hostname.replace(/^www\./, '');
+  } catch {
+    return { license: null, attribution: null };
+  }
+  // Archived copies carry the licence of whatever was archived, not the archive's
+  if (host.endsWith('web.archive.org')) {
+    const inner = sourceUrl.match(/https?:\/\/[^/]+\/web\/\d+\w*\/(https?:\/\/.+)$/)?.[1];
+    if (inner) {
+      const { license } = provenanceFor(inner);
+      return { license, attribution: null };
+    }
+  }
+  if (host.endsWith('wikimedia.org')) {
+    // Per-file terms vary; record that a human must resolve them before use
+    return { license: 'wikimedia-see-file-page', attribution: null };
+  }
+  if (MANUFACTURER_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) {
+    return { license: 'manufacturer-proprietary', attribution: null };
+  }
+  return { license: 'unknown', attribution: null };
+}
+
 async function main() {
   const { data: pedals, error } = await sb.from('pedals')
-    .select('id,name,manufacturer,image_url,width_inches,depth_inches');
+    .select('id,name,manufacturer,image_url,image_source_url,width_inches,depth_inches');
   if (error) throw error;
 
-  const report = { mirrored: [], topDown: 0, skipped: [], missed: [], cleared: [] };
+  const report = { mirrored: [], topDown: 0, skipped: [], missed: [], cleared: [], referenced: [] };
 
   for (const pedal of pedals) {
     // ONLY=ds-1,rat re-runs just matching pedals (name substring, comma-separated)
@@ -317,7 +366,18 @@ async function main() {
     ) {
       continue;
     }
-    if (!process.env.FORCE && pedal.image_url?.includes(OUR_HOST)) {
+    // Provenance but no image = deliberately REFERENCED, not mirrored (the
+    // Klon Centaur's CC BY-SA source: mirroring it would make our knocked-out
+    // copy a share-alike derivative). Never mirror these, not even under
+    // FORCE=1 - the whole point is that the bytes stay where their rights live.
+    if (!pedal.image_url && pedal.image_source_url) {
+      report.referenced.push(`${pedal.name} -> ${pedal.image_source_url}`);
+      continue;
+    }
+    // A row that already points at us is done - UNLESS its provenance is
+    // missing, which is how the rows mirrored before provenance existed get
+    // backfilled without needing FORCE=1 (and a full re-download of all 64).
+    if (!process.env.FORCE && pedal.image_url?.includes(OUR_HOST) && pedal.image_source_url) {
       report.skipped.push(pedal.name);
       continue;
     }
@@ -368,7 +428,15 @@ async function main() {
       if (!process.env.DRY && pedal.image_url?.includes(OUR_HOST)) {
         await sb.storage.from('pedal-images')
           .remove([`system/${pedal.id}.png`, `system/${pedal.id}.jpg`]);
-        await sb.from('pedals').update({ image_url: null }).eq('id', pedal.id);
+        // Clear provenance with the image - a source recorded for bytes we no
+        // longer serve is a lie the takedown path would trip over
+        await sb.from('pedals').update({
+          image_url: null,
+          image_source_url: null,
+          image_license: null,
+          image_attribution: null,
+          image_fetched_at: null,
+        }).eq('id', pedal.id);
         report.cleared.push(pedal.name);
       }
       continue;
@@ -386,20 +454,30 @@ async function main() {
       // bucket serves max-age=3600 - without a fresh query string, browsers
       // keep showing the previous image for up to an hour after a re-mirror.
       const versionedUrl = `${pub.publicUrl}?v=${Date.now()}`;
-      const { error: dbErr } = await sb.from('pedals')
-        .update({ image_url: versionedUrl }).eq('id', pedal.id);
+      // image_url and its provenance are written in ONE statement, so a row can
+      // never exist with bytes we serve and no recorded origin
+      const { license, attribution } = provenanceFor(hit.url);
+      const { error: dbErr } = await sb.from('pedals').update({
+        image_url: versionedUrl,
+        image_source_url: hit.url,
+        image_license: license,
+        image_attribution: attribution,
+        image_fetched_at: new Date().toISOString(),
+      }).eq('id', pedal.id);
       if (dbErr) { report.missed.push(`${pedal.name} (db: ${dbErr.message})`); continue; }
     }
     const isTop = /_top[._]/.test(hit.url);
     if (isTop) report.topDown++;
     report.mirrored.push(
-      `${pedal.name} <- ${hit.url} (${isTop ? 'TOP' : 'face'}, ${hit.dims.join('x')}, aspect ratio ${hit.ratio.toFixed(2)}x of footprint)`
+      `${pedal.name} <- ${hit.url} [${provenanceFor(hit.url).license}] (${isTop ? 'TOP' : 'face'}, ${hit.dims.join('x')}, aspect ratio ${hit.ratio.toFixed(2)}x of footprint)`
     );
   }
 
-  console.log(`mirrored: ${report.mirrored.length} (${report.topDown} top-down) | skipped (already ours): ${report.skipped.length} | missed: ${report.missed.length} | cleared stale: ${report.cleared.length}`);
+  console.log(`mirrored: ${report.mirrored.length} (${report.topDown} top-down) | skipped (already ours): ${report.skipped.length} | referenced (not mirrored): ${report.referenced.length} | missed: ${report.missed.length} | cleared stale: ${report.cleared.length}`);
   console.log('--- mirrored ---');
   report.mirrored.forEach(l => console.log(' ', l));
+  console.log('--- referenced, bytes deliberately not mirrored ---');
+  report.referenced.forEach(l => console.log(' ', l));
   console.log('--- missed (rect fallback) ---');
   report.missed.forEach(l => console.log(' ', l));
 }

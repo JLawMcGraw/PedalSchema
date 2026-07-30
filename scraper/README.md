@@ -79,10 +79,38 @@ For boutique pedals without scrapable pages:
 2. Include source URL
 3. Measure dimensions if not published
 
+## Image Mirroring
+
+`mirror-pedal-images.js` fetches a product photo per pedal from manufacturer sources,
+knocks out the background, and stores the result in the `pedal-images` bucket. It
+**records provenance in the same statement that writes the image** —
+`image_source_url`, `image_license`, `image_attribution`, `image_fetched_at` — so no
+served image lacks a named origin, and clearing an image clears its provenance too.
+
+`image_license` is recorded bluntly rather than optimistically:
+
+| Value | Meaning |
+|---|---|
+| `manufacturer-proprietary` | A manufacturer's product photo. We hold no licence; mirrored for product identification, removable on request. |
+| `wikimedia-see-file-page` | Per-file terms a human must resolve before the bytes are used. |
+| `user-provided` | Uploaded by the pedal's owner via `/pedals/new`. |
+| `unknown` | Host not recognised — treat as un-cleared. |
+
+**Provenance without an image means referenced, not mirrored.** A row with
+`image_source_url` set and `image_url` NULL is a deliberate decision to link rather
+than copy, and the script skips it **even under `FORCE=1`**. The Klon Centaur is the
+current case: its only good source is CC BY-SA 2.0 and our knockout makes a derivative,
+so share-alike would reach our output. Referencing avoids creating the derivative.
+
+See **Image Rights** in the root `README.md` for the removal path.
+
 ## License
 
-Data: CC0 (Public Domain)
+Data: CC0 (Public Domain) — the specification fields (dimensions, power, I/O).
 Code: MIT
+
+**Not** the pedal photographs: those belong to their manufacturers or photographers and
+are mirrored under the terms described above.
 
 ## Related Projects
 

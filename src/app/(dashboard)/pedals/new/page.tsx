@@ -152,6 +152,11 @@ export default function NewPedalPage() {
           is_system: false,
           created_by: user.id,
           image_url: imageUrl,
+          // Provenance travels with every image we serve (see the rights
+          // statement in README.md). For an upload the owner is the source.
+          image_source_url: imageUrl ? 'user-upload' : null,
+          image_license: imageUrl ? 'user-provided' : null,
+          image_fetched_at: imageUrl ? new Date().toISOString() : null,
         })
         .select('id')
         .single();

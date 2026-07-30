@@ -90,6 +90,37 @@ npm run build
 node .claude/scripts/screenshot.js http://localhost:3000/editor/new --auth
 ```
 
+## Image Rights
+
+Pedal photographs shown on the board are **mirrored from manufacturer sources** so the
+app can render a pedal as a recognisable cut-out instead of a coloured rectangle. They
+are used to identify the product being planned. We claim no ownership of them, and the
+MIT licence below covers this project's **code, not these images**.
+
+Every image we serve records where it came from. The `pedals` table carries
+`image_source_url`, `image_license`, `image_attribution` and `image_fetched_at`
+alongside `image_url`, written in the same statement — so there is no row whose origin
+we cannot name, and a request about any single photo can be answered directly from the
+database.
+
+Two rules follow from that, and the tooling enforces both:
+
+- **Nothing is served without a recorded origin.** `scraper/mirror-pedal-images.js`
+  writes provenance with the image and clears it with the image.
+- **Encumbered sources are referenced, not copied.** Where a licence would reach our
+  output, we store the pointer and no bytes, and the board falls back to a category
+  rectangle. The Klon Centaur is the current example: its only good source is CC BY-SA
+  2.0, and our pipeline knocks out the background — which would make our copy a
+  derivative and pull share-alike onto it. So we link the source and mirror nothing.
+
+**Rights holders:** if you own an image here and want it removed, open an issue or
+contact the repository owner. Removal is a single `UPDATE` clearing `image_url` (the
+app already renders the fallback for any pedal without a photo), plus dropping the
+object from the `pedal-images` bucket. We will also add the source to the mirror
+script's exclusion path so it is not re-fetched on the next run.
+
 ## License
 
-MIT
+MIT — covers the code in this repository. See **Image Rights** above for pedal
+photographs, which are not ours to license, and `scraper/README.md` for the
+specification data.
