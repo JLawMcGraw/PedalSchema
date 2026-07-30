@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Wand2, Grid3X3, Cable, MoreHorizontal, ZoomIn, ZoomOut, Undo2, Redo2 } from 'lucide-react';
+import { OptimizationSummary } from './optimization-summary';
 
 interface EditorToolbarProps {
   onSave: () => void;
@@ -71,6 +72,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
 
   return (
     <TooltipProvider>
+      <div className="flex flex-col">
       <div className="flex items-center justify-between h-12 px-2 sm:px-4 border-b bg-background gap-2">
         {/* Left side - name and badges */}
         <div className="flex items-center gap-2 min-w-0 shrink">
@@ -229,6 +231,8 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
             {isSaving ? 'Saving...' : 'Save'}
           </Button>
         </div>
+      </div>
+      <OptimizationSummary />
       </div>
     </TooltipProvider>
   );

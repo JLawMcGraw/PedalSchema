@@ -4,6 +4,7 @@ import { immer } from 'zustand/middleware/immer';
 import type { Board, Pedal, Amp, PlacedPedal, Position, ChainLocation, ChainContext, RoutingConfig, PedalRoutingConfig } from '@/types';
 import { signalChainEngine } from '@/lib/engine/signal-chain';
 import { calculateOptimalLayoutJoint } from '@/lib/engine/layout';
+import { summarizeOptimization, type OptimizationSummary } from '@/lib/engine/layout/routing-cost';
 
 /**
  * Undo/redo snapshot of everything a board-editing action can change.
@@ -46,6 +47,14 @@ interface ConfigurationState {
 
   // Undo/redo history (board edits only; name/description excluded)
   history: { past: HistorySnapshot[]; future: HistorySnapshot[] };
+
+  /**
+   * What the last optimizeLayout() traded off, for display next to the
+   * Optimize button. Null when nothing has been optimized this session or
+   * the summary was dismissed. Deliberately NOT in HistorySnapshot: it
+   * describes an action, not board state, so undo should not restore it.
+   */
+  lastOptimization: OptimizationSummary | null;
 
   // Dirty state
   isDirty: boolean;
@@ -96,6 +105,7 @@ interface ConfigurationState {
 
   // Layout optimization
   optimizeLayout: () => void;
+  dismissOptimizationSummary: () => void;
 
   // Undo/redo
   undo: () => void;
@@ -169,6 +179,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
         pedalConfigs: [],
       },
       history: { past: [], future: [] },
+      lastOptimization: null,
       isDirty: false,
       isSaving: false,
 
@@ -568,10 +579,19 @@ export const useConfigurationStore = create<ConfigurationState>()(
             }
           }
 
+          // What the optimizer traded off, derived from the same dimension
+          // list that scored the layouts. Null when there is nothing to say.
+          state.lastOptimization =
+            result.baselineCost && result.cost
+              ? summarizeOptimization(result.baselineCost, result.cost)
+              : null;
+
           state.isDirty = true;
         });
 
       },
+
+      dismissOptimizationSummary: () => set((state) => { state.lastOptimization = null; }),
 
       undo: () => {
         const { history } = get();

@@ -87,6 +87,27 @@ function constrainX(x: number, boardBounds: BoardBounds | null, margin: number =
 }
 
 /**
+ * Which rung of the cascade in routeCablePath produced a path.
+ *
+ * The cascade is ordered cheapest-sufficient-first, so this doubles as a
+ * difficulty reading: a board full of `astar` and `fallback-invalid` cables
+ * is a board whose placement is fighting its routing. Recorded rather than
+ * inferred because "why did this cable take that shape?" is otherwise only
+ * answerable by re-tracing the whole cascade by hand.
+ */
+export type RoutingStrategy =
+  | 'facing'           // standoffs meet - the cable is just the two stubs
+  | 'direct'           // straight line between standoffs (<= 80px)
+  | 'l-horizontal'     // single corner, horizontal leg first
+  | 'l-vertical'       // single corner, vertical leg first
+  | 'channel'          // through a gap between pedal rows
+  | 'above'            // over the top of every pedal
+  | 'below'            // under the bottom of every pedal
+  | 'safe-lane'        // a lane just outside the obstacle rows
+  | 'astar'            // grid pathfinding
+  | 'fallback-invalid'; // nothing worked; renderer draws this red
+
+/**
  * Result of cable routing with validation info
  */
 export interface CableRouteResult {
@@ -94,6 +115,8 @@ export interface CableRouteResult {
   path: Point[];
   /** Whether the path is valid (doesn't intersect obstacles) */
   valid: boolean;
+  /** Which strategy produced the path */
+  strategy: RoutingStrategy;
   /** Detailed validation result (only populated if validation failed) */
   validation?: ValidationResult;
 }
@@ -119,7 +142,7 @@ export function routeCableWithObstacles(
   const toBoxIdx = toPedalId ? obstacles.pedalIdToBox.get(toPedalId) ?? -1 : -1;
 
   // Route the cable
-  const path = routeCablePath(
+  const { path, strategy } = routeCablePath(
     from,
     to,
     obstacles.boxes,
@@ -135,6 +158,7 @@ export function routeCableWithObstacles(
   return {
     path,
     valid: validation.valid,
+    strategy,
     validation: validation.valid ? undefined : validation,
   };
 }
@@ -169,7 +193,7 @@ function routeCablePath(
   fromBoxIdx: number,
   toBoxIdx: number,
   boardBounds: BoardBounds | null
-): Point[] {
+): { path: Point[]; strategy: RoutingStrategy } {
   const validBoxes = boxes.filter(b => b.width > 0 && b.height > 0);
 
   const isOffBoardEndpoint = (p: Point): boolean => {
@@ -201,11 +225,16 @@ function routeCablePath(
   // Candidate validation runs on the ASSEMBLED path with exactly the same
   // policy as final acceptance (stub exemptions + endpoint tolerance), so
   // routing and validation can never disagree.
-  const candidateOk = (core: Point[]): Point[] | null => {
+  // Each rung tags its own result, so the label can never describe a
+  // different strategy than the one that actually produced the path.
+  const candidateOk = (
+    core: Point[],
+    strategy: RoutingStrategy
+  ): { path: Point[]; strategy: RoutingStrategy } | null => {
     const full = assemble(core);
     if (!isPathClear(full, boxes, { fromBoxIdx, toBoxIdx })) return null;
     if (!allowOffBoard && !isPathWithinBounds(full, boardBounds)) return null;
-    return full;
+    return { path: full, strategy };
   };
 
   const s = fromStandoff;
@@ -214,21 +243,21 @@ function routeCablePath(
   // Facing jacks (e.g., adjacent pedals at minimum spacing): the standoffs
   // meet in the middle - the cable is just the two stubs.
   if (dist(s, t) < 1) {
-    const facing = candidateOk([s]);
+    const facing = candidateOk([s], 'facing');
     if (facing) return facing;
   }
 
   // Strategy 1: Direct line between standoffs (for very close jacks)
   if (dist(s, t) <= 80) {
-    const direct = candidateOk([s, t]);
+    const direct = candidateOk([s, t], 'direct');
     if (direct) return direct;
   }
 
   // Strategy 2: Simple L-paths between standoffs
-  const lH = candidateOk([s, { x: t.x, y: s.y }, t]);
+  const lH = candidateOk([s, { x: t.x, y: s.y }, t], 'l-horizontal');
   if (lH) return lH;
 
-  const lV = candidateOk([s, { x: s.x, y: t.y }, t]);
+  const lV = candidateOk([s, { x: s.x, y: t.y }, t], 'l-vertical');
   if (lV) return lV;
 
   if (validBoxes.length > 0) {
@@ -240,7 +269,7 @@ function routeCablePath(
       const gap = yRanges[i + 1].top - yRanges[i].bottom;
       if (gap > OBSTACLE_MARGIN * 2) {
         const channelY = constrainY(yRanges[i].bottom + gap / 2, boardBounds);
-        const channel = candidateOk([s, { x: s.x, y: channelY }, { x: t.x, y: channelY }, t]);
+        const channel = candidateOk([s, { x: s.x, y: channelY }, { x: t.x, y: channelY }, t], 'channel');
         if (channel) return channel;
       }
     }
@@ -248,13 +277,13 @@ function routeCablePath(
     // Strategy 4: Route above all pedals (but stay within board bounds)
     const minY = Math.min(...yRanges.map(r => r.top));
     const aboveY = constrainY(Math.max(10, minY - STANDOFF * 2), boardBounds, 10);
-    const above = candidateOk([s, { x: s.x, y: aboveY }, { x: t.x, y: aboveY }, t]);
+    const above = candidateOk([s, { x: s.x, y: aboveY }, { x: t.x, y: aboveY }, t], 'above');
     if (above) return above;
 
     // Strategy 5: Route below all pedals (but stay within board bounds)
     const maxY = Math.max(...yRanges.map(r => r.bottom));
     const belowY = constrainY(maxY + STANDOFF * 2, boardBounds, 10);
-    const below = candidateOk([s, { x: s.x, y: belowY }, { x: t.x, y: belowY }, t]);
+    const below = candidateOk([s, { x: s.x, y: belowY }, { x: t.x, y: belowY }, t], 'below');
     if (below) return below;
 
     // Strategy 6: Safe horizontal lane just outside the obstacle rows,
@@ -262,7 +291,7 @@ function routeCablePath(
     const safeAboveY = constrainY(minY - OBSTACLE_MARGIN - 10, boardBounds, 10);
     const safeBelowY = constrainY(maxY + OBSTACLE_MARGIN + 10, boardBounds, 10);
     for (const laneY of [safeAboveY, safeBelowY]) {
-      const lane = candidateOk([s, { x: s.x, y: laneY }, { x: t.x, y: laneY }, t]);
+      const lane = candidateOk([s, { x: s.x, y: laneY }, { x: t.x, y: laneY }, t], 'safe-lane');
       if (lane) return lane;
     }
   }
@@ -271,10 +300,13 @@ function routeCablePath(
   // No exclusions: standoffs sit outside every pedal's margin zone.
   const astarPath = findPathAStar(s, t, boxes, -1, -1, boardBounds ?? undefined);
   if (astarPath.length > 0) {
-    const astar = candidateOk(astarPath);
+    const astar = candidateOk(astarPath, 'astar');
     if (astar) return astar;
   }
 
   // Fallback: return invalid direct path (will be marked red by renderer)
-  return dedupePath([from, fromStandoff, toStandoff, to]);
+  return {
+    path: dedupePath([from, fromStandoff, toStandoff, to]),
+    strategy: 'fallback-invalid',
+  };
 }

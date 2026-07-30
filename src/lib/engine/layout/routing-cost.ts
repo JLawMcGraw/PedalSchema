@@ -58,13 +58,49 @@ const ROW_MISALIGNMENT_PENALTY_INCHES = 20;
 // Re-export for backwards compatibility
 export type { PedalPlacement };
 
+/**
+ * The dimensions a placement is scored on, in the order they are reported.
+ *
+ * This list is the SINGLE source of both the score and the explanation of the
+ * score. `totalScore` is the sum of the dimension values - it is not computed
+ * separately - so a rationale shown to the user cannot describe a ranking
+ * different from the one that actually chose the layout. Adding a penalty
+ * means adding a dimension here; there is no second list of labels to forget.
+ */
+export const COST_DIMENSIONS = [
+  { key: 'cableLength', label: 'cable length', unit: 'inches' },
+  { key: 'crossings', label: 'cable crossings', unit: 'count' },
+  { key: 'spacing', label: 'pedals crowded together', unit: 'score' },
+  { key: 'complexRouting', label: 'cables needing complex routing', unit: 'count' },
+  { key: 'routingFailures', label: 'cables that cannot route cleanly', unit: 'count' },
+  { key: 'signalFlow', label: 'signal-flow reversals', unit: 'score' },
+  { key: 'rowAlignment', label: 'pedals off their row', unit: 'score' },
+] as const;
+
+export type CostDimensionKey = (typeof COST_DIMENSIONS)[number]['key'];
+
+export interface CostDimension {
+  key: CostDimensionKey;
+  label: string;
+  /** Contribution to totalScore, in inch-equivalents */
+  value: number;
+  /**
+   * The countable thing behind the value (crossings, failing cables), when
+   * one exists. Explanations prefer this because "2 fewer crossings" is
+   * meaningful to a user and "16 less penalty" is not.
+   */
+  count?: number;
+}
+
 export interface RoutingCostResult {
   /** Total routed cable length in inches */
   totalLengthInches: number;
   /** Number of cable crossings detected */
   crossingCount: number;
-  /** Total score: length + penalties */
+  /** Total score: the sum of `dimensions` values, never computed separately */
   totalScore: number;
+  /** Every scored dimension, in COST_DIMENSIONS order */
+  dimensions: CostDimension[];
   /** Per-cable breakdown */
   cableDetails: Array<{
     fromId: string;
@@ -72,6 +108,8 @@ export interface RoutingCostResult {
     directDistance: number;
     routedDistance: number;
     path: Point[];
+    /** Which routing strategy produced this path (see routing-strategies) */
+    strategy: string;
   }>;
 }
 
@@ -114,6 +152,8 @@ export function calculateRoutingCost(
   let totalRoutedLength = 0;
   let complexRoutingPenalty = 0;
   let validationFailurePenalty = 0;
+  let complexRoutingCount = 0;
+  let validationFailureCount = 0;
 
   interface ResolvedAnchor { id: string; pos: Point; pedalId: string | null }
 
@@ -155,12 +195,17 @@ export function calculateRoutingCost(
 
     if (path.length > 3) {
       complexRoutingPenalty += COMPLEX_ROUTING_PENALTY_INCHES;
+      complexRoutingCount++;
     }
     if (!result.valid) {
       validationFailurePenalty += CABLE_COLLISION_PENALTY_INCHES * 2;
+      validationFailureCount++;
     }
 
-    cableDetails.push({ fromId, toId, directDistance: directDist, routedDistance: routedDist, path });
+    cableDetails.push({
+      fromId, toId, directDistance: directDist, routedDistance: routedDist, path,
+      strategy: result.strategy,
+    });
     allPaths.push({ id: `${fromId}-${toId}`, points: path });
     totalRoutedLength += routedDist;
   };
@@ -194,13 +239,29 @@ export function calculateRoutingCost(
   const signalFlowPenalty = calculateSignalFlowPenalty(topology, placedById, pedalsById);
   const rowAlignmentPenalty = calculateRowAlignmentPenalty(placements, board);
 
+  // One list, in COST_DIMENSIONS order. totalScore is its sum - deriving both
+  // from here is what stops a shown rationale from describing a different
+  // ranking than the one that actually picked the layout.
+  const byKey: Record<CostDimensionKey, { value: number; count?: number }> = {
+    cableLength: { value: totalRoutedLength },
+    crossings: { value: crossingPenalty, count: crossings.length },
+    spacing: { value: spacingPenalty },
+    complexRouting: { value: complexRoutingPenalty, count: complexRoutingCount },
+    routingFailures: { value: validationFailurePenalty, count: validationFailureCount },
+    signalFlow: { value: signalFlowPenalty },
+    rowAlignment: { value: rowAlignmentPenalty },
+  };
+  const dimensions: CostDimension[] = COST_DIMENSIONS.map((d) => ({
+    key: d.key,
+    label: d.label,
+    ...byKey[d.key],
+  }));
+
   return {
     totalLengthInches: totalRoutedLength,
     crossingCount: crossings.length,
-    totalScore:
-      totalRoutedLength + crossingPenalty + spacingPenalty +
-      complexRoutingPenalty + validationFailurePenalty +
-      signalFlowPenalty + rowAlignmentPenalty,
+    totalScore: dimensions.reduce((sum, d) => sum + d.value, 0),
+    dimensions,
     cableDetails,
   };
 }
@@ -305,4 +366,115 @@ function calculateRowAlignmentPenalty(
   }
 
   return penalty;
+}
+
+// ============================================================================
+// EXPLAINING A SCORE
+// ============================================================================
+
+export interface CostChange {
+  key: CostDimensionKey;
+  label: string;
+  /** Score delta (negative = the new layout is better on this dimension) */
+  delta: number;
+  /** Count delta where the dimension has a countable thing, else undefined */
+  countDelta?: number;
+}
+
+export interface OptimizationSummary {
+  /** Total score before and after */
+  before: number;
+  after: number;
+  /** Negative when optimizing helped */
+  delta: number;
+  /** Cable length change in inches (the number users care about most) */
+  lengthDeltaInches: number;
+  /** Dimensions that actually moved, biggest improvement first */
+  changes: CostChange[];
+  /** One line fit to show next to the Optimize button */
+  headline: string;
+}
+
+/** Round to one decimal, avoiding "-0.0" */
+function round1(n: number): number {
+  const r = Math.round(n * 10) / 10;
+  return r === 0 ? 0 : r;
+}
+
+/**
+ * Explain what optimizing changed, derived from the SAME dimension list that
+ * produced the scores. There is no separate table of labels or thresholds to
+ * drift: a dimension that moved is reported, one that did not is not, and the
+ * headline is built from the top entries of that same list.
+ *
+ * Reports honestly when the layout got worse or did not change - an optimizer
+ * that always claims an improvement is not worth reading.
+ */
+export function summarizeOptimization(
+  before: RoutingCostResult,
+  after: RoutingCostResult
+): OptimizationSummary {
+  const beforeByKey = new Map(before.dimensions.map((d) => [d.key, d]));
+
+  const changes: CostChange[] = after.dimensions
+    .map((d) => {
+      const prev = beforeByKey.get(d.key);
+      const delta = d.value - (prev?.value ?? 0);
+      const countDelta =
+        d.count !== undefined && prev?.count !== undefined ? d.count - prev.count : undefined;
+      return { key: d.key, label: d.label, delta, countDelta };
+    })
+    // A dimension is "unchanged" only if neither its score nor its count moved
+    .filter((c) => Math.abs(c.delta) > 0.05 || (c.countDelta ?? 0) !== 0)
+    .sort((a, b) => a.delta - b.delta);
+
+  const lengthDeltaInches =
+    (after.dimensions.find((d) => d.key === 'cableLength')?.value ?? 0) -
+    (before.dimensions.find((d) => d.key === 'cableLength')?.value ?? 0);
+
+  const delta = after.totalScore - before.totalScore;
+
+  // Phrase a change the way a person would say it
+  const phrase = (c: CostChange): string => {
+    const meta = COST_DIMENSIONS.find((d) => d.key === c.key)!;
+    if (meta.unit === 'inches') {
+      const inches = Math.abs(round1(c.delta));
+      return `${inches}in ${c.delta < 0 ? 'less' : 'more'} ${c.label}`;
+    }
+    if (meta.unit === 'count' && c.countDelta) {
+      const n = Math.abs(c.countDelta);
+      return `${n} ${c.countDelta < 0 ? 'fewer' : 'more'} ${c.label}`;
+    }
+    // Score-only dimensions have no countable magnitude to quote, but every
+    // label is a plural noun phrase, so "fewer/more" reads correctly.
+    return `${c.delta < 0 ? 'fewer' : 'more'} ${c.label}`;
+  };
+
+  const sentence = (parts: string[]) => {
+    const s = parts.join(', ');
+    return s.charAt(0).toUpperCase() + s.slice(1) + '.';
+  };
+
+  let headline: string;
+  if (changes.length === 0) {
+    headline = 'Already optimal - nothing moved.';
+  } else if (delta > 0.05) {
+    // The rearrangement scored WORSE. Lead with what got worse - `changes` is
+    // sorted best-first, so quoting changes[0] here would cherry-pick the one
+    // improvement inside a net regression. The layout is still applied (undo
+    // reverses it), so do not claim the previous one was kept.
+    const worst = changes[changes.length - 1];
+    headline = `Rearranged, but scored worse - ${phrase(worst)}. Undo to go back.`;
+  } else {
+    headline = sentence(changes.slice(0, 2).map(phrase));
+  }
+
+  return {
+    before: before.totalScore,
+    after: after.totalScore,
+    delta,
+    lengthDeltaInches,
+    changes,
+    headline,
+  };
 }

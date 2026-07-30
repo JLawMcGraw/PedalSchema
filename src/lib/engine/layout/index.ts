@@ -1,6 +1,6 @@
 import type { Amp, Board, Pedal, PlacedPedal, RoutingConfig, JointOptimizationResult, PedalPlacement, SwappableGroup } from '@/types';
 import { deriveSignalTopology, primaryChain, ampClusters, hubClusters } from '../topology';
-import { calculateRoutingCost } from './routing-cost';
+import { calculateRoutingCost, type RoutingCostResult } from './routing-cost';
 import { identifySwappableGroups } from '../signal-chain';
 import { COLLISION_SPACING } from '../collision';
 import { getExternalEndpointInches } from '../cables/endpoints';
@@ -900,12 +900,30 @@ function boxesOverlap(a: PlacedBox, b: PlacedBox, spacing: number = 0): boolean 
  * The approach is CONSERVATIVE - it maintains the signal-flow layout structure
  * and only optimizes within swappable groups.
  */
+/**
+ * The joint result plus the scores behind it. Kept here rather than on the
+ * shared JointOptimizationResult because RoutingCostResult belongs to the
+ * engine, and @/types must not depend on the engine (it is the base layer
+ * the engine imports from).
+ */
+export interface ScoredJointOptimizationResult extends JointOptimizationResult {
+  /**
+   * Score of the layout the user actually had before optimizing - their real
+   * pedal positions, not a re-placed version of them - and of the layout
+   * returned. The optimizer already computes these to make its choice;
+   * dropping them at this boundary is what made Optimize unexplainable.
+   * Both undefined when there was nothing to optimize.
+   */
+  baselineCost?: RoutingCostResult;
+  cost?: RoutingCostResult;
+}
+
 export function calculateOptimalLayoutJoint(
   placedPedals: PlacedPedal[],
   pedalsById: Record<string, Pedal>,
   board: Board,
   routingConfig?: RoutingConfig
-): JointOptimizationResult {
+): ScoredJointOptimizationResult {
   if (placedPedals.length === 0) {
     return {
       placements: [],
@@ -926,6 +944,14 @@ export function calculateOptimalLayoutJoint(
   const use4CableMethod = routingConfig?.use4CableMethod ?? false;
 
   const pedalById = new Map(placedPedals.map(p => [p.id, p]));
+
+  // The honest "before": the board exactly as the user left it. NOT
+  // evaluate(initialChainOrder), which greedily re-places everything and so
+  // would compare an optimized layout against another optimized layout.
+  const baselineCost = calculateRoutingCost(
+    placedPedals.map((p) => ({ id: p.id, x: p.xInches, y: p.yInches })),
+    placedPedals, pedalsById, board, undefined, useEffectsLoop, use4CableMethod, routingConfig
+  );
 
   // Pedals where rotation changes jack FACING (input/output on top/bottom
   // edges, e.g. EQ-200) - the only ones worth searching rotations for
@@ -950,6 +976,11 @@ export function calculateOptimalLayoutJoint(
       placements,
       chainOrder: initialChainOrder,
       swappableGroups,
+      baselineCost,
+      cost: calculateRoutingCost(
+        placements, placedPedals, pedalsById, board, undefined,
+        useEffectsLoop, use4CableMethod, routingConfig
+      ),
     };
   }
 
@@ -973,13 +1004,13 @@ export function calculateOptimalLayoutJoint(
     // (the routing cost has no overlap term - shorter-but-colliding layouts
     // would otherwise win)
     if (hasPlacementCollision(placements, reordered, pedalsById, board)) {
-      return { placements, score: Infinity };
+      return { placements, score: Infinity, cost: undefined };
     }
 
     const cost = calculateRoutingCost(
       placements, reordered, pedalsById, board, undefined, useEffectsLoop, use4CableMethod, routingConfig
     );
-    return { placements, score: cost.totalScore };
+    return { placements, score: cost.totalScore, cost };
   };
 
   // --- Stage 1: chain orders at current rotations -----------------------------
@@ -1029,6 +1060,10 @@ export function calculateOptimalLayoutJoint(
     chainOrder: bestOrder,
     swappableGroups,
     rotations: changedRotations.length > 0 ? changedRotations : undefined,
+    baselineCost,
+    // `best.cost` is the winner's own score object, not a recomputation, so
+    // what the UI reports is literally what the search compared.
+    cost: best.cost,
   };
 }
 
