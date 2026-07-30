@@ -324,6 +324,7 @@ async function acceptCandidate(url, physicalAspect) {
 const MANUFACTURER_HOSTS = [
   'roland.com', 'boss.info', 'ibanez.com', 'jimdunlop.com', 'bigcommerce.com',
   'ehx.com', 'actentertainment.com', 'musictribe.com', 'tcelectronic.com',
+  'strymon.net',
 ];
 
 function provenanceFor(sourceUrl) {
