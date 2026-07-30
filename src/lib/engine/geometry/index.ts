@@ -62,6 +62,32 @@ export const STANDOFF = 10;
 /** Grid resolution for A* pathfinding, in pixels. */
 export const GRID_CELL_SIZE = 8;
 
+/**
+ * Perpendicular distance between adjacent parallel cable runs, in pixels.
+ *
+ * CONTRACT: must exceed the rendered width of a cable, or two runs at this
+ * spacing read as one thick line. A cable draws as a 3px stroke inside a 5px
+ * shadow (cable-renderer.tsx), so the rendered width is 5px and 12 > 5 holds
+ * with room for the eye to separate them.
+ *
+ * Owned here because TWO different stages space runs apart and must agree:
+ * the corridor model in engine/lanes (how many lanes fit in a corridor) and
+ * the parallel-run separation pass in engine/cables/route-cables (how far to
+ * shift an overlapping run). They were independently defined as 12 in both
+ * files until 2026-07-30; changing the stroke width would have updated one
+ * and silently desynced the other.
+ */
+export const LANE_SPACING = 12;
+
+/**
+ * Floor for LANE_SPACING when a corridor is squeezed, in pixels.
+ * Below this a corridor counts as over capacity and the router gives up on
+ * fitting another lane rather than drawing runs that visually merge.
+ * Lives beside LANE_SPACING so raising one without reconsidering the other
+ * is an obvious omission rather than an invisible one.
+ */
+export const MIN_LANE_SPACING = 9;
+
 // ============================================================================
 // BASIC GEOMETRY
 // ============================================================================

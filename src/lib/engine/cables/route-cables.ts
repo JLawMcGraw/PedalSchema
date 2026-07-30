@@ -15,6 +15,7 @@
 
 import type { Board, Cable, Pedal, PlacedPedal } from '@/types';
 import type { Point } from '../geometry';
+import { LANE_SPACING } from '../geometry';
 import { generateObstacles, type ObstacleSet } from '../obstacles';
 import { routeCableWithObstacles } from './routing-strategies';
 import { getExternalEndpointPx, getPedalJackPx, type ExternalEndpointType } from './endpoints';
@@ -73,12 +74,6 @@ function resolveEndpoint(
 // adjacent lanes, re-validating every shift against the shared policy.
 // ---------------------------------------------------------------------------
 
-/**
- * Distance between adjacent cable lanes, in pixels.
- * A rendered cable is ~8px wide (3px stroke inside a 5px shadow), so lanes
- * must be wider than that to read as separate lines.
- */
-const LANE_SPACING = 12;
 /** Runs closer than this (perpendicular) count as overlapping */
 const LANE_TOLERANCE = 10;
 /** Minimum shared run length that counts as an overlap */

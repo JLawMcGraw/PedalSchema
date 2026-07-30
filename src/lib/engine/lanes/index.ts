@@ -21,18 +21,23 @@
  */
 
 import type { Point, Box } from '../geometry';
-import { OBSTACLE_MARGIN, STANDOFF, isPathClear } from '../geometry';
+import { OBSTACLE_MARGIN, STANDOFF, LANE_SPACING, MIN_LANE_SPACING, isPathClear } from '../geometry';
 import type { ObstacleSet } from '../obstacles';
 import { getBoxForPedal } from '../obstacles';
 import { getStandoffPoint } from '../pathfinding';
 
-/** Preferred distance between adjacent lanes in a corridor */
-const LANE_SPACING = 12;
-/** Minimum squeezed lane spacing before a corridor counts as over capacity */
-const MIN_LANE_SPACING = 9;
 /** Cost added per corridor switch (a corner) */
 const TURN_PENALTY = 30;
-/** How far off-board the external columns and row corridors extend */
+/**
+ * How far off-board the external columns and row corridors extend.
+ *
+ * NOT the same quantity as route-cables' LANE_BOARD_OVERHANG (70) or
+ * routing-strategies' BOARD_OVERHANG (16), despite the similar names -
+ * audited 2026-07-30, deliberately left separate. Three different stages:
+ * this sizes the corridor GRAPH, LANE_BOARD_OVERHANG clamps where a
+ * lane-SHIFTED run may land, and BOARD_OVERHANG is the tolerance for
+ * REJECTING a routed path. Do not collapse them into one constant.
+ */
 const OVERHANG = 64;
 
 interface Corridor {
