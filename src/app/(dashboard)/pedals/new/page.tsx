@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { PEDAL_CATEGORIES } from '@/lib/constants/pedal-categories';
+import { preparePedalPhoto } from '@/lib/images/prepare-pedal-photo';
+import type { KnockoutStatus } from '@/lib/images/knockout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -18,12 +20,29 @@ import {
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
+/**
+ * What the knockout managed to do, in the user's terms. The board draws photos
+ * with no box behind them, so a photo that kept its background shows up as a
+ * white rectangle - worth saying out loud before they save it.
+ */
+const PHOTO_NOTE: Record<KnockoutStatus, string> = {
+  'knocked-out': 'Background removed — this will sit on the board as a cut-out.',
+  'already-cutout': 'This image already has a transparent background. Nice.',
+  'no-background': 'Couldn’t find a background to remove — the photo is used as-is.',
+  'ragged-background':
+    'The background is too busy to remove cleanly, so the photo is used as-is. A shot on a plain surface will cut out better.',
+  reverted:
+    'Couldn’t tell the pedal from the background, so the photo is used as-is. A shot on a plain surface will cut out better.',
+};
+
 export default function NewPedalPage() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [photoNote, setPhotoNote] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     name: '',
@@ -39,7 +58,16 @@ export default function NewPedalPage() {
   const set = (field: keyof typeof form) => (value: string) =>
     setForm((f) => ({ ...f, [field]: value }));
 
-  const onImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const showPhoto = (file: File | null, url: string | null, note: string | null) => {
+    setImageFile(file);
+    setPhotoNote(note);
+    setImagePreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return url;
+    });
+  };
+
+  const onImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
     setError(null);
     if (file && !file.type.startsWith('image/')) {
@@ -50,11 +78,22 @@ export default function NewPedalPage() {
       setError('Image must be under 5MB.');
       return;
     }
-    setImageFile(file);
-    setImagePreview((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return file ? URL.createObjectURL(file) : null;
-    });
+    if (!file) {
+      showPhoto(null, null, null);
+      return;
+    }
+
+    // Cut the background out before upload so the pedal renders as a silhouette
+    // on the board, matching the mirrored system-pedal photos.
+    setProcessing(true);
+    try {
+      const prepared = await preparePedalPhoto(file);
+      showPhoto(prepared.file, prepared.previewUrl, PHOTO_NOTE[prepared.status]);
+    } catch {
+      showPhoto(file, URL.createObjectURL(file), 'Couldn’t process this image — it will be uploaded as-is.');
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -87,6 +126,7 @@ export default function NewPedalPage() {
       let imageUrl: string | null = null;
       if (imageFile) {
         const ext = imageFile.type.includes('png') ? 'png' : 'jpg';
+        // Processed photos are PNG so the knocked-out alpha survives
         const path = `user/${user.id}/${crypto.randomUUID()}.${ext}`;
         const { error: upErr } = await supabase.storage
           .from('pedal-images')
@@ -202,14 +242,31 @@ export default function NewPedalPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="photo">Photo (optional, top-down works best)</Label>
-              <Input id="photo" type="file" accept="image/png,image/jpeg,image/webp" onChange={onImageChange} />
+              <Label htmlFor="photo">Photo (optional, top-down on a plain surface works best)</Label>
+              <Input
+                id="photo"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={onImageChange}
+                disabled={processing}
+              />
+              {processing && <p className="text-sm text-muted-foreground">Removing background…</p>}
               {imagePreview && (
-                <div className="flex items-center justify-center h-40 rounded-md bg-muted/40 overflow-hidden">
+                <div
+                  className="flex items-center justify-center h-40 rounded-md overflow-hidden bg-muted/40"
+                  style={{
+                    // Checkerboard so a transparent cut-out reads as transparent
+                    backgroundImage:
+                      'linear-gradient(45deg, rgba(0,0,0,0.06) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.06) 75%), linear-gradient(45deg, rgba(0,0,0,0.06) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.06) 75%)',
+                    backgroundSize: '16px 16px',
+                    backgroundPosition: '0 0, 8px 8px',
+                  }}
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={imagePreview} alt="Preview" className="max-h-full max-w-full object-contain" />
                 </div>
               )}
+              {photoNote && <p className="text-sm text-muted-foreground">{photoNote}</p>}
             </div>
 
             {error && <p className="text-sm text-destructive">{error}</p>}

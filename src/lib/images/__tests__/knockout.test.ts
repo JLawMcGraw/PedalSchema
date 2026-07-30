@@ -1,0 +1,225 @@
+import { describe, expect, it } from 'vitest';
+import {
+  knockOutBackground,
+  prepareSilhouette,
+  trimTransparent,
+  type RgbaImage,
+} from '../knockout';
+
+type Rgba = [number, number, number, number];
+
+function image(
+  width: number,
+  height: number,
+  at: (x: number, y: number) => Rgba
+): RgbaImage {
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const [r, g, b, a] = at(x, y);
+      const i = (y * width + x) * 4;
+      data[i] = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+      data[i + 3] = a;
+    }
+  }
+  return { data, width, height };
+}
+
+const alphaAt = (img: RgbaImage, x: number, y: number) =>
+  img.data[(y * img.width + x) * 4 + 3];
+
+/** A dark pedal body on a white studio backdrop. */
+function pedalOnWhite(size = 40, inset = 10) {
+  const inBody = (x: number, y: number) =>
+    x >= inset && x < size - inset && y >= inset && y < size - inset;
+  return image(size, size, (x, y) => (inBody(x, y) ? [30, 30, 35, 255] : [255, 255, 255, 255]));
+}
+
+describe('knockOutBackground', () => {
+  it('makes a white studio background transparent and leaves the body opaque', () => {
+    const { image: out, status, knocked } = knockOutBackground(pedalOnWhite());
+
+    expect(status).toBe('knocked-out');
+    // 40x40 frame, 20x20 body => 1600 - 400 = 1200 background pixels
+    expect(knocked).toBe(1200);
+    expect(alphaAt(out, 0, 0)).toBe(0); // corner: background
+    expect(alphaAt(out, 20, 20)).toBe(255); // centre: body
+    expect(alphaAt(out, 10, 10)).toBe(255); // body's top-left corner
+    expect(alphaAt(out, 9, 9)).toBe(0); // pixel just outside it
+  });
+
+  it('does not modify the input buffer', () => {
+    const input = pedalOnWhite();
+    const before = new Uint8ClampedArray(input.data);
+    knockOutBackground(input);
+    expect(input.data).toEqual(before);
+  });
+
+  it('keeps light interior details that are not edge-connected', () => {
+    // Dark body with a white knob in the middle: same colour as the backdrop,
+    // but unreachable from the border without crossing the body.
+    const img = image(40, 40, (x, y) => {
+      const inBody = x >= 10 && x < 30 && y >= 10 && y < 30;
+      if (!inBody) return [255, 255, 255, 255];
+      const inKnob = x >= 18 && x < 22 && y >= 18 && y < 22;
+      return inKnob ? [255, 255, 255, 255] : [30, 30, 35, 255];
+    });
+
+    const { image: out, status } = knockOutBackground(img);
+
+    expect(status).toBe('knocked-out');
+    expect(alphaAt(out, 19, 19)).toBe(255); // white knob survives
+    expect(alphaAt(out, 0, 0)).toBe(0); // white backdrop does not
+  });
+
+  it('follows a smooth backdrop gradient all the way to the body', () => {
+    // Backdrop fades 245 -> 120 top to bottom; far outside BG_TOL of the border
+    // average, so only gradient-chaining can clear it.
+    const img = image(40, 40, (x, y) => {
+      const inBody = x >= 12 && x < 28 && y >= 12 && y < 28;
+      if (inBody) return [20, 20, 20, 255];
+      const v = Math.round(245 - (125 * y) / 39);
+      return [v, v, v, 255];
+    });
+
+    const { image: out, status } = knockOutBackground(img);
+
+    expect(status).toBe('knocked-out');
+    expect(alphaAt(out, 20, 39)).toBe(0); // darkest backdrop row cleared
+    expect(alphaAt(out, 20, 20)).toBe(255); // body intact
+  });
+
+  it('does not creep through a drop shadow into the enclosure', () => {
+    // Mid-grey shadow ring (luminance below BG_GRAD_MIN_LUM) around a black body.
+    const img = image(40, 40, (x, y) => {
+      const d = Math.max(Math.abs(x - 20), Math.abs(y - 20));
+      if (d < 8) return [10, 10, 10, 255]; // body
+      if (d < 11) return [70, 70, 70, 255]; // shadow, lum 70 < 90
+      return [250, 250, 250, 255]; // backdrop
+    });
+
+    const { image: out } = knockOutBackground(img);
+
+    expect(alphaAt(out, 20, 10)).toBe(255); // shadow ring kept
+    expect(alphaAt(out, 20, 20)).toBe(255); // body kept
+    expect(alphaAt(out, 0, 0)).toBe(0); // backdrop cleared
+  });
+
+  it('leaves an image that is already a silhouette untouched', () => {
+    const img = image(40, 40, (x, y) => {
+      const inBody = x >= 10 && x < 30 && y >= 10 && y < 30;
+      return inBody ? [30, 30, 35, 255] : [0, 0, 0, 0];
+    });
+
+    const { status, knocked } = knockOutBackground(img);
+
+    expect(status).toBe('already-cutout');
+    expect(knocked).toBe(0);
+  });
+
+  it('reverts a fill that would eat the whole frame', () => {
+    // A uniform white image has no subject: clearing it would leave nothing.
+    const img = image(40, 40, () => [255, 255, 255, 255]);
+
+    const { image: out, status, knocked } = knockOutBackground(img);
+
+    expect(status).toBe('reverted');
+    expect(knocked).toBe(0);
+    expect(alphaAt(out, 20, 20)).toBe(255);
+  });
+
+  it('discards a ragged fill on a busy background instead of speckling it', () => {
+    // Loud multicoloured background: the fill nibbles ~6% of pixels and stalls
+    // at ~55% of the border. Applying that would punch random holes in a photo.
+    const img = image(40, 40, (x, y) => [(x * 37) % 256, (y * 91) % 256, (x * y * 13) % 256, 255]);
+
+    const { image: out, status, knocked } = knockOutBackground(img);
+
+    expect(status).toBe('ragged-background');
+    expect(knocked).toBe(0);
+    // Every pixel still opaque - the photo is returned untouched
+    for (let y = 0; y < out.height; y++) {
+      for (let x = 0; x < out.width; x++) {
+        expect(alphaAt(out, x, y)).toBe(255);
+      }
+    }
+  });
+
+  it('still clears an evenly textured surface, like a pedal on wood or carpet', () => {
+    const img = image(60, 60, (x, y) => {
+      if (x >= 20 && x < 40 && y >= 20 && y < 40) return [30, 30, 35, 255];
+      const grain = Math.round(Math.sin(y * 0.7) * 8);
+      return [160 + grain, 120 + grain, 80 + grain, 255];
+    });
+
+    const { image: out, status, knocked } = knockOutBackground(img);
+
+    expect(status).toBe('knocked-out');
+    expect(knocked).toBe(60 * 60 - 20 * 20); // the whole surface, none of the pedal
+    expect(alphaAt(out, 0, 0)).toBe(0);
+    expect(alphaAt(out, 30, 30)).toBe(255);
+  });
+});
+
+describe('trimTransparent', () => {
+  it('crops transparent margins down to the opaque subject', () => {
+    const img = image(40, 40, (x, y) => {
+      const inBody = x >= 10 && x < 30 && y >= 12 && y < 32;
+      return inBody ? [30, 30, 35, 255] : [0, 0, 0, 0];
+    });
+
+    const out = trimTransparent(img);
+
+    expect([out.width, out.height]).toEqual([20, 20]);
+    expect(alphaAt(out, 0, 0)).toBe(255);
+    expect(alphaAt(out, 19, 19)).toBe(255);
+  });
+
+  it('returns the image unchanged when it has no transparent margin', () => {
+    const img = image(10, 10, () => [1, 2, 3, 255]);
+    expect(trimTransparent(img)).toBe(img);
+  });
+
+  it('returns the image unchanged when nothing is opaque', () => {
+    const img = image(10, 10, () => [0, 0, 0, 0]);
+    expect(trimTransparent(img)).toBe(img);
+  });
+});
+
+describe('prepareSilhouette', () => {
+  it('knocks out and trims in one pass, leaving the body filling the frame', () => {
+    const { image: out, status } = prepareSilhouette(pedalOnWhite());
+
+    expect(status).toBe('knocked-out');
+    expect([out.width, out.height]).toEqual([20, 20]);
+    // Every pixel of the result is body
+    for (let y = 0; y < out.height; y++) {
+      for (let x = 0; x < out.width; x++) {
+        expect(alphaAt(out, x, y)).toBe(255);
+      }
+    }
+  });
+
+  it('skips the trim when it would keep almost nothing', () => {
+    // One stray opaque speck on white: knockout leaves a 1px subject, and
+    // cropping to it would be a worse result than leaving the frame alone.
+    const img = image(40, 40, (x, y) =>
+      x === 20 && y === 20 ? [10, 10, 10, 255] : [255, 255, 255, 255]
+    );
+
+    const { image: out } = prepareSilhouette(img);
+
+    expect([out.width, out.height]).toEqual([40, 40]);
+  });
+
+  it('passes a reverted knockout through at full size', () => {
+    const img = image(40, 40, () => [255, 255, 255, 255]);
+
+    const { image: out, status } = prepareSilhouette(img);
+
+    expect(status).toBe('reverted');
+    expect([out.width, out.height]).toEqual([40, 40]);
+  });
+});
