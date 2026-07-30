@@ -1,3 +1,11 @@
+/**
+ * Pixel-outcome tests: what SURVIVES and what CLEARS.
+ *
+ * The status each fixture returns is asserted by the corpus in
+ * ./corpus.test.ts. These are the complementary assertions a status label
+ * cannot capture - an interior knob staying opaque, a shadow ring not being
+ * crossed - so both files are needed and neither subsumes the other.
+ */
 import { describe, expect, it } from 'vitest';
 import {
   knockOutBackground,
@@ -5,37 +13,10 @@ import {
   trimTransparent,
   type RgbaImage,
 } from '../knockout';
-
-type Rgba = [number, number, number, number];
-
-function image(
-  width: number,
-  height: number,
-  at: (x: number, y: number) => Rgba
-): RgbaImage {
-  const data = new Uint8ClampedArray(width * height * 4);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const [r, g, b, a] = at(x, y);
-      const i = (y * width + x) * 4;
-      data[i] = r;
-      data[i + 1] = g;
-      data[i + 2] = b;
-      data[i + 3] = a;
-    }
-  }
-  return { data, width, height };
-}
+import { image, pedalOnWhite } from './fixtures';
 
 const alphaAt = (img: RgbaImage, x: number, y: number) =>
   img.data[(y * img.width + x) * 4 + 3];
-
-/** A dark pedal body on a white studio backdrop. */
-function pedalOnWhite(size = 40, inset = 10) {
-  const inBody = (x: number, y: number) =>
-    x >= inset && x < size - inset && y >= inset && y < size - inset;
-  return image(size, size, (x, y) => (inBody(x, y) ? [30, 30, 35, 255] : [255, 255, 255, 255]));
-}
 
 describe('knockOutBackground', () => {
   it('makes a white studio background transparent and leaves the body opaque', () => {

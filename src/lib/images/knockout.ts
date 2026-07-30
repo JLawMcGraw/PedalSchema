@@ -93,6 +93,12 @@ export function knockOutBackground(input: RgbaImage): KnockoutResult {
     b += px[i * 4 + 2];
     n++;
   }
+  // Unreachable by construction, kept as a division guard: every border pixel
+  // is counted either as `transparent` or in `n`, and the check above already
+  // returned when transparent exceeded 30% of the border - so n is at least
+  // 70% of a border that has >= 12 pixels once W,H >= 3. Building the fixture
+  // corpus surfaced this: the only specimen that can produce 'no-background'
+  // is the sub-3px guard at the top of the function.
   if (!n) return { image: out, status: 'no-background', knocked: 0 };
   r /= n;
   g /= n;
