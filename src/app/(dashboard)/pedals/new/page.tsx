@@ -29,6 +29,8 @@ const PHOTO_NOTE: Record<KnockoutStatus, string> = {
   'knocked-out': 'Background removed — this will sit on the board as a cut-out.',
   'already-cutout': 'This image already has a transparent background. Nice.',
   'no-background': 'Couldn’t find a background to remove — the photo is used as-is.',
+  'subject-eaten':
+    'The pedal is too close in colour to its background to separate them, so the photo is used as-is. A darker or more contrasting background will cut out better.',
   'ragged-background':
     'The background is too busy to remove cleanly, so the photo is used as-is. A shot on a plain surface will cut out better.',
   reverted:

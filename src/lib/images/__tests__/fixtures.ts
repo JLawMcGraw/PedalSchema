@@ -47,6 +47,7 @@ export const ALL_STATUSES: Record<KnockoutStatus, true> = {
   'already-cutout': true,
   'no-background': true,
   'ragged-background': true,
+  'subject-eaten': true,
   reverted: true,
 };
 
@@ -115,6 +116,25 @@ export const SPECIMENS: Specimen[] = [
       'Applying that would punch random transparent holes in a user photo.',
     build: () =>
       image(40, 40, (x, y) => [(x * 37) % 256, (y * 91) % 256, (x * y * 13) % 256, 255]),
+  },
+  {
+    name: 'body reachable only by following the backdrop gradient',
+    expected: 'subject-eaten',
+    why:
+      'The body is far outside BG_TOL of the backdrop, so a strict fill stops ' +
+      'at its edge - but a smooth ramp lets gradient-chaining walk all the way ' +
+      'in and hollow out the centre. This is what made BF-3 and PH-3 render as ' +
+      'black blobs: only their dark knobs and footswitch survived. ' +
+      'prepareSilhouette retries without gradient following and recovers it.',
+    build: () =>
+      image(40, 40, (x, y) => {
+        // dark block: keeps survivors above the runaway-revert floor
+        if (x >= 24 && x < 38 && y >= 24 && y < 38) return [30, 30, 30, 255];
+        const d = Math.max(Math.abs(x - 16), Math.abs(y - 16));
+        if (d < 4) return [150, 150, 150, 255];
+        if (d < 12) { const v = 150 + (d - 4) * 12; return [v, v, v, 255]; }
+        return [255, 255, 255, 255];
+      }),
   },
   {
     name: 'uniform white frame with no subject',

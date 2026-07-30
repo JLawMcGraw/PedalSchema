@@ -37,6 +37,16 @@ const MAX_KNOCK_SHARE = 0.9;
  * backgrounds both clear 100% of the border; noisy ones stall near 55%.
  */
 const MIN_BORDER_KNOCK_SHARE = 0.85;
+/**
+ * Share of the centre 40% box the fill may touch before it counts as having
+ * eaten the subject. A product photo has the product in the middle, so a fill
+ * that reaches there has leaked out of the backdrop. Measured across 64
+ * mirrored pedal photos the split is unambiguous: healthy fills touch at most
+ * 0.49% of the centre box, damaged ones 4.48% and up (worst: 59%). Without
+ * this, a JPEG of a pedal with light areas gets hollowed out and renders as a
+ * black blob - only its dark knobs and footswitch survive.
+ */
+const MAX_CENTRE_KNOCK_SHARE = 0.02;
 /** Alpha at or above this counts as an opaque pixel. */
 const OPAQUE = 20;
 
@@ -45,6 +55,7 @@ export type KnockoutStatus =
   | 'already-cutout' // image already had an alpha silhouette
   | 'no-background' // no opaque border pixels to sample
   | 'ragged-background' // background too busy to clear cleanly; discarded
+  | 'subject-eaten' // fill reached the middle of the frame; discarded
   | 'reverted'; // fill ran away and was discarded
 
 export interface KnockoutResult {
@@ -63,7 +74,15 @@ export interface KnockoutResult {
  *
  * Returns a new image; the input buffer is not modified.
  */
-export function knockOutBackground(input: RgbaImage): KnockoutResult {
+export function knockOutBackground(
+  input: RgbaImage,
+  /**
+   * Follow smooth backdrop gradients. Needed for studio shots that fade
+   * 240->110, but it is also what lets a fill walk out of a soft backdrop into
+   * a pedal's own light areas - so prepareSilhouette retries without it.
+   */
+  useGradient = true
+): KnockoutResult {
   const { width: W, height: H } = input;
   const px = new Uint8ClampedArray(input.data);
   const out: RgbaImage = { data: px, width: W, height: H };
@@ -125,7 +144,7 @@ export function knockOutBackground(input: RgbaImage): KnockoutResult {
   const stack = new Int32Array(W * H);
   let top = 0;
   for (const i of border) {
-    if (!visited[i] && (isBg(i) || (px[i * 4 + 3] >= OPAQUE && lum(i) >= BG_GRAD_MIN_LUM))) {
+    if (!visited[i] && (isBg(i) || (useGradient && px[i * 4 + 3] >= OPAQUE && lum(i) >= BG_GRAD_MIN_LUM))) {
       visited[i] = 1;
       stack[top++] = i;
     }
@@ -139,7 +158,7 @@ export function knockOutBackground(input: RgbaImage): KnockoutResult {
     for (const j of [i - 1, i + 1, i - W, i + W]) {
       if (j < 0 || j >= W * H) continue;
       if ((j === i - 1 && x === 0) || (j === i + 1 && x === W - 1)) continue;
-      if (!visited[j] && (isBg(j) || chains(i, j))) {
+      if (!visited[j] && (isBg(j) || (useGradient && chains(i, j)))) {
         visited[j] = 1;
         stack[top++] = j;
       }
@@ -149,6 +168,21 @@ export function knockOutBackground(input: RgbaImage): KnockoutResult {
   // A knockout that ate (almost) the whole frame leaked into the subject
   if (knockedIdx.length > W * H * MAX_KNOCK_SHARE) {
     return { image: out, status: 'reverted', knocked: 0 };
+  }
+
+  // A fill that reached the MIDDLE of the frame leaked into the subject
+  const cx0 = Math.floor(W * 0.4);
+  const cx1 = Math.ceil(W * 0.6);
+  const cy0 = Math.floor(H * 0.4);
+  const cy1 = Math.ceil(H * 0.6);
+  let centreKnocked = 0;
+  for (const i of knockedIdx) {
+    const x = i % W;
+    const y = (i / W) | 0;
+    if (x >= cx0 && x < cx1 && y >= cy0 && y < cy1) centreKnocked++;
+  }
+  if (centreKnocked > (cx1 - cx0) * (cy1 - cy0) * MAX_CENTRE_KNOCK_SHARE) {
+    return { image: out, status: 'subject-eaten', knocked: 0 };
   }
 
   // A fill that never made it around the frame found no real backdrop
@@ -209,7 +243,14 @@ export function prepareSilhouette(input: RgbaImage): {
   image: RgbaImage;
   status: KnockoutStatus;
 } {
-  const { image, status } = knockOutBackground(input);
+  let { image, status } = knockOutBackground(input);
+  // Gradient-following is what walks a fill into the subject. When that
+  // happens, retry with a strict border-colour match: across the 14 pedal
+  // photos this broke, it cut centre penetration from ~50-59% to 0% on most,
+  // recovering the cut-out instead of giving up on it.
+  if (status === 'subject-eaten') {
+    ({ image, status } = knockOutBackground(input, false));
+  }
   if (status !== 'knocked-out' && status !== 'already-cutout') {
     return { image, status };
   }

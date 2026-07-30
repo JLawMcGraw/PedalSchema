@@ -204,3 +204,41 @@ describe('prepareSilhouette', () => {
     expect([out.width, out.height]).toEqual([40, 40]);
   });
 });
+
+describe('prepareSilhouette two-pass recovery', () => {
+  /**
+   * A body far outside BG_TOL of the backdrop, reachable ONLY by following a
+   * smooth ramp. This isolates the mechanism: the gradient pass walks the ramp
+   * into the body and hollows it out; the strict pass stops at the body edge.
+   * The real BF-3/PH-3 photos fail exactly this way.
+   */
+  const rampIntoBody = () =>
+    image(40, 40, (x, y) => {
+      if (x >= 24 && x < 38 && y >= 24 && y < 38) return [30, 30, 30, 255];
+      const d = Math.max(Math.abs(x - 16), Math.abs(y - 16));
+      if (d < 4) return [150, 150, 150, 255];
+      if (d < 12) { const v = 150 + (d - 4) * 12; return [v, v, v, 255]; }
+      return [255, 255, 255, 255];
+    });
+
+  it('the gradient pass alone eats the subject', () => {
+    expect(knockOutBackground(rampIntoBody()).status).toBe('subject-eaten');
+  });
+
+  it('a pedal whose body differs clearly from the backdrop still uses one pass', () => {
+    // The common case must not be pushed down the strict path unnecessarily.
+    const { status } = prepareSilhouette(pedalOnWhite());
+    expect(status).toBe('knocked-out');
+  });
+
+  it('the strict pass recovers the same image', () => {
+    // Not merely "does not fail" - it must actually produce a cut-out.
+    const strict = knockOutBackground(rampIntoBody(), false);
+    expect(strict.status).toBe('knocked-out');
+    expect(strict.knocked).toBeGreaterThan(0);
+  });
+
+  it('prepareSilhouette runs both passes so callers never see the failure', () => {
+    expect(prepareSilhouette(rampIntoBody()).status).toBe('knocked-out');
+  });
+});

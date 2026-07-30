@@ -204,8 +204,18 @@ async function fetchImage(url) {
 const BG_TOL = 35;
 const BG_GRAD_TOL = 12;
 const BG_GRAD_MIN_LUM = 90;
+/** Share of the centre 40% box the fill may touch before it counts as having
+ *  eaten the subject. See the guard below for the measured justification. */
+const MAX_CENTRE_KNOCK_SHARE = 0.02;
 
-async function knockOutBackground(buf) {
+/**
+ * @param {Buffer} buf
+ * @param {boolean} useGradient follow smooth backdrop gradients (needed for
+ *   studio shots that fade 240->110) or match the border colour strictly.
+ *   Gradient-following is what lets a fill walk out of a soft backdrop and
+ *   into a pedal's own light areas, so the caller retries without it.
+ */
+async function knockOutBackground(buf, useGradient = true) {
   const { data: px, info } = await sharp(buf)
     .ensureAlpha()
     .raw()
@@ -219,7 +229,7 @@ async function knockOutBackground(buf) {
   // Already a silhouette? (a real alpha edge, not just an alpha channel)
   let transparent = 0;
   for (const i of border) if (px[i * C + 3] < 20) transparent++;
-  if (transparent > border.length * 0.3) return buf;
+  if (transparent > border.length * 0.3) return { buf, ok: true, status: 'already-cutout' };
 
   // Average opaque border color = background reference
   let r = 0, g = 0, b = 0, n = 0;
@@ -227,7 +237,7 @@ async function knockOutBackground(buf) {
     if (px[i * C + 3] < 20) continue;
     r += px[i * C]; g += px[i * C + 1]; b += px[i * C + 2]; n++;
   }
-  if (!n) return buf;
+  if (!n) return { buf, ok: false, status: 'no-background' };
   r /= n; g /= n; b /= n;
 
   const isBg = (i) =>
@@ -249,7 +259,7 @@ async function knockOutBackground(buf) {
   const visited = new Uint8Array(W * H);
   const queue = [];
   for (const i of border) {
-    if (!visited[i] && (isBg(i) || (px[i * C + 3] >= 20 && lum(i) >= BG_GRAD_MIN_LUM))) {
+    if (!visited[i] && (isBg(i) || (useGradient && px[i * C + 3] >= 20 && lum(i) >= BG_GRAD_MIN_LUM))) {
       visited[i] = 1;
       queue.push(i);
     }
@@ -264,21 +274,63 @@ async function knockOutBackground(buf) {
     for (const j of [i - 1, i + 1, i - W, i + W]) {
       if (j < 0 || j >= W * H) continue;
       if ((j === i - 1 && x === 0) || (j === i + 1 && x === W - 1)) continue;
-      if (!visited[j] && (isBg(j) || chains(i, j))) { visited[j] = 1; queue.push(j); }
+      if (!visited[j] && (isBg(j) || (useGradient && chains(i, j)))) { visited[j] = 1; queue.push(j); }
     }
   }
   // A knockout that ate (almost) the whole frame leaked into the subject
-  if (knocked > W * H * 0.9) return buf;
+  if (knocked > W * H * 0.9) return { buf, ok: false, status: 'reverted' };
+
+  // A knockout that reached the MIDDLE of the frame also leaked into the
+  // subject - a product photo has the product in the centre, so the fill has
+  // no business there. The box is the centre 20%, not 40%: a wider box picks
+  // up legitimate background whenever the subject does not fill the frame,
+  // and the tighter box also separates the real cases more sharply (damaged
+  // 77-91%, healthy 0%). Without this, a JPEG whose pedal has light areas
+  // (silver bands, pale knobs) lets the gradient-follower walk in from the
+  // backdrop and hollow out the face, leaving only the dark parts: the pedal
+  // renders as a black blob. Measured over all 64 mirrored images, the split
+  // is unambiguous - healthy fills reach at most 0.49% of the centre box,
+  // damaged ones 4.48% and up (AW-3 and DD-7 hit 59%).
+  const cx0 = Math.floor(W * 0.4), cx1 = Math.ceil(W * 0.6);
+  const cy0 = Math.floor(H * 0.4), cy1 = Math.ceil(H * 0.6);
+  let centreKnocked = 0;
+  for (const i of knockedIdx) {
+    const x = i % W, y = (i / W) | 0;
+    if (x >= cx0 && x < cx1 && y >= cy0 && y < cy1) centreKnocked++;
+  }
+  if (centreKnocked > (cx1 - cx0) * (cy1 - cy0) * MAX_CENTRE_KNOCK_SHARE) {
+    return { buf, ok: false, status: 'subject-eaten' };
+  }
+
   for (const i of knockedIdx) px[i * C + 3] = 0;
 
-  return sharp(px, { raw: { width: W, height: H, channels: C } }).png().toBuffer();
+  return {
+    buf: await sharp(px, { raw: { width: W, height: H, channels: C } }).png().toBuffer(),
+    ok: true,
+    status: 'knocked-out',
+  };
 }
 
 async function trimBackground(buf) {
   try {
     const meta = await sharp(buf).metadata();
-    const cutout = await knockOutBackground(buf);
-    const trimmed = await sharp(cutout).trim({ threshold: 25 }).png().toBuffer({ resolveWithObject: true });
+    let cut = await knockOutBackground(buf);
+    // A failed knockout must REJECT the candidate, never fall through. Trimming
+    // an image that still has its background crops to the background's own
+    // bounding box, so the pedal would render inside a white rectangle - the
+    // exact bug silhouettes were introduced to fix. Rejecting lets the next
+    // candidate try, and the clean category rect is a better last resort than
+    // either a white box or a hollowed-out black blob.
+    // Gradient-following is what walks a fill out of the backdrop and into the
+    // pedal's own light areas. When that happens, retry with a strict
+    // border-colour match: measured across the 14 damaged images it drops
+    // centre penetration from ~50-59% to 0% on most of them, recovering the
+    // photo instead of falling back to a rect.
+    if (!cut.ok && cut.status === 'subject-eaten') {
+      cut = await knockOutBackground(buf, false);
+    }
+    if (!cut.ok) return { buf, type: null, trimmed: false, rejected: cut.status };
+    const trimmed = await sharp(cut.buf).trim({ threshold: 25 }).png().toBuffer({ resolveWithObject: true });
     const { width, height } = trimmed.info;
     // Sanity: a real trim keeps most of the subject
     if (width < 40 || height < 40 || width * height < meta.width * meta.height * 0.02) {
