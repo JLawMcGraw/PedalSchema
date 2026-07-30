@@ -119,3 +119,139 @@ describe('optimize end-to-end', () => {
     expect(s.headline).toMatch(/already optimal/i);
   });
 });
+
+describe('optimize never returns a worse layout', () => {
+  /** A board is "legal" when nothing overlaps and everything is on it. */
+  const boards = {
+    scattered,
+    tidyRow: () => {
+      const byId: Record<string, Pedal> = {};
+      const cats = ['tuner', 'overdrive', 'distortion', 'delay', 'reverb'];
+      const placed = cats.map((cat, i) => {
+        const id = `p${i}`;
+        byId[id] = pedal(id, cat);
+        return {
+          id, pedalId: id, pedal: byId[id],
+          xInches: 19 - i * 3.4, yInches: 3,
+          rotationDegrees: 0, chainPosition: i + 1, isInLoop: false,
+        } as unknown as PlacedPedal;
+      });
+      return { placed, byId };
+    },
+  };
+
+  for (const [name, build] of Object.entries(boards)) {
+    it(`${name}: result score <= baseline score`, () => {
+      const { placed, byId } = build();
+
+      const r = calculateOptimalLayoutJoint(placed, byId, board);
+
+      // THE invariant this fix establishes. Before it, the search was seeded
+      // with a greedy re-placement, so a hand-tuned board could be replaced
+      // by something strictly worse.
+      expect(r.cost!.totalScore).toBeLessThanOrEqual(r.baselineCost!.totalScore + 1e-9);
+    });
+  }
+
+  it('keeps the incumbent placements exactly when nothing beats them', () => {
+    const { placed, byId } = boards.tidyRow();
+    const first = calculateOptimalLayoutJoint(placed, byId, board);
+
+    // Feed the optimized board back in
+    const settled = placed.map((p) => {
+      const pl = first.placements.find((q) => q.id === p.id)!;
+      return { ...p, xInches: pl.x, yInches: pl.y };
+    });
+    const second = calculateOptimalLayoutJoint(settled, byId, board);
+
+    // Not merely "an equal score" - the SAME coordinates, proving the
+    // incumbent was kept rather than coincidentally recomputed
+    for (const p of settled) {
+      const out = second.placements.find((q) => q.id === p.id)!;
+      expect(out.x, `${p.id} x moved`).toBe(p.xInches);
+      expect(out.y, `${p.id} y moved`).toBe(p.yInches);
+    }
+    expect(summarizeOptimization(second.baselineCost!, second.cost!).delta).toBe(0);
+  });
+
+  it('still re-places a board whose pedals overlap', () => {
+    // Every pedal stacked at the origin: scores well on cable length (they
+    // are all touching) but is illegal, so the baseline must be rejected.
+    const { placed, byId } = boards.tidyRow();
+    const piled = placed.map((p) => ({ ...p, xInches: 0, yInches: 0 }));
+
+    const r = calculateOptimalLayoutJoint(piled, byId, board);
+
+    const moved = r.placements.filter((pl) => pl.x !== 0 || pl.y !== 0);
+    expect(moved.length, 'a colliding pile must be re-placed, not kept').toBeGreaterThan(0);
+  });
+});
+
+describe('optimize never returns an illegal layout', () => {
+  /** True when any pedal overlaps another or leaves the board. */
+  function illegal(placements: Array<{ id: string; x: number; y: number }>, b: Board) {
+    const W = 2.9;
+    const H = 5.1;
+    for (const p of placements) {
+      if (p.x < -0.01 || p.y < -0.01 || p.x + W > b.widthInches + 0.01 || p.y + H > b.depthInches + 0.01) {
+        return true;
+      }
+    }
+    for (let i = 0; i < placements.length; i++) {
+      for (let j = i + 1; j < placements.length; j++) {
+        const a = placements[i];
+        const c = placements[j];
+        const ox = Math.min(a.x + W, c.x + W) - Math.max(a.x, c.x);
+        const oy = Math.min(a.y + H, c.y + H) - Math.max(a.y, c.y);
+        if (ox > 0.01 && oy > 0.01) return true;
+      }
+    }
+    return false;
+  }
+
+  /** n pedals hand-packed into rows on a tight board - legal by construction. */
+  function tightBoard(n: number, widthInches: number, depthInches: number) {
+    const b = {
+      id: 'b', name: 'Tight', widthInches, depthInches, railWidthInches: 0.6, isSystem: true,
+    } as Board;
+    const cats = ['tuner', 'overdrive', 'distortion', 'fuzz', 'boost', 'delay', 'reverb', 'modulation'];
+    const byId: Record<string, Pedal> = {};
+    const perRow = Math.max(1, Math.floor(widthInches / 3.0));
+    const placed = cats.slice(0, n).map((c, i) => {
+      const id = `p${i}`;
+      byId[id] = pedal(id, c);
+      return {
+        id, pedalId: id, pedal: byId[id],
+        xInches: (i % perRow) * 3.0,
+        yInches: Math.floor(i / perRow) * 5.4,
+        rotationDegrees: 0, chainPosition: i + 1, isInLoop: false,
+      } as unknown as PlacedPedal;
+    });
+    return { board: b, placed, byId };
+  }
+
+  // Cases found by probing tight boards. Each one previously came back with
+  // pedals overlapping or off the board, scoring BETTER than the legal input
+  // because the routing cost has no overlap term - stacked pedals have very
+  // short cables. The early-return path returned greedy unconditionally, with
+  // no collision guard at all.
+  const cases: Array<[number, number, number]> = [
+    [4, 12, 6],
+    [5, 9, 11],
+    [6, 9, 11],
+    [7, 12, 11],
+    [8, 12, 11],
+  ];
+
+  for (const [n, w, h] of cases) {
+    it(`${n} pedals on a ${w}x${h} board: legal in, legal out`, () => {
+      const { board: b, placed, byId } = tightBoard(n, w, h);
+      const input = placed.map((p) => ({ id: p.id, x: p.xInches, y: p.yInches }));
+      expect(illegal(input, b), 'fixture itself must be legal').toBe(false);
+
+      const r = calculateOptimalLayoutJoint(placed, byId, b);
+
+      expect(illegal(r.placements, b), 'optimize produced overlapping/off-board pedals').toBe(false);
+    });
+  }
+});

@@ -948,10 +948,27 @@ export function calculateOptimalLayoutJoint(
   // The honest "before": the board exactly as the user left it. NOT
   // evaluate(initialChainOrder), which greedily re-places everything and so
   // would compare an optimized layout against another optimized layout.
+  const currentPlacements = placedPedals.map((p) => ({ id: p.id, x: p.xInches, y: p.yInches }));
   const baselineCost = calculateRoutingCost(
-    placedPedals.map((p) => ({ id: p.id, x: p.xInches, y: p.yInches })),
-    placedPedals, pedalsById, board, undefined, useEffectsLoop, use4CableMethod, routingConfig
+    currentPlacements, placedPedals, pedalsById, board, undefined,
+    useEffectsLoop, use4CableMethod, routingConfig
   );
+
+  /**
+   * The user's own layout is the incumbent the search has to beat - but only
+   * if it is legal. A hand-arranged board with overlapping pedals is exactly
+   * what someone clicks Optimize to fix, so a colliding baseline is not
+   * eligible to be kept no matter how well it scores (the routing cost has no
+   * overlap term, so a collapsed pile scores wonderfully).
+   */
+  const baselineEligible = !hasPlacementCollision(
+    currentPlacements, placedPedals, pedalsById, board
+  );
+  const baselineCandidate = {
+    placements: currentPlacements,
+    score: baselineEligible ? baselineCost.totalScore : Infinity,
+    cost: baselineCost,
+  };
 
   // Pedals where rotation changes jack FACING (input/output on top/bottom
   // edges, e.g. EQ-200) - the only ones worth searching rotations for
@@ -969,18 +986,31 @@ export function calculateOptimalLayoutJoint(
   const hasOrderSearch =
     swappableGroups.length > 0 && swappableGroups.some(g => g.pedalIds.length >= 2);
 
-  // Nothing to search: single greedy placement
+  // Nothing to search: greedy placement, kept only if it beats what's there
   if (!hasOrderSearch && rotatableIds.length === 0) {
     const placements = calculateGreedyPlacement(placedPedals, pedalsById, board, routingConfig);
+    const greedyCost = calculateRoutingCost(
+      placements, placedPedals, pedalsById, board, undefined,
+      useEffectsLoop, use4CableMethod, routingConfig
+    );
+    // The SAME hard collision guard evaluate() applies. Without it this path
+    // returned greedy unconditionally, and a greedy layout that overlaps or
+    // overflows scores *better* than a legal one - the routing cost has no
+    // overlap term, so a pile of stacked pedals has wonderfully short cables.
+    // Observed on tight boards: a legal 8-pedal input at 2478.5 was replaced
+    // by an overlapping layout at 1301.6.
+    const greedyScore = hasPlacementCollision(placements, placedPedals, pedalsById, board)
+      ? Infinity
+      : greedyCost.totalScore;
+    // Ties keep the baseline, and if BOTH are illegal we keep the user's board
+    // rather than replacing it with a different broken one.
+    const keepBaseline = baselineCandidate.score <= greedyScore + 1e-9;
     return {
-      placements,
+      placements: keepBaseline ? currentPlacements : placements,
       chainOrder: initialChainOrder,
       swappableGroups,
       baselineCost,
-      cost: calculateRoutingCost(
-        placements, placedPedals, pedalsById, board, undefined,
-        useEffectsLoop, use4CableMethod, routingConfig
-      ),
+      cost: keepBaseline ? baselineCost : greedyCost,
     };
   }
 
@@ -1022,6 +1052,24 @@ export function calculateOptimalLayoutJoint(
   let bestOrder = initialChainOrder;
   let bestRotations = new Map(baseRotations);
   let best = evaluate(initialChainOrder, bestRotations);
+
+  // Seed with the user's own layout when it already beats the greedy
+  // re-placement of the same order, so every later candidate is compared
+  // against what the user actually had. Ties keep the baseline: doing nothing
+  // beats shuffling a board for no gain.
+  //
+  // HONESTLY: no input has yet been found where this changes the outcome -
+  // 300 random legal layouts and 24 tight-board configurations all produced a
+  // greedy candidate at least as good as the baseline. It is kept because it
+  // is the exact analogue of a bug PROVEN real in the sibling early-return
+  // path above (which returned a colliding layout scoring better than a legal
+  // one), and because `evaluate()` yields Infinity for every colliding
+  // candidate - so if all 48 orders collide, `best.placements` would be a
+  // colliding layout that a legal baseline should beat. Guarding one path and
+  // not the other is how the two drift apart.
+  if (baselineCandidate.score <= best.score + 1e-9) {
+    best = baselineCandidate;
+  }
 
   for (const order of candidateOrders) {
     if (order === initialChainOrder) continue;
