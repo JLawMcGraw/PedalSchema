@@ -91,6 +91,19 @@ export interface Pedal {
   depthInches: number;
   heightInches: number;
   voltage: number;
+  /**
+   * Current draw in mA. THREE-STATE - do not collapse it to a number:
+   *   null = unknown (not published / not measured)
+   *   0    = a real, measured zero
+   *   n    = measured draw
+   *
+   * Only displayed today, never summed. When a power-budget feature lands,
+   * `?? 0` anywhere in the total would report a supply as adequate while
+   * silently ignoring every pedal whose draw nobody knows - the most
+   * dangerous possible direction for that error to point. Unknown pedals
+   * must be excluded from the denominator AND surfaced as unknown, not
+   * folded in as zero.
+   */
   currentMa: number | null;
   polarity: PowerPolarity;
   defaultChainPosition: number | null;

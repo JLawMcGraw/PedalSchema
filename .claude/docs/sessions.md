@@ -4,6 +4,74 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-07-30
+
+### Summary
+Shipped the custom-pedal-upload background knockout, then reviewed the 114-pattern
+ledger at `../dev-liftable-patterns` against this codebase and applied six findings
+in six commits. All pushed to main.
+
+### What Was Accomplished
+- [x] Background knockout for /pedals/new uploads (b0a3da0) - the last HIGH backlog item
+- [x] Un-ignored the scraper scripts; only scraped JSON dumps stay ignored (59bb223)
+- [x] Image provenance columns + rights statement + Klon resolved as reference-only (0b561e3)
+- [x] LANE_SPACING collapsed into engine/geometry; overhang trio audited, kept separate (11246bc)
+- [x] Optimize now explains what it traded off, from one shared dimension list (f6fa495)
+- [x] Self-declaring fixture corpus for the knockout detector (983516e)
+- [x] Machine twin + [data-pedal-canvas]; extract-positions.js migrated (68cbfcb)
+- [x] currentMa tri-state contract documented (no code - not a bug today)
+
+### Key Changes
+| File | Change |
+|------|--------|
+| `src/lib/images/knockout.ts`, `prepare-pedal-photo.ts` | Pure RGBA knockout ported out of the mirror script; runs client-side pre-upload |
+| `supabase/migrations/20260730000001_add_image_provenance.sql` | image_source_url/license/attribution/fetched_at; Klon set to reference-only |
+| `scraper/mirror-pedal-images.js` | Writes provenance with the image, clears it with the image, skips referenced rows even under FORCE=1 |
+| `src/lib/engine/geometry/index.ts` | Now owns LANE_SPACING + MIN_LANE_SPACING |
+| `src/lib/engine/layout/routing-cost.ts` | COST_DIMENSIONS drives both totalScore and summarizeOptimization |
+| `src/lib/engine/cables/routing-strategies.ts` | Each cascade rung tags its own result with a RoutingStrategy |
+| `src/store/derived.ts` | `__getPedalSchemaSnapshot()` - the machine twin |
+| `.claude/scripts/lib/twin.js`, `verify-twin-parity.js` | Shared script access + the twin's honesty check |
+
+### Technical Decisions
+1. **Klon Centaur: reference, never mirror.** Its only good source is CC BY-SA 2.0
+   and our knockout modifies the image, so mirroring would make our copy a
+   derivative and pull share-alike onto our output. Enforced in code, not just
+   documented - the script skips provenance-without-image rows even under FORCE=1.
+2. **The migration adds columns but NOT the `image_url => image_source_url` CHECK.**
+   A CHECK fires on UPDATE as well as INSERT (even NOT VALID), so it would break
+   import-pedals.js against the 64 legacy rows. Sequence: columns -> FORCE re-mirror
+   -> follow-up migration adds the constraint.
+3. **totalScore is the SUM of COST_DIMENSIONS**, not a separate expression. That is
+   what makes the shown rationale unable to describe a different ranking.
+4. **Three overhang constants deliberately NOT merged** (64/70/16) - they govern the
+   corridor graph, lane-shift clamping, and path rejection respectively.
+5. **The 7-rung routing cascade was NOT rewritten** into a capability matrix. It
+   works; only the winning strategy label was worth adding.
+
+### Verification Notes
+- Knockout: 15 unit tests + Chromium end-to-end (`verify-photo-knockout.js`). The
+  rounded-corner fixture is the one that proves the fix - a square fixture cannot,
+  since it fills its own bounding box.
+- Twin parity: all 7 pedals matched between DOM scrape and twin; projection
+  hit-tested via elementFromPoint against data-pedal-id.
+- The editor renders **27 svgs** - the old "canvas is the largest svg" heuristic
+  was choosing one of 27 by area.
+- `vitest does NOT typecheck`, so the fixture corpus's type-link depends on tsc
+  (npm run build). The runtime coverage test covers the other half.
+
+### Next Tasks
+- [ ] APPLY the provenance migration to production, then run
+      `FORCE=1 node scraper/mirror-pedal-images.js` to backfill all 64 rows,
+      then add the `image_url => image_source_url` CHECK in a follow-up migration
+- [ ] Investigate the red "1 Issue" Next.js dev-overlay badge in the editor
+- [ ] Mobile touch drag-and-drop; cable bundling (older backlog)
+- [ ] Optimizer applies a worse layout when greedy re-placement scores below a
+      hand-tuned board - currently reported honestly ("Rearranged, but scored
+      worse"), but arguably it should keep the better one
+
+---
+
 ## Session: 2026-07-19
 
 ### Summary
