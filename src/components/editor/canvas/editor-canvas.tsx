@@ -251,6 +251,11 @@ export function EditorCanvas() {
     <div className="relative w-full h-full overflow-hidden bg-neutral-900">
       <svg
         ref={svgRef}
+        // Stable handle for verification scripts. The page is full of lucide
+        // icon <svg>s, and scripts used to find this one by picking the
+        // largest by area - a heuristic that silently breaks the day a bigger
+        // decorative SVG appears. See .claude/scripts/lib/twin.js.
+        data-pedal-canvas=""
         width="100%"
         height="100%"
         viewBox={`${-padding + pan.x} ${-padding + pan.y} ${totalWidth / zoom} ${totalHeight / zoom}`}

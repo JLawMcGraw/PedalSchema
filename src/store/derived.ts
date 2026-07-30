@@ -160,12 +160,51 @@ export function useDerivedConfiguration<T>(selector: (d: DerivedBoardState) => T
   return useConfigurationStore(useShallow((s) => selector(deriveBoardState(s))));
 }
 
+/**
+ * The machine-readable twin of the editor: everything a verification script
+ * needs about the current board, read from the SAME derived state the canvas
+ * renders. Scripts must not recompute geometry - if this and the canvas ever
+ * disagree, the twin is worthless.
+ *
+ * Board coordinates are inches; cable paths are pixels at INCHES_TO_PIXELS.
+ * Screen positions are deliberately absent: they belong to the DOM, and
+ * .claude/scripts/lib/twin.js derives them from [data-pedal-canvas].
+ */
+export interface PedalSchemaSnapshot {
+  scale: number;
+  board: Board | null;
+  pedals: Array<{
+    id: string;
+    pedalId: string;
+    name: string;
+    xInches: number;
+    yInches: number;
+    widthInches: number;
+    depthInches: number;
+    rotationDegrees: number;
+    chainPosition: number;
+  }>;
+  cables: Array<{
+    from: string;
+    to: string;
+    /** Which router produced the path - see RoutedCable.strategy */
+    strategy: string;
+    valid: boolean;
+    points: Array<{ x: number; y: number }>;
+  }>;
+  collisionCount: number;
+  warningCount: number;
+  /** Summary of the last optimizeLayout(), or null if none this session */
+  lastOptimization: unknown;
+}
+
 // Debug helpers: extract source + derived state from the browser console.
 // Companion to window.__loadPedalSchemaRepro (configuration-store.ts).
 if (typeof window !== 'undefined') {
   const w = window as unknown as {
     __getPedalSchemaState: () => SourceSlice;
     __getPedalSchemaDerived: () => DerivedBoardState;
+    __getPedalSchemaSnapshot: () => PedalSchemaSnapshot;
   };
   w.__getPedalSchemaState = () => {
     const s = useConfigurationStore.getState();
@@ -182,4 +221,40 @@ if (typeof window !== 'undefined') {
     };
   };
   w.__getPedalSchemaDerived = () => deriveBoardState(useConfigurationStore.getState());
+
+  w.__getPedalSchemaSnapshot = () => {
+    const s = useConfigurationStore.getState();
+    const d = deriveBoardState(s);
+    const label = (type: string, pedalId: string | null | undefined) =>
+      pedalId ? `${type}:${pedalId}` : type;
+
+    return {
+      scale: INCHES_TO_PIXELS,
+      board: s.board,
+      pedals: s.placedPedals.map((p) => {
+        const pedal = s.pedalsById[p.pedalId] || p.pedal;
+        return {
+          id: p.id,
+          pedalId: p.pedalId,
+          name: pedal?.name ?? '(unknown)',
+          xInches: p.xInches,
+          yInches: p.yInches,
+          widthInches: pedal?.widthInches ?? 0,
+          depthInches: pedal?.depthInches ?? 0,
+          rotationDegrees: p.rotationDegrees,
+          chainPosition: p.chainPosition,
+        };
+      }),
+      cables: d.routedCables.map((rc) => ({
+        from: label(rc.cable.fromType, rc.cable.fromPedalId),
+        to: label(rc.cable.toType, rc.cable.toPedalId),
+        strategy: rc.strategy,
+        valid: rc.valid,
+        points: rc.path.map((pt) => ({ x: pt.x, y: pt.y })),
+      })),
+      collisionCount: d.collisions.length,
+      warningCount: d.warnings.length,
+      lastOptimization: s.lastOptimization,
+    };
+  };
 }

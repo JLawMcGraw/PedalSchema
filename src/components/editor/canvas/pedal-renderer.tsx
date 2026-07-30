@@ -56,6 +56,9 @@ export function PedalRenderer({
   return (
     <g
       className="pedal"
+      // Lets a verification script confirm that a board->screen projection
+      // actually lands on the pedal it aimed at, instead of assuming it did.
+      data-pedal-id={placedPedal.id}
       style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
       onMouseDown={onDragStart}
       onTouchStart={onDragStart}

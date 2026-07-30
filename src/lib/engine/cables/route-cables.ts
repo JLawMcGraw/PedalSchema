@@ -17,7 +17,7 @@ import type { Board, Cable, Pedal, PlacedPedal } from '@/types';
 import type { Point } from '../geometry';
 import { LANE_SPACING } from '../geometry';
 import { generateObstacles, type ObstacleSet } from '../obstacles';
-import { routeCableWithObstacles } from './routing-strategies';
+import { routeCableWithObstacles, type RoutingStrategy } from './routing-strategies';
 import { getExternalEndpointPx, getPedalJackPx, type ExternalEndpointType } from './endpoints';
 import { isPathValid, type ValidationResult } from './validation';
 import { routeCablesWithLanes, type LaneRouteRequest } from '../lanes';
@@ -26,6 +26,13 @@ export interface RoutedCable {
   cable: Cable;
   /** Routed polyline in pixels */
   path: Point[];
+  /**
+   * Which router produced this path: 'lane-router' when the corridor model
+   * served it, otherwise the strategy rung that succeeded. Recorded so
+   * "why does this cable look like that?" is answerable from state rather
+   * than by re-tracing the cascade by hand.
+   */
+  strategy: RoutingStrategy | 'lane-router';
   /** Whether the path clears all obstacles */
   valid: boolean;
   /** Resolved endpoint positions in pixels */
@@ -291,6 +298,7 @@ export function routeAllCables(
       results.push({
         cable: r.cable,
         path: lanePath,
+        strategy: 'lane-router',
         valid: true,
         fromPos: r.fromPos,
         toPos: r.toPos,
@@ -309,6 +317,7 @@ export function routeAllCables(
     results.push({
       cable: r.cable,
       path: result.path,
+      strategy: result.strategy,
       valid: result.valid,
       fromPos: r.fromPos,
       toPos: r.toPos,
