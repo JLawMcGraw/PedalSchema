@@ -275,10 +275,3 @@ export const SIGNAL_CHAIN_RULES: ChainRule[] = [
     },
   },
 ];
-
-/**
- * Get applicable rules for a pedal
- */
-export function getApplicableRules(pedal: Pedal, context: ChainContext): ChainRule[] {
-  return SIGNAL_CHAIN_RULES.filter((rule) => rule.condition(pedal, context));
-}

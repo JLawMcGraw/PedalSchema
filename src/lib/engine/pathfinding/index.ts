@@ -316,36 +316,6 @@ function aStarSearch(
 }
 
 /**
- * Simplify path by removing redundant points on same line
- */
-export function simplifyPath(path: Point[]): Point[] {
-  if (path.length <= 2) return path;
-
-  const result: Point[] = [path[0]];
-
-  for (let i = 1; i < path.length - 1; i++) {
-    const prev = result[result.length - 1];
-    const curr = path[i];
-    const next = path[i + 1];
-
-    // Check if curr is on the line between prev and next
-    const dx1 = curr.x - prev.x;
-    const dy1 = curr.y - prev.y;
-    const dx2 = next.x - curr.x;
-    const dy2 = next.y - curr.y;
-
-    // If direction changes, keep this point
-    const sameDirection = (dx1 === 0 && dx2 === 0) || (dy1 === 0 && dy2 === 0);
-    if (!sameDirection) {
-      result.push(curr);
-    }
-  }
-
-  result.push(path[path.length - 1]);
-  return result;
-}
-
-/**
  * Simplify path by removing only collinear points, validate every removal
  */
 export function simplifyPathValidated(path: Point[], boxes: Box[], excludeSet: Set<number>): Point[] {

@@ -115,23 +115,6 @@ export function generateObstacles(
 }
 
 /**
- * Convert exclude pedal IDs to exclude box indices
- */
-export function pedalIdsToBoxIndices(
-  excludePedalIds: Set<string>,
-  obstacles: ObstacleSet
-): Set<number> {
-  const indices = new Set<number>();
-  for (const pedalId of excludePedalIds) {
-    const index = obstacles.pedalIdToBox.get(pedalId);
-    if (index !== undefined) {
-      indices.add(index);
-    }
-  }
-  return indices;
-}
-
-/**
  * Get the box for a specific placed pedal
  */
 export function getBoxForPedal(pedalId: string, obstacles: ObstacleSet): Box | null {

@@ -296,31 +296,6 @@ export class SignalChainEngine {
   }
 }
 
-/**
- * Calculate optimal chain position for a new pedal
- */
-export function calculateOptimalChainPosition(
-  newPedal: Pedal,
-  existingPedals: PlacedPedal[],
-  pedalsById: Record<string, Pedal>
-): number {
-  const newOrder = newPedal.defaultChainPosition ?? getCategoryDefaultOrder(newPedal.category);
-
-  let position = 1;
-  for (const placed of existingPedals) {
-    const existingPedal = pedalsById[placed.pedalId] || placed.pedal;
-    if (!existingPedal) continue;
-
-    const existingOrder =
-      existingPedal.defaultChainPosition ?? getCategoryDefaultOrder(existingPedal.category);
-    if (existingOrder < newOrder) {
-      position = Math.max(position, placed.chainPosition + 1);
-    }
-  }
-
-  return position;
-}
-
 // Export singleton instance
 export const signalChainEngine = new SignalChainEngine();
 

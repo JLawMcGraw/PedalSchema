@@ -226,12 +226,6 @@ function resolvePedalLoop(
 // Helpers for consumers
 // ---------------------------------------------------------------------------
 
-/** Whether a cable between these anchor kinds is an instrument cable */
-export function isInstrumentRun(from: Anchor | 'pedal', to: Anchor | 'pedal'): boolean {
-  const external = (a: Anchor | 'pedal') => a !== 'pedal' && a.kind === 'external';
-  return external(from) || external(to);
-}
-
 /**
  * The primary chain in spatial order: pedals that flow guitar -> amp input,
  * with the hub pedal inline at its chain position. This is what the placer

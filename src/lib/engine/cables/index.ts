@@ -294,25 +294,6 @@ function getCableDescription(cableType: 'patch' | 'instrument' | 'power'): strin
   }
 }
 
-/**
- * Calculate total cable length for cost estimation
- */
-export function calculateTotalCableLength(cables: CableConnection[]): {
-  patch: number;
-  instrument: number;
-  power: number;
-  total: number;
-} {
-  const result = { patch: 0, instrument: 0, power: 0, total: 0 };
-
-  for (const cable of cables) {
-    result[cable.cableType] += cable.calculatedLengthInches;
-    result.total += cable.calculatedLengthInches;
-  }
-
-  return result;
-}
-
 // ============================================================================
 // ENHANCED CABLE DISPLAY
 // ============================================================================
