@@ -38,45 +38,58 @@ Each pedal record includes:
 }
 ```
 
-See `schema/pedal.schema.json` for full JSON schema.
+See [`pedal.schema.json`](./pedal.schema.json) for the full JSON schema.
 
-## Scrapers
+## Pipeline
 
-### BOSS Pedals
+Three stages, run in order. Each is independent and idempotent.
 
 ```bash
+# 1. Scrape specs -> boss_pedals.json
 pip install beautifulsoup4 requests
 python boss_scraper.py
-```
 
-Outputs: `boss_pedals.json`
+# 2. Import into Supabase (inserts new, updates existing, matched on
+#    manufacturer + name). Needs SUPABASE_SERVICE_ROLE_KEY in .env.local:
+#    system pedals are is_system=true, which RLS blocks for normal users.
+node import-pedals.js
+
+# 3. Mirror product photos into storage (see Image Mirroring below)
+node mirror-pedal-images.js
+```
 
 ## Data Sources
 
 | Source | Status | Notes |
 |--------|--------|-------|
-| BOSS (boss.info) | ✓ Scraper ready | Consistent spec format |
-| Strymon | Planned | Good spec pages |
-| EHX | Planned | Variable formatting |
-| MXR/Dunlop | Planned | |
+| BOSS (boss.info) | ✓ Scraped + imported | `boss_scraper.py`; consistent spec format |
+| Strymon, EHX, MXR/Dunlop, Ibanez, TC, ProCo | Entered by hand | In the DB with mirrored photos, but no scraper — specs were entered manually |
 | JHS | Planned | |
 | Walrus Audio | Planned | |
 | Chase Bliss | Planned | |
+
+Photo sources are tracked separately from spec sources — see `PRODUCT_PAGES` in
+`mirror-pedal-images.js` for the curated per-pedal image URLs, including the ones that
+took real archaeology (dead manufacturer hosts, Wayback captures).
 
 ## Contributing
 
 ### Adding a Scraper
 
 1. Create `{manufacturer}_scraper.py`
-2. Output to `data/{manufacturer}_pedals.json`
-3. Validate against schema
-4. Submit PR
+2. Output to `{manufacturer}_pedals.json` **in this directory** — `.gitignore` has
+   `scraper/*.json` (with `pedal.schema.json` negated), so output here stays untracked.
+   A subdirectory would NOT be matched by that rule and the scraped data would be committed.
+3. Validate against `pedal.schema.json`
+4. Extend `import-pedals.js`'s category mapping if the scraper emits new type names
+5. Submit PR
 
 ### Manual Entries
 
 For boutique pedals without scrapable pages:
-1. Add to `data/manual_entries.json`
-2. Include source URL
+1. Insert directly (see `import-pedals.js` for the row shape), or add to a
+   `manual_entries.json` in this directory
+2. Include the source URL you took the specs from
 3. Measure dimensions if not published
 
 ## Image Mirroring

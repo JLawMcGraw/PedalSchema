@@ -6,21 +6,37 @@ A visual pedalboard planning and layout tool for guitarists. Design your pedalbo
 
 - **Visual Pedalboard Editor** - Drag and drop pedals onto a virtual pedalboard
 - **Signal Chain Visualization** - See cable routing between pedals with smart pathfinding
-- **Layout Optimization** - Automatically arrange pedals for minimal cable length
+- **Layout Optimization** - Automatically arrange pedals, and say what the arrangement
+  traded off ("fewer signal-flow reversals, 91in less cable length")
+- **Real Pedal Photos** - Pedals render as background-free silhouettes; custom uploads get
+  the same treatment client-side before upload
 - **Effects Loop Support** - Configure and visualize amp effects loop routing with dedicated send/return jacks
 - **Collision Detection** - Prevents pedal overlap and ensures valid layouts
+- **Undo/Redo** - Board edits are reversible, including optimization
 - **Multiple Board Sizes** - Support for various pedalboard dimensions
 - **Responsive Design** - Works on desktop and mobile with collapsible panels
 
 ## Cable Routing
 
-The cable routing system uses intelligent A* pathfinding to create clean, realistic cable paths:
+Routing runs in `src/lib/engine`, not in the renderer — the canvas is handed finished
+polylines. Two routers, in order:
 
-- **Collision Avoidance** - Cables route around pedals using grid-based pathfinding
-- **Channel Routing** - Cables utilize the open channel between pedal rows
-- **Standoff Points** - Cables exit pedals cleanly before routing to avoid visual overlap
+1. **Lane router** (`engine/lanes`) — a Manhattan corridor model that assigns cables to
+   lanes with coordinated spacing, so parallel runs stay individually traceable.
+2. **Strategy cascade** (`engine/cables/routing-strategies`) for anything the corridor
+   model can't serve — seven rungs, cheapest sufficient first: direct → L-path → channel
+   between rows → above → below → safe lane → **A\* as the last resort**, then an
+   explicitly invalid path the renderer draws red.
+
+Every cable records which rung produced it, so an unexpected shape is diagnosable without
+re-tracing the cascade by hand.
+
+- **Collision Avoidance** - Cables route around every pedal except their own endpoints
+- **Standoff Points** - Cables exit a jack perpendicular to the pedal edge before turning
 - **Jack-Aware Routing** - Cables connect to actual input/output jack positions
-- **Effects Loop Routing** - Amp send/return connections route through the channel, approaching pedals from below
+- **Effects Loop Routing** - Amp send/return connections approach pedals through the channel
+- **Shared Geometry** - Clearances live in `engine/geometry` as documented contracts, so
+  routing, validation and the optimizer cannot disagree about them
 
 ## Effects Loop
 
@@ -69,17 +85,27 @@ src/
 │   ├── layout/             # Header, navigation
 │   └── ui/                 # Reusable UI components
 ├── lib/
-│   └── engine/
-│       ├── cables/         # Cable generation
-│       ├── collision/      # Collision detection & rail snapping
-│       └── layout/         # Layout optimization algorithm
-├── store/                  # Zustand state management
+│   ├── engine/
+│   │   ├── geometry/       # Shared clearance constants + intersection math
+│   │   ├── topology/       # Signal topology (who connects to whom)
+│   │   ├── signal-chain/   # Ordering rules, warnings, suggestions
+│   │   ├── cables/         # Cable generation, routing strategies, validation
+│   │   ├── lanes/          # Manhattan corridor router
+│   │   ├── pathfinding/    # A* grid search (routing's last resort)
+│   │   ├── obstacles/      # Obstacle set construction
+│   │   ├── collision/      # Collision detection & rail snapping
+│   │   └── layout/         # Placement search + routing-aware cost function
+│   └── images/             # Background knockout for pedal photos
+├── store/                  # Zustand state management (source state + derived)
 └── types/                  # TypeScript type definitions
 ```
 
 ## Development
 
 ```bash
+# Run tests
+npm test
+
 # Type check
 npx tsc --noEmit
 
@@ -88,6 +114,18 @@ npm run build
 
 # Take verification screenshot
 node .claude/scripts/screenshot.js http://localhost:3000/editor/new --auth
+```
+
+### Verification scripts
+
+`.claude/scripts/` drives the real app with Playwright. They read the editor's
+machine-readable state (`window.__getPedalSchemaSnapshot()`) rather than scraping the DOM,
+via the shared helpers in `.claude/scripts/lib/twin.js`.
+
+```bash
+node .claude/scripts/verify-twin-parity.js     # twin agrees with what the canvas drew
+node .claude/scripts/verify-photo-knockout.js  # photo pipeline, in real Chromium
+node .claude/scripts/extract-positions.js      # positions + optimizer rationale
 ```
 
 ## Image Rights
