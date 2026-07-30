@@ -115,8 +115,9 @@ are REMOVED.
   cannot mutate order.
 - Consumers updated: canvas (routedCables, collisions), toolbar (collisions),
   cable-list (cables), properties (collisions), signal-chain panel (warnings/suggestions).
-- Known break: `.claude/scripts/test-fixture.js` reads `getState().cables` — debug script,
-  will be updated to note the new source.
+- Known break: `.claude/scripts/test-fixture.js` read `getState().cables`. RESOLVED
+  2026-07-30 by deleting it along with 22 other pre-rebuild debug scripts — derived state
+  is now read through `window.__getPedalSchemaSnapshot()` (see `.claude/scripts/lib/twin.js`).
 
 ## CI (P7)
 
