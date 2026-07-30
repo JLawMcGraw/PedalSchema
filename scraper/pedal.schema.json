@@ -1,0 +1,163 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PedalSchema",
+  "description": "Schema for guitar effect pedal specifications",
+  "type": "object",
+  "required": ["id", "manufacturer", "model", "dimensions"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier (manufacturer-model)",
+      "pattern": "^[a-z0-9\\-]+$"
+    },
+    "manufacturer": {
+      "type": "string",
+      "description": "Pedal manufacturer name"
+    },
+    "model": {
+      "type": "string",
+      "description": "Model number/name"
+    },
+    "name": {
+      "type": "string",
+      "description": "Full product name"
+    },
+    "tagline": {
+      "type": ["string", "null"],
+      "description": "Marketing tagline"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "distortion",
+        "overdrive",
+        "fuzz",
+        "boost",
+        "preamp",
+        "compressor",
+        "noise-gate",
+        "eq",
+        "wah",
+        "volume",
+        "delay",
+        "reverb",
+        "chorus",
+        "flanger",
+        "phaser",
+        "tremolo",
+        "vibrato",
+        "rotary",
+        "pitch",
+        "harmonizer",
+        "octave",
+        "synth",
+        "looper",
+        "tuner",
+        "buffer",
+        "switcher",
+        "power-supply",
+        "multi-fx",
+        "other"
+      ]
+    },
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Product page URL"
+    },
+    "image_url": {
+      "type": ["string", "null"],
+      "format": "uri",
+      "description": "Top-down product image URL"
+    },
+    "dimensions": {
+      "type": "object",
+      "required": ["width_mm", "depth_mm"],
+      "properties": {
+        "width_mm": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Width in millimeters"
+        },
+        "depth_mm": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Depth in millimeters (front to back)"
+        },
+        "height_mm": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "Height in millimeters"
+        },
+        "width_in": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "Width in inches"
+        },
+        "depth_in": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "Depth in inches"
+        }
+      }
+    },
+    "power": {
+      "type": "object",
+      "properties": {
+        "voltage": {
+          "type": "number",
+          "description": "Operating voltage (typically 9, 12, or 18)"
+        },
+        "current_ma": {
+          "type": ["number", "null"],
+          "description": "Current draw in milliamps"
+        },
+        "polarity": {
+          "type": "string",
+          "enum": ["center-negative", "center-positive"],
+          "description": "DC jack polarity"
+        }
+      }
+    },
+    "io": {
+      "type": "object",
+      "properties": {
+        "inputs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of input jacks"
+        },
+        "outputs": {
+          "type": "integer", 
+          "minimum": 1,
+          "description": "Number of output jacks"
+        },
+        "stereo": {
+          "type": "boolean",
+          "description": "Stereo capable"
+        },
+        "jack_position": {
+          "type": "string",
+          "enum": ["top", "side", "mixed"],
+          "description": "Location of I/O jacks"
+        },
+        "bypass": {
+          "type": "string",
+          "enum": ["true-bypass", "buffered", "relay", "other"]
+        }
+      }
+    },
+    "weight_g": {
+      "type": ["number", "null"],
+      "description": "Weight in grams"
+    },
+    "input_z_ohms": {
+      "type": ["number", "null"],
+      "description": "Input impedance in ohms"
+    },
+    "output_z_ohms": {
+      "type": ["number", "null"],
+      "description": "Output impedance in ohms"
+    }
+  }
+}
