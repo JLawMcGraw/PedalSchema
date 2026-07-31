@@ -33,11 +33,12 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
     useEditorStore(
     useShallow((s) => ({ zoom: s.zoom, zoomIn: s.zoomIn, zoomOut: s.zoomOut, resetZoom: s.resetZoom, gridVisible: s.gridVisible, toggleGrid: s.toggleGrid, cablesVisible: s.cablesVisible, toggleCables: s.toggleCables }))
   );
-  const { name, isDirty, isSaving, placedPedals, optimizeLayout, undo, redo, canUndo, canRedo } = useConfigurationStore(
+  const { name, isDirty, isSaving, saveError, placedPedals, optimizeLayout, undo, redo, canUndo, canRedo } = useConfigurationStore(
     useShallow((s) => ({
       name: s.name,
       isDirty: s.isDirty,
       isSaving: s.isSaving,
+      saveError: s.saveError,
       placedPedals: s.placedPedals,
       optimizeLayout: s.optimizeLayout,
       undo: s.undo,
@@ -77,10 +78,26 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
         {/* Left side - name and badges */}
         <div className="flex items-center gap-2 min-w-0 shrink">
           <span className="font-medium truncate">{name}</span>
-          {isDirty && (
+          {isDirty && !saveError && (
             <Badge variant="outline" className="text-xs shrink-0">
               Unsaved
             </Badge>
+          )}
+          {/* A failed save is NOT the same as "not saved yet": the work is
+              still only in the browser and will be lost on close. Say so, and
+              say why - the reason used to reach the console and nowhere else. */}
+          {saveError && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="destructive" className="text-xs shrink-0 max-w-[16rem] truncate">
+                  Save failed
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-sm">
+                <p className="text-xs">{saveError}</p>
+                <p className="text-xs mt-1 opacity-80">Your changes are still here. Try saving again.</p>
+              </TooltipContent>
+            </Tooltip>
           )}
           {collisions.length > 0 && (
             <Badge variant="destructive" className="text-xs shrink-0">

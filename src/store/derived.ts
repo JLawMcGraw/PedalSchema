@@ -196,6 +196,9 @@ export interface PedalSchemaSnapshot {
   warningCount: number;
   /** Summary of the last optimizeLayout(), or null if none this session */
   lastOptimization: unknown;
+  /** Unsaved work, and why the last save failed - null when it did not */
+  isDirty: boolean;
+  saveError: string | null;
 }
 
 // Debug helpers: extract source + derived state from the browser console.
@@ -255,6 +258,8 @@ if (typeof window !== 'undefined') {
       collisionCount: d.collisions.length,
       warningCount: d.warnings.length,
       lastOptimization: s.lastOptimization,
+      isDirty: s.isDirty,
+      saveError: s.saveError,
     };
   };
 }

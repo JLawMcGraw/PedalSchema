@@ -16,6 +16,7 @@ import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import { PlusCircle, List } from 'lucide-react';
+import { describeSaveError, failIf } from '@/lib/save-error';
 import type { Board, Amp, Pedal, PlacedPedal } from '@/types';
 
 interface EditorClientProps {
@@ -104,12 +105,13 @@ export function EditorClient({
     const {
       id, name, description, placedPedals, amp,
       useEffectsLoop, use4CableMethod, modulationInLoop,
-      setSaving, markClean,
+      setSaving, markClean, setSaveError,
     } = useConfigurationStore.getState();
 
     if (!id) return;
 
     setSaving(true);
+    setSaveError(null);
 
     try {
       const supabase = createClient();
@@ -126,7 +128,7 @@ export function EditorClient({
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);
-      if (configError) throw configError;
+      failIf('Saving the configuration', configError);
 
       // Upsert current pedals (stable ids), then prune rows no longer present.
       if (placedPedals.length > 0) {
@@ -148,7 +150,7 @@ export function EditorClient({
             })),
             { onConflict: 'id' }
           );
-        if (upsertError) throw upsertError;
+        failIf('Saving the pedals', upsertError);
       }
 
       let pruneQuery = supabase
@@ -160,12 +162,16 @@ export function EditorClient({
         pruneQuery = pruneQuery.not('id', 'in', `(${keepIds})`);
       }
       const { error: pruneError } = await pruneQuery;
-      if (pruneError) throw pruneError;
+      failIf('Removing deleted pedals', pruneError);
 
       markClean();
     } catch (error) {
-      // Config stays dirty so the toolbar keeps showing the unsaved state.
-      console.error('Failed to save:', error);
+      // Config stays dirty so the toolbar keeps showing the unsaved state -
+      // and saveError says WHY, in the UI, because a console line nobody has
+      // open is not a report.
+      const message = describeSaveError(error);
+      console.error('Failed to save:', message, error);
+      setSaveError(message);
     } finally {
       setSaving(false);
     }

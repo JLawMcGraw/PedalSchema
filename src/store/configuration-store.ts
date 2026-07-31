@@ -59,6 +59,14 @@ interface ConfigurationState {
   // Dirty state
   isDirty: boolean;
   isSaving: boolean;
+  /**
+   * Why the last save failed, or null if it did not. The board stays dirty
+   * either way, but "dirty" alone cannot tell the user whether they simply
+   * have not saved yet or whether saving is FAILING - a distinction that was
+   * invisible outside the browser console until a save error was seen in the
+   * wild that printed as `{}`.
+   */
+  saveError: string | null;
 
   // Actions
   initConfiguration: (config: {
@@ -113,6 +121,7 @@ interface ConfigurationState {
 
   markClean: () => void;
   setSaving: (saving: boolean) => void;
+  setSaveError: (message: string | null) => void;
 }
 
 function generateId(): string {
@@ -182,6 +191,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       lastOptimization: null,
       isDirty: false,
       isSaving: false,
+      saveError: null,
 
       initConfiguration: (config) => {
         set((state) => {
@@ -620,11 +630,17 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       markClean: () => {
-        set({ isDirty: false });
+        // A save that worked also clears the last failure - otherwise the
+        // banner outlives the problem it describes.
+        set({ isDirty: false, saveError: null });
       },
 
       setSaving: (saving) => {
         set({ isSaving: saving });
+      },
+
+      setSaveError: (message) => {
+        set({ saveError: message });
       },
       };
     })
