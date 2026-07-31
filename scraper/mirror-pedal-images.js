@@ -85,6 +85,37 @@ const PRODUCT_PAGES = {
   'Pro Co RAT 2': ['https://actentertainment.com/rat-2-distortion-pedal/'],
 };
 
+/**
+ * Per-pedal escape hatches, keyed like PRODUCT_PAGES ("Manufacturer Name").
+ *
+ * The knockout is a heuristic over 64 photos and it will never be right for
+ * all of them. Tuning its constants to rescue one pedal silently shifts the
+ * other 63 - that is exactly how the black-blob regression happened. So a
+ * problem case becomes an explicit, reviewable entry here instead.
+ *
+ *   sources  replace the candidate list entirely (for a WRONG image - no
+ *            background remover fixes a photo shot from the side)
+ *   mode     'skip'      never mirror; render the clean category rect
+ *            'no-trim'   knock the background out but do not crop to it
+ *
+ * Prefer fixing `sources` when a better photo exists: the goal is a clean
+ * top-down cut-out, so a correct source beats any amount of post-processing.
+ */
+const PEDAL_OVERRIDES = {
+  // og:image and the -1 gallery shot are both angled three-quarter views.
+  // Needs a genuine head-on source; until one is found, the rect is honest.
+  'Electro-Harmonix Big Muff Pi': { mode: 'skip' },
+  // Silver/grey pedal, grey gradient backdrop, soft drop shadow beneath.
+  // The fill cannot separate pedal from shadow (both neutral, and the pedal
+  // is LIGHTER than some of the backdrop), leaving a grey oval under it.
+  'Strymon Timeline': { mode: 'skip' },
+  'Strymon BigSky': { mode: 'skip' },
+  // The fill eats the red top plate (top-20% band goes 0% -> 46% transparent).
+  // The _top_main.jpg alternative erodes less (12%) but is only 183x330 and
+  // still not clean, so the rect is the honest choice until matting lands.
+  'BOSS DM-2W': { mode: 'skip' },
+};
+
 /** Entries matching this are fetched as images directly, not scraped for og:image */
 const IMAGE_URL_RE = /\.(png|jpe?g|webp)(\?\S*)?$/i;
 
@@ -409,7 +440,7 @@ async function main() {
     .select('id,name,manufacturer,image_url,image_source_url,width_inches,depth_inches');
   if (error) throw error;
 
-  const report = { mirrored: [], topDown: 0, skipped: [], missed: [], cleared: [], referenced: [] };
+  const report = { mirrored: [], topDown: 0, skipped: [], missed: [], cleared: [], referenced: [], overridden: [] };
 
   for (const pedal of pedals) {
     // ONLY=ds-1,rat re-runs just matching pedals (name substring, comma-separated)
@@ -434,6 +465,20 @@ async function main() {
       report.skipped.push(pedal.name);
       continue;
     }
+    const override = PEDAL_OVERRIDES[`${pedal.manufacturer} ${pedal.name}`] ?? {};
+    if (override.mode === 'skip') {
+      report.overridden.push(`${pedal.manufacturer} ${pedal.name} (skip: no clean top-down source)`);
+      if (!process.env.DRY && pedal.image_url?.includes(OUR_HOST)) {
+        await sb.storage.from('pedal-images')
+          .remove([`system/${pedal.id}.png`, `system/${pedal.id}.jpg`]);
+        await sb.from('pedals').update({
+          image_url: null, image_source_url: null, image_license: null,
+          image_attribution: null, image_fetched_at: null,
+        }).eq('id', pedal.id);
+      }
+      continue;
+    }
+
     const physicalAspect = pedal.width_inches / pedal.depth_inches;
     let hit = null;
     for (const url of candidatesFor(pedal)) {
@@ -466,7 +511,7 @@ async function main() {
     }
     // Non-BOSS: curated pages -> og:image, or direct image URLs (same gate)
     if (!hit) {
-      const sources = PRODUCT_PAGES[`${pedal.manufacturer} ${pedal.name}`] ?? [];
+      const sources = override.sources ?? PRODUCT_PAGES[`${pedal.manufacturer} ${pedal.name}`] ?? [];
       for (const src of sources) {
         const url = IMAGE_URL_RE.test(src) ? src : await ogImageOf(src);
         if (!url) continue;
@@ -526,9 +571,11 @@ async function main() {
     );
   }
 
-  console.log(`mirrored: ${report.mirrored.length} (${report.topDown} top-down) | skipped (already ours): ${report.skipped.length} | referenced (not mirrored): ${report.referenced.length} | missed: ${report.missed.length} | cleared stale: ${report.cleared.length}`);
+  console.log(`mirrored: ${report.mirrored.length} (${report.topDown} top-down) | skipped (already ours): ${report.skipped.length} | overridden: ${report.overridden.length} | referenced (not mirrored): ${report.referenced.length} | missed: ${report.missed.length} | cleared stale: ${report.cleared.length}`);
   console.log('--- mirrored ---');
   report.mirrored.forEach(l => console.log(' ', l));
+  console.log('--- overridden per-pedal (see PEDAL_OVERRIDES) ---');
+  report.overridden.forEach(l => console.log(' ', l));
   console.log('--- referenced, bytes deliberately not mirrored ---');
   report.referenced.forEach(l => console.log(' ', l));
   console.log('--- missed (rect fallback) ---');
