@@ -89,6 +89,7 @@ interface ConfigurationState {
   setDescription: (description: string) => void;
   setUseEffectsLoop: (use: boolean) => void;
   setUse4CableMethod: (use: boolean) => void;
+  setAllowRotation: (allow: boolean) => void;
   setModulationInLoop: (inLoop: boolean) => void;
 
   addPedal: (pedal: Pedal, position: Position) => void;
@@ -271,6 +272,16 @@ export const useConfigurationStore = create<ConfigurationState>()(
           }
         });
         get().normalizeChain();
+      },
+
+      setAllowRotation: (allow) => {
+        recordHistory();
+        set((state) => {
+          state.routingConfig.allowRotation = allow;
+          state.isDirty = true;
+        });
+        // No normalizeChain: this changes what Optimize may do, not the signal
+        // chain. Nothing moves until the next Optimize.
       },
 
       setModulationInLoop: (inLoop) => {

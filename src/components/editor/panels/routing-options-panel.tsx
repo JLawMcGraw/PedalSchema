@@ -35,9 +35,13 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
     setUse4CableMethod,
     modulationInLoop,
     setModulationInLoop,
+    setAllowRotation,
   } = useConfigurationStore(
-    useShallow((s) => ({ placedPedals: s.placedPedals, pedalsById: s.pedalsById, routingConfig: s.routingConfig, togglePedalInLoop: s.togglePedalInLoop, amp: s.amp, setAmp: s.setAmp, useEffectsLoop: s.useEffectsLoop, setUseEffectsLoop: s.setUseEffectsLoop, use4CableMethod: s.use4CableMethod, setUse4CableMethod: s.setUse4CableMethod, modulationInLoop: s.modulationInLoop, setModulationInLoop: s.setModulationInLoop }))
+    useShallow((s) => ({ placedPedals: s.placedPedals, pedalsById: s.pedalsById, routingConfig: s.routingConfig, togglePedalInLoop: s.togglePedalInLoop, amp: s.amp, setAmp: s.setAmp, useEffectsLoop: s.useEffectsLoop, setUseEffectsLoop: s.setUseEffectsLoop, use4CableMethod: s.use4CableMethod, setUse4CableMethod: s.setUse4CableMethod, modulationInLoop: s.modulationInLoop, setModulationInLoop: s.setModulationInLoop, setAllowRotation: s.setAllowRotation }))
   );
+
+  // Absent means allowed - the eligibility guard is what makes it safe
+  const allowRotation = routingConfig.allowRotation ?? true;
 
   const handleAmpChange = (ampId: string) => {
     if (ampId === 'none') {
@@ -191,6 +195,24 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
               </div>
             </div>
           )}
+
+          {/* Let Optimize rotate pedals */}
+          <div className="border rounded-lg overflow-hidden">
+            <div className="px-3 py-2 bg-muted/50 border-b flex items-center justify-between">
+              <span className="text-xs font-medium">Optimize can rotate pedals</span>
+              <Switch checked={allowRotation} onCheckedChange={setAllowRotation} />
+            </div>
+            <div className="p-3">
+              <p className="text-xs text-muted-foreground">
+                {allowRotation
+                  ? 'Turns a pedal only when it shortens the wiring. Never large pedals or treadles — you still have to reach the footswitch.'
+                  : 'Optimize leaves every pedal facing forward.'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                You can always rotate any pedal yourself from its properties.
+              </p>
+            </div>
+          </div>
 
           {/* Signal Flow */}
           <div className="border rounded-lg overflow-hidden">

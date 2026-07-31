@@ -4,6 +4,7 @@ import { calculateRoutingCost, type RoutingCostResult } from './routing-cost';
 import { identifySwappableGroups } from '../signal-chain';
 import { COLLISION_SPACING } from '../collision';
 import { rotateSide, rotatedFootprint } from '../geometry/rotation';
+import { canOptimizerRotate } from './rotation-eligibility';
 
 /**
  * Front-to-back clearance between pedals in ADJACENT ROWS, as opposed to the
@@ -874,18 +875,15 @@ export function calculateOptimalLayoutJoint(
     cost: baselineCost,
   };
 
-  // Pedals where rotation changes jack FACING (input/output on top/bottom
-  // edges, e.g. EQ-200) - the only ones worth searching rotations for
-  const rotatableIds = placedPedals
-    .filter((p) => {
-      const pedal = pedalsById[p.pedalId] || p.pedal;
-      return pedal?.jacks?.some(
-        (j) =>
-          (j.jackType === 'input' || j.jackType === 'output') &&
-          (j.side === 'top' || j.side === 'bottom')
-      );
-    })
-    .map((p) => p.id);
+  // Pedals the optimizer may turn unasked: a jack-facing change to gain from,
+  // small enough to still step on, and not a treadle. See rotation-eligibility.
+  // Absent config means allowed - the guard is what makes it safe, not the flag.
+  const allowRotation = routingConfig?.allowRotation ?? true;
+  const rotatableIds = allowRotation
+    ? placedPedals
+        .filter((p) => canOptimizerRotate(pedalsById[p.pedalId] || p.pedal))
+        .map((p) => p.id)
+    : [];
 
   const hasOrderSearch =
     swappableGroups.length > 0 && swappableGroups.some(g => g.pedalIds.length >= 2);

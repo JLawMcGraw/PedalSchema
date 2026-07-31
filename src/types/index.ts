@@ -273,6 +273,13 @@ export interface RoutingConfig {
   useLoopPedals: boolean;
   use4CableMethod: boolean;
   useEffectsLoop?: boolean;
+  /**
+   * May Optimize turn pedals to shorten cable runs? Defaults to true when
+   * absent. Only pedals that pass canOptimizerRotate() are ever considered -
+   * nothing large, nothing you play with your foot - and a rotation is kept
+   * only when it strictly improves the layout. Manual rotation ignores this.
+   */
+  allowRotation?: boolean;
   // Per-pedal routing configurations
   pedalConfigs: PedalRoutingConfig[];
 }
