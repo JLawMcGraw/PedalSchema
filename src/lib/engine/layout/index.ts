@@ -3,6 +3,7 @@ import { deriveSignalTopology, primaryChain, ampClusters, hubClusters } from '..
 import { calculateRoutingCost, type RoutingCostResult } from './routing-cost';
 import { identifySwappableGroups } from '../signal-chain';
 import { COLLISION_SPACING } from '../collision';
+import { rotateSide, rotatedFootprint } from '../geometry/rotation';
 
 /**
  * Front-to-back clearance between pedals in ADJACENT ROWS, as opposed to the
@@ -89,11 +90,9 @@ export function calculateGreedyPlacement(
 
   const dims = (placed: PlacedPedal): { width: number; depth: number } => {
     const pedal = pedalsById[placed.pedalId] || placed.pedal;
-    const rot = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-    return {
-      width: pedal ? (rot ? pedal.depthInches : pedal.widthInches) : 2.87,
-      depth: pedal ? (rot ? pedal.widthInches : pedal.depthInches) : 5.12,
-    };
+    if (!pedal) return { width: 2.87, depth: 5.12 };
+    const { widthInches, depthInches } = rotatedFootprint(pedal, placed.rotationDegrees);
+    return { width: widthInches, depth: depthInches };
   };
 
   // --- Rows (clamp-aware: see Phase 1 findings) ------------------------------
@@ -303,12 +302,10 @@ export function calculateGreedyPlacement(
   const sameSideJackPad = (placed: PlacedPedal): number => {
     const pedal = pedalsById[placed.pedalId] || placed.pedal;
     if (!pedal?.jacks?.length) return 0;
-    const sides = ['top', 'right', 'bottom', 'left'] as const;
     const effectiveSide = (jackType: 'input' | 'output'): string | null => {
       const jack = pedal.jacks!.find((j) => j.jackType === jackType);
       if (!jack) return null;
-      const steps = ((placed.rotationDegrees / 90) % 4 + 4) % 4;
-      return sides[(sides.indexOf(jack.side) + steps) % 4];
+      return rotateSide(jack.side, placed.rotationDegrees);
     };
     const input = effectiveSide('input');
     const output = effectiveSide('output');
@@ -1041,10 +1038,10 @@ function hasPlacementCollision(
   const rects = placements.map((pl) => {
     const placed = byId.get(pl.id);
     const pedal = placed ? pedalsById[placed.pedalId] || placed.pedal : undefined;
-    const rot = placed && (placed.rotationDegrees === 90 || placed.rotationDegrees === 270);
-    const w = pedal ? (rot ? pedal.depthInches : pedal.widthInches) : 2.87;
-    const h = pedal ? (rot ? pedal.widthInches : pedal.depthInches) : 5.12;
-    return { x: pl.x, y: pl.y, w, h };
+    const size = pedal
+      ? rotatedFootprint(pedal, placed?.rotationDegrees ?? 0)
+      : { widthInches: 2.87, depthInches: 5.12 };
+    return { x: pl.x, y: pl.y, w: size.widthInches, h: size.depthInches };
   });
 
   for (const r of rects) {

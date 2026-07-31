@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { PlacedPedal, Pedal } from '@/types';
 import { getCategoryColor } from '@/lib/constants/pedal-categories';
+import { rotateSide, rotatedFootprint } from '@/lib/engine/geometry/rotation';
 
 interface PedalRendererProps {
   placedPedal: PlacedPedal;
@@ -28,12 +29,12 @@ export function PedalRenderer({
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
 
-  const isRotated = placedPedal.rotationDegrees === 90 || placedPedal.rotationDegrees === 270;
+  const footprint = rotatedFootprint(pedal, placedPedal.rotationDegrees);
 
   const x = placedPedal.xInches * scale;
   const y = placedPedal.yInches * scale;
-  const width = (isRotated ? pedal.depthInches : pedal.widthInches) * scale;
-  const height = (isRotated ? pedal.widthInches : pedal.depthInches) * scale;
+  const width = footprint.widthInches * scale;
+  const height = footprint.depthInches * scale;
 
   const centerX = x + width / 2;
   const centerY = y + height / 2;
@@ -142,15 +143,12 @@ export function PedalRenderer({
         let jx: number, jy: number;
         const jackRadius = 4;
 
-        // Calculate jack position based on side and percentage
-        // Account for rotation
-        let side = jack.side;
-        if (isRotated) {
-          const rotationSteps = placedPedal.rotationDegrees / 90;
-          const sides = ['top', 'right', 'bottom', 'left'] as const;
-          const currentIndex = sides.indexOf(side);
-          side = sides[(currentIndex + rotationSteps) % 4];
-        }
+        // Calculate jack position based on side and percentage, accounting for
+        // rotation. This used to run only when the pedal was rotated 90/270, so
+        // at 180 the dot stayed on its original edge while the cable (which
+        // uses the same rule in cables/endpoints.ts) attached to the flipped
+        // one - the drawing and the routing disagreed.
+        const side = rotateSide(jack.side, placedPedal.rotationDegrees);
 
         switch (side) {
           case 'top':

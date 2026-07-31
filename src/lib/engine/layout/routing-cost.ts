@@ -11,6 +11,7 @@
 
 import type { Amp, Board, Pedal, PlacedPedal, RoutingConfig, PedalPlacement } from '@/types';
 import { getExternalEndpointPx, getPedalJackPx } from '../cables/endpoints';
+import { rotatedFootprint } from '../geometry/rotation';
 import {
   Point,
   Box,
@@ -310,8 +311,7 @@ function calculateSignalFlowPenalty(
 ): number {
   const centerX = (p: PlacedPedal): number => {
     const pedal = pedalsById[p.pedalId] || p.pedal;
-    const rot = p.rotationDegrees === 90 || p.rotationDegrees === 270;
-    const width = pedal ? (rot ? pedal.depthInches : pedal.widthInches) : 2.87;
+    const width = pedal ? rotatedFootprint(pedal, p.rotationDegrees).widthInches : 2.87;
     return p.xInches + width / 2;
   };
 

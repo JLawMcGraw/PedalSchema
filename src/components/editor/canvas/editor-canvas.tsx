@@ -12,6 +12,7 @@ import { snapToRail, findEmptySpot } from '@/lib/engine/collision';
 import { getCategoryDefaultOrder } from '@/lib/constants/pedal-categories';
 import { getExternalEndpointPx } from '@/lib/engine/cables/endpoints';
 import { routeAllCables } from '@/lib/engine/cables/route-cables';
+import { rotatedFootprint } from '@/lib/engine/geometry/rotation';
 
 const PADDING_INCHES = 2;
 
@@ -187,9 +188,10 @@ export function EditorCanvas() {
       const pedal = placed ? pedalsById[placed.pedalId] : null;
 
       if (placed && pedal) {
-        const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-        const width = isRotated ? pedal.depthInches : pedal.widthInches;
-        const depth = isRotated ? pedal.widthInches : pedal.depthInches;
+        const { widthInches: width, depthInches: depth } = rotatedFootprint(
+          pedal,
+          placed.rotationDegrees
+        );
 
         // Snap to rail
         const snapped = snapToRail({ x: newX, y: newY }, depth, board);

@@ -1,4 +1,5 @@
 import type { Board, Pedal, PlacedPedal, Collision, BoundingBox } from '@/types';
+import { rotatedFootprint } from '../geometry/rotation';
 
 /**
  * Minimum spacing between pedals (inches) for cable access.
@@ -13,13 +14,13 @@ export function getPedalBoundingBox(
   placed: PlacedPedal,
   pedal: Pedal
 ): BoundingBox {
-  const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
+  const { widthInches, depthInches } = rotatedFootprint(pedal, placed.rotationDegrees);
 
   return {
     x: placed.xInches,
     y: placed.yInches,
-    width: isRotated ? pedal.depthInches : pedal.widthInches,
-    height: isRotated ? pedal.widthInches : pedal.depthInches,
+    width: widthInches,
+    height: depthInches,
   };
 }
 
@@ -117,12 +118,12 @@ export function isValidPlacement(
   board: Board,
   excludePedalId?: string
 ): { valid: boolean; reason?: string } {
-  const isRotated = rotation === 90 || rotation === 270;
+  const rotated = rotatedFootprint(pedal, rotation);
   const newBox: BoundingBox = {
     x: position.x,
     y: position.y,
-    width: isRotated ? pedal.depthInches : pedal.widthInches,
-    height: isRotated ? pedal.widthInches : pedal.depthInches,
+    width: rotated.widthInches,
+    height: rotated.depthInches,
   };
 
   // Check board bounds

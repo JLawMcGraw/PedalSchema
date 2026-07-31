@@ -12,6 +12,7 @@
 
 import type { PlacedPedal, Pedal, Board } from '@/types';
 import type { Box, Point } from '../geometry';
+import { rotatedFootprint } from '../geometry/rotation';
 
 // Re-export types for convenience
 export type { Box, Point };
@@ -78,10 +79,8 @@ export function generateObstacles(
     const pedal = pedalsById[placed.pedalId] || placed.pedal;
     if (!pedal) continue;
 
-    // Handle rotation: 90 or 270 swaps width and depth
-    const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-    const widthInches = isRotated ? pedal.depthInches : pedal.widthInches;
-    const depthInches = isRotated ? pedal.widthInches : pedal.depthInches;
+    // Handle rotation: a quarter turn swaps width and depth
+    const { widthInches, depthInches } = rotatedFootprint(pedal, placed.rotationDegrees);
 
     // Convert to pixels
     const box: Box = {

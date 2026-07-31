@@ -5,6 +5,7 @@ import type { Board, Pedal, Amp, PlacedPedal, Position, ChainLocation, ChainCont
 import { signalChainEngine } from '@/lib/engine/signal-chain';
 import { calculateOptimalLayoutJoint } from '@/lib/engine/layout';
 import { summarizeOptimization, type OptimizationSummary } from '@/lib/engine/layout/routing-cost';
+import { rotatedFootprint } from '@/lib/engine/geometry/rotation';
 
 /**
  * Undo/redo snapshot of everything a board-editing action can change.
@@ -321,9 +322,10 @@ export const useConfigurationStore = create<ConfigurationState>()(
             const board = state.board;
             const pedalData = state.pedalsById[pedal.pedalId];
             if (board && pedalData) {
-              const isRotated = pedal.rotationDegrees === 90 || pedal.rotationDegrees === 270;
-              const width = isRotated ? pedalData.depthInches : pedalData.widthInches;
-              const depth = isRotated ? pedalData.widthInches : pedalData.depthInches;
+              const { widthInches: width, depthInches: depth } = rotatedFootprint(
+                pedalData,
+                pedal.rotationDegrees
+              );
 
               pedal.xInches = Math.max(0, Math.min(position.x, board.widthInches - width));
               pedal.yInches = Math.max(0, Math.min(position.y, board.depthInches - depth));

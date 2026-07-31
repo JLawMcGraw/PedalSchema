@@ -9,6 +9,7 @@ import type { Board, Pedal, PlacedPedal } from '@/types';
 import type { Point, Box } from '../../geometry';
 import type { RoutedCable } from '../../cables/route-cables';
 import { generateObstacles } from '../../obstacles';
+import { rotatedFootprint } from '../../geometry/rotation';
 import { primaryChain, type SignalTopology } from '../../topology';
 import { SCALE } from './fixtures';
 
@@ -136,13 +137,13 @@ export function placementViolations(
   const violations: string[] = [];
   const boxes = placedPedals.map((p) => {
     const pedal = pedalsById[p.pedalId];
-    const rot = p.rotationDegrees === 90 || p.rotationDegrees === 270;
+    const size = rotatedFootprint(pedal, p.rotationDegrees);
     return {
       id: p.id,
       x: p.xInches,
       y: p.yInches,
-      w: rot ? pedal.depthInches : pedal.widthInches,
-      h: rot ? pedal.widthInches : pedal.depthInches,
+      w: size.widthInches,
+      h: size.depthInches,
     };
   });
 
@@ -182,8 +183,7 @@ export function chainOrderViolations(
 
   const centerX = (p: PlacedPedal) => {
     const pedal = pedalsById[p.pedalId];
-    const rot = p.rotationDegrees === 90 || p.rotationDegrees === 270;
-    return p.xInches + (rot ? pedal.depthInches : pedal.widthInches) / 2;
+    return p.xInches + rotatedFootprint(pedal, p.rotationDegrees).widthInches / 2;
   };
 
   const checkRowMonotonic = (chain: PlacedPedal[], name: string) => {

@@ -14,6 +14,7 @@
 
 import type { Board, Pedal, PlacedPedal, PedalJack } from '@/types';
 import type { Point } from '../geometry';
+import { rotateSide, rotatedFootprint } from '../geometry/rotation';
 
 /** Horizontal distance of external endpoints from the board edge, in inches */
 export const EXTERNAL_OFFSET_INCHES = 1.5;
@@ -112,22 +113,16 @@ export function getJackPosition(
   jack: PedalJack,
   pedal: Pedal
 ): Point {
-  const isRotated = placedPedal.rotationDegrees === 90 || placedPedal.rotationDegrees === 270;
-
-  // Get effective dimensions after rotation
-  const effectiveWidth = isRotated ? pedal.depthInches : pedal.widthInches;
-  const effectiveDepth = isRotated ? pedal.widthInches : pedal.depthInches;
+  // Effective dimensions and jack edge after rotation
+  const { widthInches: effectiveWidth, depthInches: effectiveDepth } = rotatedFootprint(
+    pedal,
+    placedPedal.rotationDegrees
+  );
+  const rotatedSide = rotateSide(jack.side, placedPedal.rotationDegrees);
 
   // Calculate jack position based on side and position percent
   let jackOffsetX = 0;
   let jackOffsetY = 0;
-
-  // Map the original jack side through rotation
-  const rotationSteps = placedPedal.rotationDegrees / 90;
-  const sides: Array<'top' | 'right' | 'bottom' | 'left'> = ['top', 'right', 'bottom', 'left'];
-  const originalSideIndex = sides.indexOf(jack.side);
-  const rotatedSideIndex = (originalSideIndex + rotationSteps) % 4;
-  const rotatedSide = sides[rotatedSideIndex];
 
   const positionRatio = jack.positionPercent / 100;
 
