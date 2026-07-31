@@ -393,6 +393,8 @@ export interface OptimizationSummary {
   changes: CostChange[];
   /** One line fit to show next to the Optimize button */
   headline: string;
+  /** No legal arrangement was found; the board was left as-is */
+  noLegalCandidate?: boolean;
 }
 
 /** Round to one decimal, avoiding "-0.0" */
@@ -412,7 +414,9 @@ function round1(n: number): number {
  */
 export function summarizeOptimization(
   before: RoutingCostResult,
-  after: RoutingCostResult
+  after: RoutingCostResult,
+  /** Every arrangement tried was illegal - see JointOptimizationResult */
+  noLegalCandidate = false
 ): OptimizationSummary {
   const beforeByKey = new Map(before.dimensions.map((d) => [d.key, d]));
 
@@ -456,7 +460,13 @@ export function summarizeOptimization(
   };
 
   let headline: string;
-  if (changes.length === 0) {
+  if (noLegalCandidate) {
+    // Never report this as "already optimal" - the search failed, it did not
+    // conclude the board was ideal.
+    headline =
+      'Could not fit these pedals on this board - your layout was left alone. ' +
+      'Try a larger board or removing a pedal.';
+  } else if (changes.length === 0) {
     headline = 'Already optimal - nothing moved.';
   } else if (delta > 0.05) {
     // The rearrangement scored WORSE. Lead with what got worse - `changes` is
@@ -476,5 +486,6 @@ export function summarizeOptimization(
     lengthDeltaInches,
     changes,
     headline,
+    noLegalCandidate,
   };
 }

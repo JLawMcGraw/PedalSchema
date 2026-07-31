@@ -916,6 +916,14 @@ export interface ScoredJointOptimizationResult extends JointOptimizationResult {
    */
   baselineCost?: RoutingCostResult;
   cost?: RoutingCostResult;
+  /**
+   * True when EVERY candidate arrangement the search tried was illegal
+   * (pedals overlapping or off the board), so the user's own layout was kept
+   * by default. This is not "already optimal" - it is "we could not place
+   * these pedals on this board at all" - and the UI must not conflate them.
+   * Currently reachable with ~20+ pedals, where greedy placement overlaps.
+   */
+  noLegalCandidate?: boolean;
 }
 
 export function calculateOptimalLayoutJoint(
@@ -1005,12 +1013,14 @@ export function calculateOptimalLayoutJoint(
     // Ties keep the baseline, and if BOTH are illegal we keep the user's board
     // rather than replacing it with a different broken one.
     const keepBaseline = baselineCandidate.score <= greedyScore + 1e-9;
+    const noLegalCandidate = !Number.isFinite(greedyScore) && !Number.isFinite(baselineCandidate.score);
     return {
       placements: keepBaseline ? currentPlacements : placements,
       chainOrder: initialChainOrder,
       swappableGroups,
       baselineCost,
       cost: keepBaseline ? baselineCost : greedyCost,
+      noLegalCandidate: !Number.isFinite(greedyScore),
     };
   }
 
@@ -1052,6 +1062,9 @@ export function calculateOptimalLayoutJoint(
   let bestOrder = initialChainOrder;
   let bestRotations = new Map(baseRotations);
   let best = evaluate(initialChainOrder, bestRotations);
+  // Every candidate illegal => the search found nothing, it did not conclude
+  // the board was already ideal. Tracked so the UI can say which happened.
+  let anyLegalCandidate = Number.isFinite(best.score);
 
   // Seed with the user's own layout when it already beats the greedy
   // re-placement of the same order, so every later candidate is compared
@@ -1075,6 +1088,7 @@ export function calculateOptimalLayoutJoint(
     if (order === initialChainOrder) continue;
     if (evaluations >= MAX_EVALUATIONS) break;
     const result = evaluate(order, bestRotations);
+    if (Number.isFinite(result.score)) anyLegalCandidate = true;
     if (result.score < best.score - 1e-9) {
       best = result;
       bestOrder = order;
@@ -1092,6 +1106,7 @@ export function calculateOptimalLayoutJoint(
       const candidate = new Map(bestRotations);
       candidate.set(id, rotation);
       const result = evaluate(bestOrder, candidate);
+      if (Number.isFinite(result.score)) anyLegalCandidate = true;
       if (result.score < best.score - 1e-9) {
         best = result;
         bestRotations = candidate;
@@ -1112,6 +1127,7 @@ export function calculateOptimalLayoutJoint(
     // `best.cost` is the winner's own score object, not a recomputation, so
     // what the UI reports is literally what the search compared.
     cost: best.cost,
+    noLegalCandidate: !anyLegalCandidate,
   };
 }
 

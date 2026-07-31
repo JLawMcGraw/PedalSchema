@@ -255,3 +255,38 @@ describe('optimize never returns an illegal layout', () => {
     });
   }
 });
+
+describe('when nothing legal can be placed', () => {
+  it('says so instead of claiming the board is already optimal', () => {
+    // 21 pedals: greedy placement overlaps (6 pairs even on a 32x16 board),
+    // so every candidate scores Infinity and the user's layout is kept. That
+    // is NOT "already optimal" - reporting it as such tells the user their
+    // crowded board is fine when the optimizer simply failed.
+    const cats = [
+      'wah', 'compressor', 'compressor', 'compressor', 'pitch', 'pitch',
+      'distortion', 'distortion', 'distortion', 'distortion', 'fuzz', 'utility',
+      'eq', 'eq', 'eq', 'modulation', 'phaser', 'delay', 'delay', 'delay', 'utility',
+    ];
+    const byId: Record<string, Pedal> = {};
+    const big = {
+      id: 'b', name: 'Big', widthInches: 32, depthInches: 16,
+      railWidthInches: 0.6, isSystem: true,
+    } as Board;
+    const placed = cats.map((c, i) => {
+      const id = `p${i}`;
+      byId[id] = pedal(id, c);
+      return {
+        id, pedalId: id, pedal: byId[id],
+        xInches: (i % 10) * 3.0, yInches: Math.floor(i / 10) * 5.4,
+        rotationDegrees: 0, chainPosition: i + 1, isInLoop: false,
+      } as unknown as PlacedPedal;
+    });
+
+    const r = calculateOptimalLayoutJoint(placed, byId, big);
+    const s = summarizeOptimization(r.baselineCost!, r.cost!, r.noLegalCandidate);
+
+    expect(r.noLegalCandidate).toBe(true);
+    expect(s.headline).not.toMatch(/already optimal/i);
+    expect(s.headline).toMatch(/could not fit/i);
+  });
+});
