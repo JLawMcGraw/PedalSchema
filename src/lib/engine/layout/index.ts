@@ -108,35 +108,55 @@ export function calculateGreedyPlacement(
       count = rowsThatFit(gap);
     }
     count = Math.max(1, count);
+
+    // Spend leftover depth on the CABLE CORRIDOR between rows, not on margins
+    // at the board edges. Centring the rows instead was a real regression: on
+    // a 22x12.5 board it left a 0.5in gap where the old rail positions gave
+    // 0.9in, and the router could no longer fit a lane between the rows, so
+    // cables came back invalid. The corridor has to carry cable runs; the
+    // strip in front of the first row carries nothing.
+    const EDGE_MARGIN = 0.1;
+    if (count > 1) {
+      const spare = board.depthInches - count * rowDepth - 2 * EDGE_MARGIN;
+      gap = Math.max(gap, spare / (count - 1));
+    }
     const used = count * rowDepth + (count - 1) * gap;
     const margin = Math.max(0, (board.depthInches - used) / 2);
     return Array.from({ length: count }, (_, i) => margin + i * (rowDepth + gap))
       .sort((a, b) => b - a); // back-to-front, matching the rails convention
   };
 
-  let rowYPositions = rails.length > 0
-    ? rails.map(r => r.positionFromBackInches)
-    : deriveRows();
+  /**
+   * RAILS ARE NOT ROWS. This is the bug that made large boards unplaceable.
+   *
+   * A Pedaltrain Classic Pro has four rails at 0, 3.75, 7.5 and 11.25in. They
+   * are mounting bars: a 5.08in-deep pedal sits ACROSS two of them. Treating
+   * each rail as a row gave four rows at a 3.75in pitch, which is shallower
+   * than any real pedal, so the "rails too close" guard collapsed the board to
+   * TWO rows - and 20 pedals then had no legal placement. Every real board has
+   * rails, so this path ran every time and the depth-derived row count never
+   * did.
+   *
+   * Row pitch comes from pedal depth. Rails are kept only to snap a derived
+   * row onto a real mounting bar when one is close enough that snapping does
+   * not change how many rows fit.
+   */
+  let rowYPositions = deriveRows();
 
-  // Only rails need policing: they are board data that may not suit the
-  // pedals on it. deriveRows() constructs non-overlapping rows by definition,
-  // and it may legitimately use a gap tighter than COLLISION_SPACING, so
-  // running this check against it would collapse it straight back to two rows.
-  if (rails.length > 0 && rowYPositions.length >= 2 && maxDepth > 0) {
-    const clamped = rowYPositions
-      .map((r) => Math.max(0, Math.min(r, board.depthInches - maxDepth)))
-      .sort((a, b) => b - a);
-    let tooClose = false;
-    for (let i = 0; i < clamped.length - 1; i++) {
-      if (clamped[i] - (clamped[i + 1] + maxDepth) < COLLISION_SPACING - 1e-6) {
-        tooClose = true;
-        break;
-      }
-    }
-    if (tooClose) {
-      rowYPositions = [Math.max(0, board.depthInches - maxDepth), 0];
-      console.warn('[GREEDY] Rails too close for pedal depth; using safe row positions');
-    }
+  if (rails.length > 0 && rowYPositions.length > 0) {
+    const railYs = rails.map((r) => r.positionFromBackInches);
+    const snapped = rowYPositions.map((y) => {
+      const nearest = railYs.reduce((best, r) => (Math.abs(r - y) < Math.abs(best - y) ? r : best), railYs[0]);
+      // Only snap when it neither pushes the row off the board nor moves it
+      // far enough to close the gap to its neighbour.
+      const moved = Math.abs(nearest - y);
+      return moved <= MIN_ROW_GAP / 2 && nearest + maxDepth <= board.depthInches + 1e-6 ? nearest : y;
+    });
+    // Reject the snap wholesale if it made any two rows overlap
+    const ok = [...snapped]
+      .sort((a, b) => a - b)
+      .every((y, i, arr) => i === 0 || y - arr[i - 1] >= rowSizingDepth() - 1e-6);
+    if (ok) rowYPositions = snapped;
   }
 
   const placements: PedalPlacement[] = [];
@@ -244,6 +264,23 @@ export function calculateGreedyPlacement(
           'right-to-left',
           true // packed spot may be held by a cluster - slide right of it
         );
+        // packedStartX aims at where the WHOLE remaining run would start. When
+        // the run is wider than the board that lands near the right edge, and
+        // if something straddles there (a deep pedal occupying two row bands)
+        // the slide-right retry has nowhere to go and the row gets abandoned -
+        // the chain then skips a row entirely and comes back for it later,
+        // which is what made a 3-row board read out of order. Rescan the row
+        // from its right edge before giving up on it.
+        if (!spot) {
+          cursorX = board.widthInches - width;
+          spot = findValidPositionInRowStartingFrom(
+            width, depth, placedBoxes, board, nextRowY,
+            packMinX, board.widthInches,
+            cursorX,
+            'right-to-left',
+            true
+          );
+        }
       }
 
       if (!spot) {
@@ -604,335 +641,6 @@ function isValidPlacement(candidate: PlacedBox, placedBoxes: PlacedBox[], board:
 
   // Check collisions
   return !placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
-}
-
-/**
- * Find a valid position for a pedal that doesn't collide with existing placements
- */
-function findValidPosition(
-  width: number,
-  depth: number,
-  placedBoxes: PlacedBox[],
-  board: Board,
-  rowYPositions: number[]
-): { x: number; y: number } {
-  const STEP = 0.25;
-
-  // Try each row, placing from right to left (signal flows right to left)
-  for (const rowY of rowYPositions) {
-    // Clamp Y so pedal fits within board depth
-    const y = Math.min(rowY, board.depthInches - depth);
-    if (y < 0) continue;
-
-    // Scan from right to left
-    for (let x = board.widthInches - width; x >= 0; x -= STEP) {
-      const candidate: PlacedBox = { x, y, width, height: depth };
-
-      // Check bounds
-      if (x < 0 || x + width > board.widthInches) continue;
-      if (y < 0 || y + depth > board.depthInches) continue;
-
-      // Check collision with all existing placements
-      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
-      if (!hasCollision) {
-        return { x, y };
-      }
-    }
-  }
-
-  // If no row position works, scan entire board
-  for (let y = 0; y <= board.depthInches - depth; y += STEP) {
-    for (let x = board.widthInches - width; x >= 0; x -= STEP) {
-      const candidate: PlacedBox = { x, y, width, height: depth };
-      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
-      if (!hasCollision) {
-        return { x, y };
-      }
-    }
-  }
-
-  // Last resort: return origin (will show collision)
-  return { x: 0, y: 0 };
-}
-
-/**
- * Place pedals to fill the board while optimizing cable lengths.
- *
- * Layout strategy:
- * - Signal flows RIGHT to LEFT (Guitar → Pedals → Amp)
- * - Back row (y=0, top): First 2/3 of signal chain, spread across full width
- * - Front row (y=front, bottom): Last 1/3 of signal chain, on LEFT side
- * - Deep pedals (like wah) go on far right at y=0
- *
- * Coordinate system:
- * - y=0 is BACK of board (top of canvas)
- * - y=boardDepth is FRONT of board (bottom of canvas, near amp)
- */
-function placePedalGroupSnake(
-  pedals: PlacedPedal[],
-  pedalsById: Record<string, Pedal>,
-  board: Board,
-  railYPositions: number[],
-  placements: PedalPlacement[],
-  placedBoxes: PlacedBox[]
-): void {
-  if (pedals.length === 0) return;
-
-  const EDGE_MARGIN = 0.5;
-
-  // Build pedal info with dimensions
-  const pedalInfos = pedals.map(placed => {
-    const pedal = pedalsById[placed.pedalId] || placed.pedal;
-    const isRotated = placed.rotationDegrees === 90 || placed.rotationDegrees === 270;
-    return {
-      id: placed.id,
-      name: pedal?.name || 'Unknown',
-      chainPosition: placed.chainPosition,
-      width: pedal ? (isRotated ? pedal.depthInches : pedal.widthInches) : 2.87,
-      depth: pedal ? (isRotated ? pedal.widthInches : pedal.depthInches) : 5.12,
-    };
-  });
-
-  // Sort by chainPosition to ensure correct order
-  pedalInfos.sort((a, b) => a.chainPosition - b.chainPosition);
-
-  // Row split: last 1/3 of chain goes to front row
-  const frontRowCount = Math.max(1, Math.floor(pedalInfos.length / 3));
-  const backRowCount = pedalInfos.length - frontRowCount;
-
-  // Split into rows by sorted index
-  const backRowInfos = pedalInfos.slice(0, backRowCount);
-  const frontRowInfos = pedalInfos.slice(backRowCount);
-
-
-  // Deep threshold for pedals that span most of board depth
-  const deepThreshold = board.depthInches * 0.6;
-
-  // Identify deep pedals in back row (will be placed on right side)
-  const deepBackInfos = backRowInfos.filter(p => p.depth > deepThreshold);
-  const normalBackInfos = backRowInfos.filter(p => p.depth <= deepThreshold);
-
-  // Calculate total widths
-  const deepWidth = deepBackInfos.reduce((s, p) => s + p.width, 0);
-  const normalBackWidth = normalBackInfos.reduce((s, p) => s + p.width, 0);
-  const frontWidth = frontRowInfos.reduce((s, p) => s + p.width, 0);
-
-  const usableWidth = board.widthInches - 2 * EDGE_MARGIN;
-
-  // Y positions - use rail positions if available, otherwise use board edges
-  // railYPositions are sorted front-to-back (higher values first = closer to front)
-  // When only 1 rail is passed, use it for the back row and calculate front row from it
-  const backY = railYPositions.length > 0
-    ? railYPositions[railYPositions.length - 1]  // Last rail = back position for this group
-    : 0;
-  const backRowMaxDepth = Math.max(...backRowInfos.map(p => p.depth), 0);
-  const frontRowDepth = Math.max(...frontRowInfos.map(p => p.depth), 5);
-
-  // Calculate where back row ends (Y position + depth)
-  const backRowBottom = backY + backRowMaxDepth;
-
-  // Check if front row can fit below back row
-  const minFrontY = backRowBottom + COLLISION_SPACING;
-  const maxFrontY = board.depthInches - frontRowDepth;
-  const canFitFrontRow = minFrontY <= maxFrontY;
-
-  // If front row can't fit, merge everything into back row
-  let effectiveBackRowInfos = backRowInfos;
-  let effectiveFrontRowInfos = frontRowInfos;
-
-  if (!canFitFrontRow && frontRowInfos.length > 0) {
-    effectiveBackRowInfos = [...pedalInfos];
-    effectiveFrontRowInfos = [];
-  }
-
-  const frontY = canFitFrontRow
-    ? (railYPositions.length > 1
-        ? Math.min(railYPositions[0], maxFrontY)
-        : Math.min(minFrontY, maxFrontY))
-    : backY; // Won't be used if front row is empty
-
-  // Recalculate deep/normal split with effective rows
-  const effectiveDeepBackInfos = effectiveBackRowInfos.filter(p => p.depth > deepThreshold);
-  const effectiveNormalBackInfos = effectiveBackRowInfos.filter(p => p.depth <= deepThreshold);
-
-
-  // === BACK ROW: Place from right to left ===
-  // 1. Deep pedals on far right
-  // 2. Normal back row pedals spread across remaining width
-
-  let xCursor = board.widthInches - EDGE_MARGIN;
-
-  // Place deep pedals (rightmost) with collision checking
-  for (const info of effectiveDeepBackInfos) {
-    const candidateX = xCursor - info.width;
-    const pos = tryPlaceAtPosition(candidateX, backY, info.width, info.depth, placedBoxes, board)
-      ?? findAnyValidPosition(info.width, info.depth, placedBoxes, board, railYPositions, candidateX);
-    placements.push({ id: info.id, x: pos.x, y: pos.y });
-    placedBoxes.push({ x: pos.x, y: pos.y, width: info.width, height: info.depth });
-    xCursor = pos.x - COLLISION_SPACING;
-  }
-
-  // Calculate spacing for normal back row pedals
-  const normalBackAvailableWidth = xCursor - EDGE_MARGIN;
-  const effectiveNormalBackWidth = effectiveNormalBackInfos.reduce((s, p) => s + p.width, 0);
-  const normalBackSpacing = effectiveNormalBackInfos.length > 1
-    ? Math.max(COLLISION_SPACING, (normalBackAvailableWidth - effectiveNormalBackWidth) / (effectiveNormalBackInfos.length - 1))
-    : COLLISION_SPACING;
-
-  // Place normal back row pedals (spread from right to left) with collision checking
-  for (const info of effectiveNormalBackInfos) {
-    const candidateX = Math.max(EDGE_MARGIN, xCursor - info.width);
-    // First try preferred position, then try all rails in this group
-    let pos = tryPlaceAtPosition(candidateX, backY, info.width, info.depth, placedBoxes, board);
-    if (!pos) {
-      // Try other rails in the group at the same X
-      for (const railY of railYPositions) {
-        if (railY !== backY) {
-          pos = tryPlaceAtPosition(candidateX, railY, info.width, info.depth, placedBoxes, board);
-          if (pos) break;
-        }
-      }
-    }
-    // Final fallback: search entire group area
-    if (!pos) {
-      pos = findAnyValidPosition(info.width, info.depth, placedBoxes, board, railYPositions, board.widthInches);
-    }
-    placements.push({ id: info.id, x: pos.x, y: pos.y });
-    placedBoxes.push({ x: pos.x, y: pos.y, width: info.width, height: info.depth });
-    xCursor = pos.x - normalBackSpacing;
-  }
-
-  // === FRONT ROW: Place on LEFT side from left to right ===
-  // Find rightmost X that doesn't collide with deep pedals at front Y level
-  let maxFrontX = board.widthInches - EDGE_MARGIN;
-  for (const box of placedBoxes) {
-    const boxBottom = box.y + box.height;
-    // Check if this box extends into front row Y range
-    if (boxBottom > frontY) {
-      maxFrontX = Math.min(maxFrontX, box.x - COLLISION_SPACING);
-    }
-  }
-
-  // Front row pedals stay close together on the left (minimal spacing)
-  // This creates shorter cable runs from the back row
-  const frontSpacing = COLLISION_SPACING;
-
-  // Place front row pedals from left edge, in REVERSE order
-  // so that higher chain positions (closer to amp) are on the left
-  xCursor = EDGE_MARGIN;
-  const reversedFrontRow = [...effectiveFrontRowInfos].reverse();
-  for (const info of reversedFrontRow) {
-    const candidateX = xCursor;
-    const pos = tryPlaceAtPosition(candidateX, frontY, info.width, info.depth, placedBoxes, board)
-      ?? findAnyValidPosition(info.width, info.depth, placedBoxes, board, railYPositions, maxFrontX);
-    placements.push({ id: info.id, x: pos.x, y: pos.y });
-    placedBoxes.push({ x: pos.x, y: pos.y, width: info.width, height: info.depth });
-    xCursor = pos.x + info.width + frontSpacing;
-  }
-}
-
-/**
- * Try to place a pedal at a specific position (exact placement, no searching)
- */
-function tryPlaceAtPosition(
-  x: number,
-  y: number,
-  width: number,
-  depth: number,
-  placedBoxes: PlacedBox[],
-  board: Board
-): { x: number; y: number } | null {
-  // Check bounds
-  if (x < 0 || x + width > board.widthInches) return null;
-  if (y < 0 || y + depth > board.depthInches) return null;
-
-  const candidate: PlacedBox = { x, y, width, height: depth };
-  const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
-
-  if (!hasCollision) {
-    return { x, y };
-  }
-
-  return null;
-}
-
-/**
- * Find any valid position as a last resort
- * maxX limits the search to positions LEFT of the given X (to maintain signal chain order)
- * Stays within the Y range defined by railYPositions to avoid placing in wrong area
- */
-function findAnyValidPosition(
-  width: number,
-  depth: number,
-  placedBoxes: PlacedBox[],
-  board: Board,
-  railYPositions: number[],
-  maxX: number
-): { x: number; y: number } {
-  // Determine Y range from rails (stay within this group's area)
-  const minRailY = railYPositions.length > 0 ? Math.min(...railYPositions) : 0;
-  const maxRailY = railYPositions.length > 0 ? Math.max(...railYPositions) : board.depthInches;
-
-  // Try each rail, searching from left to right to find leftmost valid position
-  // railY is positionFromBackInches which equals the Y coordinate (Y=0 is back of board)
-  for (const railY of railYPositions) {
-    // Place pedal so its top edge aligns with the rail position
-    let y = Math.max(0, railY);
-    y = Math.min(y, board.depthInches - depth);
-
-    // Search from x=0 (closest to amp) up to maxX
-    const searchLimit = Math.min(maxX, board.widthInches - width);
-    for (let x = 0; x <= searchLimit; x += 0.5) {
-      const candidate: PlacedBox = { x, y, width, height: depth };
-      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
-      if (!hasCollision) {
-        return { x, y };
-      }
-    }
-  }
-
-  // Search the full board for valid positions
-  // Start from the group's preferred area but expand if needed
-  const yEnd = board.depthInches - depth;
-
-  // First try within the group's rail area with normal spacing
-  for (let y = minRailY; y <= yEnd; y += 0.5) {
-    for (let x = 0; x <= board.widthInches - width; x += 0.5) {
-      const candidate: PlacedBox = { x, y, width, height: depth };
-      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
-      if (!hasCollision) {
-        return { x, y };
-      }
-    }
-  }
-
-  // Try expanding into lower Y values (toward back of board) with normal spacing
-  for (let y = minRailY - 0.5; y >= 0; y -= 0.5) {
-    for (let x = 0; x <= board.widthInches - width; x += 0.5) {
-      const candidate: PlacedBox = { x, y, width, height: depth };
-      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
-      if (!hasCollision) {
-        return { x, y };
-      }
-    }
-  }
-
-  // Final fallback - no valid position found with COLLISION_SPACING
-  // Try with half the spacing as a compromise
-  const reducedSpacing = COLLISION_SPACING / 2;
-
-  for (let y = 0; y <= yEnd; y += 0.5) {
-    for (let x = 0; x <= board.widthInches - width; x += 0.5) {
-      const candidate: PlacedBox = { x, y, width, height: depth };
-      const hasCollision = placedBoxes.some(box => boxesOverlap(candidate, box, reducedSpacing));
-      if (!hasCollision) {
-        return { x, y };
-      }
-    }
-  }
-
-  // Last resort: place at origin (will show collision warning to user)
-  return { x: 0, y: 0 };
 }
 
 /**

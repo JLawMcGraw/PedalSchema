@@ -92,6 +92,37 @@ export const MIN_LANE_SPACING = 9;
 // BASIC GEOMETRY
 // ============================================================================
 
+/**
+ * Force an orthogonal polyline: any diagonal segment gains one elbow.
+ *
+ * Cable paths are Manhattan by contract - the renderer draws square corners
+ * and the lane model classifies every run as horizontal or vertical, so a
+ * diagonal both looks wrong and drops out of overlap detection. Two places
+ * can introduce one: a stub whose jack is not on a box edge, and the
+ * parallel-run separation pass, which moves a segment's shared endpoints and
+ * so tilts any neighbour running parallel to the shift.
+ *
+ * The elbow continues the incoming segment's orientation where there is one,
+ * so a run keeps its direction and turns exactly once.
+ */
+export function manhattanize(pts: Point[]): Point[] {
+  if (pts.length < 2) return pts;
+  const out: Point[] = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const a = out[out.length - 1];
+    const b = pts[i];
+    if (Math.abs(b.x - a.x) > 0.5 && Math.abs(b.y - a.y) > 0.5) {
+      const prev = out.length >= 2 ? out[out.length - 2] : null;
+      const cameHorizontally = prev
+        ? Math.abs(a.y - prev.y) <= 0.5
+        : Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
+      out.push(cameHorizontally ? { x: b.x, y: a.y } : { x: a.x, y: b.y });
+    }
+    out.push(b);
+  }
+  return out;
+}
+
 /** Distance between two points */
 export function dist(a: Point, b: Point): number {
   return Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);

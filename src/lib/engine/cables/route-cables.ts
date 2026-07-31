@@ -15,7 +15,7 @@
 
 import type { Board, Cable, Pedal, PlacedPedal } from '@/types';
 import type { Point } from '../geometry';
-import { LANE_SPACING } from '../geometry';
+import { LANE_SPACING, manhattanize } from '../geometry';
 import { generateObstacles, type ObstacleSet } from '../obstacles';
 import { routeCableWithObstacles, type RoutingStrategy } from './routing-strategies';
 import { getExternalEndpointPx, getPedalJackPx, type ExternalEndpointType } from './endpoints';
@@ -162,7 +162,11 @@ function separateParallelRuns(
       candidate[i].x = fixed;
       candidate[i + 1].x = fixed;
     }
-    return candidate;
+    // Moving this run's shared endpoints tilts any neighbour that ran
+    // parallel to the shift; manhattanize restores the square corner rather
+    // than rejecting the shift, which would cost the lane separation the
+    // shift exists to create.
+    return manhattanize(candidate);
   };
 
   /**

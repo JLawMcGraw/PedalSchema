@@ -21,7 +21,7 @@
  */
 
 import type { Point, Box } from '../geometry';
-import { OBSTACLE_MARGIN, STANDOFF, LANE_SPACING, MIN_LANE_SPACING, isPathClear } from '../geometry';
+import { OBSTACLE_MARGIN, STANDOFF, LANE_SPACING, MIN_LANE_SPACING, isPathClear, manhattanize } from '../geometry';
 import type { ObstacleSet } from '../obstacles';
 import { getBoxForPedal } from '../obstacles';
 import { getStandoffPoint } from '../pathfinding';
@@ -472,7 +472,13 @@ export function routeCablesWithLanes(
     }
     pts.push(plan.toStub, plan.to);
 
-    const path = dedupe(pts);
+    // The corridor model is Manhattan by construction, but the STUB segments
+    // at each end are not: an external endpoint's standoff is offset along one
+    // axis while its corridor lane sits on another, so moving corridor
+    // positions can leave a diagonal like (-60,250)->(-50,262). Insert the
+    // missing elbow rather than emitting a diagonal - a diagonal cable both
+    // looks wrong and defeats the lane model's overlap reasoning.
+    const path = dedupe(manhattanize(pts));
 
     // Shared validation policy (stub exemptions at the ends)
     const fromBoxIdx = requests[index].fromPedalId
