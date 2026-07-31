@@ -196,3 +196,117 @@ describe('loop pedal gets the amp-side corner of the jack-nearest row', () => {
     expect(overflow.x).toBeGreaterThan(loopPedal.x + 2.87);
   });
 });
+
+/**
+ * Variable row heights (regression: DD-7 right of PH-3 on the 20-pedal board).
+ *
+ * The real Pedaltrain Classic Pro config: fourteen 5.08in pedals, four 5.10in,
+ * one 5.43in (EQ-200) and one 7.56in (PW-3), on a 32x16in board. With uniform
+ * rows sized at the typical 5.10in depth, three rows plus 0.35in corridors fill
+ * the board exactly and the 5.43in pedal fits NO row: it straddled two bands,
+ * so it could only sit in the one column with nothing above it. That pinned the
+ * start of its packed run to x=10.75, only four of the remaining eight pedals
+ * fit to its left, and the tail wrapped back to the right-hand side of the row -
+ * the chain read ... -> 0.6 -> 22.0 -> 18.6, backwards in signal terms.
+ *
+ * Rows must therefore be able to have DIFFERENT heights: 5.43 + 5.10 + 5.10 =
+ * 15.63in leaves 0.185in per corridor, which houses every pedal.
+ */
+describe('variable row heights (regression: deeper pedal had no row band)', () => {
+  const CLASSIC_PRO: Board = {
+    ...makeBoard(),
+    id: 'board-pro',
+    name: 'Pedaltrain Classic Pro',
+    widthInches: 32,
+    depthInches: 16,
+    rails: [0, 3.75, 7.5, 11.25].map((positionFromBackInches, i) => ({
+      id: `r${i}`,
+      boardId: 'board-pro',
+      positionFromBackInches,
+      sortOrder: i + 1,
+    })),
+  };
+
+  /** The real board's depth mix, in chain order (deep pedal 13th, as it was) */
+  const DEPTHS = [
+    7.56, 5.08, 5.10, 5.08, 5.08, 5.08, 5.10, 5.08, 5.08, 5.08,
+    5.08, 5.10, 5.43, 5.08, 5.08, 5.08, 5.10, 5.08, 5.08, 5.08,
+  ];
+  const WIDTHS = DEPTHS.map((d) => (d === 7.56 ? 3.15 : d === 5.43 ? 3.98 : 2.87));
+
+  function place() {
+    const pedalsById: Record<string, Pedal> = {};
+    const placed: PlacedPedal[] = [];
+    DEPTHS.forEach((depth, i) => {
+      const pedal = { ...makePedal(`pedal-${i + 1}`), depthInches: depth, widthInches: WIDTHS[i] };
+      pedalsById[pedal.id] = pedal;
+      placed.push(makePlaced(`c${i + 1}`, pedal.id, i + 1));
+    });
+    const placements = calculateGreedyPlacement(placed, pedalsById, CLASSIC_PRO);
+    return placements.map((pl) => {
+      const index = Number(pl.id.slice(1)) - 1; // c7 -> chain position 7
+      return { ...pl, index, width: WIDTHS[index], depth: DEPTHS[index] };
+    });
+  }
+
+  it('sizes every row band for its own deepest occupant', () => {
+    // The invariant the uniform-row model could not satisfy. Note this is a
+    // claim about the BANDS, not about which x happens to be free: the old
+    // layout also put the 5.43in pedal at y=0, but the next row started 5.45in
+    // back, so it only fit where nothing sat above it.
+    const boxes = place().filter((b) => b.depth < 7); // 7.56in straddles by design
+    const rowYs = [...new Set(boxes.map((b) => Number(b.y.toFixed(2))))].sort((a, b) => a - b);
+
+    for (const [i, y] of rowYs.entries()) {
+      const deepestHere = Math.max(...boxes.filter((b) => Math.abs(b.y - y) < 0.01).map((b) => b.depth));
+      const nextRowY = rowYs[i + 1];
+      // The frontmost row is bounded by the board edge, not by another row
+      const limit = nextRowY ?? CLASSIC_PRO.depthInches + 0.15;
+      expect(limit - y).toBeGreaterThanOrEqual(deepestHere + 0.15 - 1e-6);
+    }
+
+    // ...and the deep pedal really is housed in one, not straddling two
+    const deep = place().find((b) => b.depth === 5.43)!;
+    expect(rowYs).toContain(Number(deep.y.toFixed(2)));
+  });
+
+  it('keeps every row in signal order, with no wrap back to the right', () => {
+    const boxes = place();
+    // The 7.56in pedal is deeper than any band can be and legitimately
+    // straddles two - it is excluded from the row-order check.
+    const rows = new Map<string, typeof boxes>();
+    for (const b of boxes.filter((b) => b.depth < 7)) {
+      const key = b.y.toFixed(2);
+      if (!rows.has(key)) rows.set(key, []);
+      rows.get(key)!.push(b);
+    }
+
+    expect(rows.size).toBe(3);
+    for (const [, row] of rows) {
+      const inChainOrder = [...row].sort((a, b) => a.index - b.index);
+      for (let i = 0; i < inChainOrder.length - 1; i++) {
+        // Later in the chain means further LEFT: x strictly decreasing
+        expect(inChainOrder[i + 1].x).toBeLessThan(inChainOrder[i].x);
+      }
+    }
+  });
+
+  it('places all 20 without overlapping or leaving the board', () => {
+    const boxes = place();
+    for (const b of boxes) {
+      expect(b.x).toBeGreaterThanOrEqual(-1e-6);
+      expect(b.y).toBeGreaterThanOrEqual(-1e-6);
+      expect(b.x + b.width).toBeLessThanOrEqual(CLASSIC_PRO.widthInches + 1e-6);
+      expect(b.y + b.depth).toBeLessThanOrEqual(CLASSIC_PRO.depthInches + 1e-6);
+    }
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i];
+        const b = boxes[j];
+        const ox = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+        const oy = Math.min(a.y + a.depth, b.y + b.depth) - Math.max(a.y, b.y);
+        expect(ox > 1e-6 && oy > 1e-6).toBe(false);
+      }
+    }
+  });
+});

@@ -19,12 +19,40 @@ import { COLLISION_SPACING } from '../collision';
  * later - which is what made a 20-pedal board read front -> back -> middle.
  */
 const ROW_GAP = 0.35;
+
+/**
+ * The floor under ROW_GAP: the least front-to-back clearance a placement is
+ * allowed to have. ROW_GAP is the corridor rows are DESIGNED for; this is what
+ * makes a candidate legal, and they have to be separate numbers.
+ *
+ * A row band sometimes has to grow to house a deeper-than-typical pedal, and
+ * that depth comes out of the corridors: three rows on a 16in board housing one
+ * 5.43in pedal need 5.43 + 2x5.10 = 15.63in, which leaves 0.185in per corridor.
+ * Demanding the full 0.35in there left EQ-200 with no legal row at all - it
+ * straddled two bands instead, which pinned its x to the one column with
+ * nothing above it, truncated the packed run to four pedals and wrapped the
+ * tail of the chain back to the right-hand side, out of signal order.
+ *
+ * Do not raise this to a rounder 0.2 without redoing that arithmetic: the real
+ * board clears it by 0.035in, and at 0.2 the budget does not close, the row
+ * never grows, and the whole mechanism silently does nothing.
+ */
+const MIN_ROW_CLEARANCE = 0.15;
 import { getExternalEndpointInches } from '../cables/endpoints';
 
 interface PlacedBox {
   x: number;
   y: number;
   width: number;
+  height: number;
+}
+
+/**
+ * One row of the board: where its pedals' back edges sit, and how deep the
+ * band is. Rows are NOT all the same height - see deriveRows().
+ */
+interface RowBand {
+  y: number;
   height: number;
 }
 
@@ -112,11 +140,39 @@ export function calculateGreedyPlacement(
     return depths[Math.min(depths.length - 1, Math.floor(depths.length * 0.8))];
   };
 
-  const deriveRows = (): number[] => {
-    if (maxDepth <= 0) return [board.depthInches * 0.55, board.depthInches * 0.05];
+  /**
+   * ROWS HAVE VARIABLE HEIGHTS. Uniform rows sized at the typical depth leave
+   * a slightly-deeper pedal homeless, and a homeless pedal does far more damage
+   * than its own misplacement.
+   *
+   * The real 20-pedal Classic Pro has fourteen 5.08in pedals, four 5.10in, one
+   * 5.43in (EQ-200) and one 7.56in (PW-3). Rows sized at the typical 5.10in
+   * fill a 16in board exactly (3 x 5.10 + 2 x 0.35 = 16.00), so EQ-200 fits no
+   * band: it straddled two, which meant it could only sit where no row above it
+   * had a pedal, and the packed run it started was cut off after four pedals
+   * with the rest wrapping back to the right. Sizing the rows 5.43 / 5.10 /
+   * 5.10 = 15.63in leaves 0.185in per corridor and gives every pedal a band.
+   *
+   * So: size every row for the typical depth, then grow rows deepest-first
+   * while the budget still closes at MIN_ROW_CLEARANCE. Grown rows go at the
+   * BACK, because the front row's depth is capped by the board edge - a pedal
+   * there is clamped forward and eats the corridor behind it instead.
+   */
+  const deriveRows = (): RowBand[] => {
     const rowDepth = rowSizingDepth();
+    if (maxDepth <= 0) {
+      const h = board.depthInches * 0.4;
+      return [
+        { y: board.depthInches * 0.55, height: h },
+        { y: board.depthInches * 0.05, height: h },
+      ];
+    }
     const rowsThatFit = (gap: number) =>
       Math.floor((board.depthInches + gap) / (rowDepth + gap));
+    // Row COUNT is still derived at the designed corridor, never at the
+    // clearance floor: buying an extra row by squeezing every corridor down to
+    // MIN_ROW_CLEARANCE would starve the cable router across the whole board,
+    // where a grown row only narrows the corridor above the one deep pedal.
     let gap = COLLISION_SPACING;
     let count = rowsThatFit(gap);
     if (rowsThatFit(MIN_ROW_GAP) > count) {
@@ -125,6 +181,28 @@ export function calculateGreedyPlacement(
     }
     count = Math.max(1, count);
 
+    // heights[0] is the BACK row, so growing from index 0 puts the deepest
+    // band at the back. Each distinct oversize depth gets at most one band:
+    // a row hosts many pedals, and a band grown to 5.43 houses every 5.43in
+    // pedal that fits along it.
+    const heights = Array.from({ length: count }, () => rowDepth);
+    const oversize = [...new Set(placedPedals.map((p) => dims(p).depth))]
+      .filter((d) => d > rowDepth + 1e-6)
+      .sort((a, b) => b - a);
+    const totalOf = (hs: number[]) => hs.reduce((sum, h) => sum + h, 0);
+    let slot = 0;
+    for (const depth of oversize) {
+      if (slot >= count) break;
+      const trial = [...heights];
+      trial[slot] = depth;
+      // A depth that will not close the budget is skipped, not fatal: the next
+      // one down may still fit, and a pedal deeper than any band can be is
+      // placed straddling two, exactly as before.
+      if (totalOf(trial) + (count - 1) * MIN_ROW_CLEARANCE > board.depthInches + 1e-6) continue;
+      heights[slot] = depth;
+      slot++;
+    }
+
     // Spend leftover depth on the CABLE CORRIDOR between rows, not on margins
     // at the board edges. Centring the rows instead was a real regression: on
     // a 22x12.5 board it left a 0.5in gap where the old rail positions gave
@@ -132,14 +210,26 @@ export function calculateGreedyPlacement(
     // cables came back invalid. The corridor has to carry cable runs; the
     // strip in front of the first row carries nothing.
     const EDGE_MARGIN = 0.1;
+    const used = totalOf(heights);
     if (count > 1) {
-      const spare = board.depthInches - count * rowDepth - 2 * EDGE_MARGIN;
+      const spare = board.depthInches - used - 2 * EDGE_MARGIN;
       gap = Math.max(gap, spare / (count - 1));
+      // A grown row eats into the corridors, so the designed gap can no longer
+      // be assumed to fit: clamp it to what is left of the board, but never
+      // below the clearance a placement in it would be judged against.
+      gap = Math.max(MIN_ROW_CLEARANCE, Math.min(gap, (board.depthInches - used) / (count - 1)));
+    } else {
+      gap = 0;
     }
-    const used = count * rowDepth + (count - 1) * gap;
-    const margin = Math.max(0, (board.depthInches - used) / 2);
-    return Array.from({ length: count }, (_, i) => margin + i * (rowDepth + gap))
-      .sort((a, b) => b - a); // back-to-front, matching the rails convention
+
+    const margin = Math.max(0, (board.depthInches - used - (count - 1) * gap) / 2);
+    const rows: RowBand[] = [];
+    let y = margin;
+    for (const height of heights) {
+      rows.push({ y, height });
+      y += height + gap;
+    }
+    return rows.sort((a, b) => b.y - a.y); // front-to-back, matching the rails convention
   };
 
   /**
@@ -157,23 +247,28 @@ export function calculateGreedyPlacement(
    * row onto a real mounting bar when one is close enough that snapping does
    * not change how many rows fit.
    */
-  let rowYPositions = deriveRows();
+  let rows = deriveRows();
 
-  if (rails.length > 0 && rowYPositions.length > 0) {
+  if (rails.length > 0 && rows.length > 0) {
     const railYs = rails.map((r) => r.positionFromBackInches);
-    const snapped = rowYPositions.map((y) => {
-      const nearest = railYs.reduce((best, r) => (Math.abs(r - y) < Math.abs(best - y) ? r : best), railYs[0]);
+    const snapped = rows.map((row) => {
+      const nearest = railYs.reduce((best, r) => (Math.abs(r - row.y) < Math.abs(best - row.y) ? r : best), railYs[0]);
       // Only snap when it neither pushes the row off the board nor moves it
       // far enough to close the gap to its neighbour.
-      const moved = Math.abs(nearest - y);
-      return moved <= MIN_ROW_GAP / 2 && nearest + maxDepth <= board.depthInches + 1e-6 ? nearest : y;
+      const moved = Math.abs(nearest - row.y);
+      return moved <= MIN_ROW_GAP / 2 && nearest + maxDepth <= board.depthInches + 1e-6
+        ? { ...row, y: nearest }
+        : row;
     });
-    // Reject the snap wholesale if it made any two rows overlap
+    // Reject the snap wholesale if it left any two BANDS closer than a
+    // placement between them would be allowed to be
     const ok = [...snapped]
-      .sort((a, b) => a - b)
-      .every((y, i, arr) => i === 0 || y - arr[i - 1] >= rowSizingDepth() - 1e-6);
-    if (ok) rowYPositions = snapped;
+      .sort((a, b) => a.y - b.y)
+      .every((row, i, arr) => i === 0 || row.y - (arr[i - 1].y + arr[i - 1].height) >= MIN_ROW_CLEARANCE - 1e-6);
+    if (ok) rows = snapped;
   }
+
+  const rowYPositions = rows.map((r) => r.y);
 
   const placements: PedalPlacement[] = [];
   const placedBoxes: PlacedBox[] = [];
@@ -665,8 +760,10 @@ function isValidPlacement(candidate: PlacedBox, placedBoxes: PlacedBox[], board:
   if (candidate.x < 0 || candidate.x + candidate.width > board.widthInches) return false;
   if (candidate.y < 0 || candidate.y + candidate.height > board.depthInches) return false;
 
-  // Check collisions
-  return !placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING, ROW_GAP));
+  // Check collisions. Front-to-back uses the CLEARANCE FLOOR, not the designed
+  // ROW_GAP: rows whose band had to grow sit closer than the designed corridor,
+  // and judging their pedals against 0.35in rejected every candidate in them.
+  return !placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING, MIN_ROW_CLEARANCE));
 }
 
 /**

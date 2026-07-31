@@ -62,14 +62,31 @@ function rowsOf(pedals) {
 }
 
 /**
- * A pedal deeper than the row pitch cannot sit inside any band - it spans two
- * of them, exactly as it would on a real board. Such a pedal is not a row-order
- * violation, so it is reported separately rather than counted as a failure.
+ * A pedal too deep for any band cannot sit inside one - it spans two, exactly
+ * as it would on a real board. Such a pedal is not a row-order violation, so it
+ * is reported separately rather than counted as a failure.
+ *
+ * Deciding this by DEPTH ALONE ("deeper than typical") went wrong as soon as
+ * rows got variable heights: a 5.43in pedal in a back row grown to 5.43in is
+ * housed, not straddling, and excusing it hid whether it was placed in signal
+ * order - the one thing this check exists to catch. A pedal straddles when its
+ * body actually reaches into the row in front of it.
+ *
+ * Row starts are the y values SHARED by two or more pedals: a straddler sits at
+ * a y of its own, and must not be mistaken for a row that others reach into.
  */
 function straddlers(pedals) {
-  const depths = pedals.map((p) => p.depthInches).sort((a, b) => a - b);
-  const typical = depths[Math.floor(depths.length / 2)];
-  return new Set(pedals.filter((p) => p.depthInches > typical + 0.25).map((p) => p.id));
+  const counts = new Map();
+  for (const p of pedals) {
+    const y = Number(p.yInches.toFixed(2));
+    counts.set(y, (counts.get(y) || 0) + 1);
+  }
+  const rowYs = [...counts.entries()].filter(([, n]) => n >= 2).map(([y]) => y);
+  return new Set(
+    pedals
+      .filter((p) => rowYs.some((y) => y > p.yInches + 0.01 && y < p.yInches + p.depthInches - 0.01))
+      .map((p) => p.id)
+  );
 }
 
 async function checkConfig(page, href) {
