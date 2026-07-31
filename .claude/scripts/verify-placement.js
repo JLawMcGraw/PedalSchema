@@ -16,6 +16,40 @@
 const { chromium } = require('playwright');
 const { loadEnv, login, snapshot, BASE_URL } = require('./lib/twin');
 
+/**
+ * Signal order, walked from the guitar along the real cable graph.
+ *
+ * NOT chainPosition: that is the user's list order, and a hub pedal (NS-2
+ * style) reorders the physical path - its loop members come AFTER it in
+ * signal even though they precede it in the list. Comparing positions against
+ * chainPosition flags a correct layout as broken.
+ */
+function signalOrder(snapshot) {
+  const next = new Map();
+  for (const c of snapshot.cables) {
+    if (!next.has(c.from)) next.set(c.from, []);
+    next.get(c.from).push(c.to);
+  }
+  const order = new Map();
+  const seen = new Set();
+  let n = 0;
+  const walk = (node) => {
+    if (seen.has(node)) return;
+    seen.add(node);
+    if (node.startsWith('pedal:')) {
+      const id = node.slice('pedal:'.length);
+      if (!order.has(id)) order.set(id, n++);
+    }
+    for (const to of next.get(node) || []) walk(to);
+  };
+  for (const start of ['guitar', 'amp_send']) walk(start);
+  // Anything the walk did not reach keeps its list order, after the rest
+  for (const p of [...snapshot.pedals].sort((a, b) => a.chainPosition - b.chainPosition)) {
+    if (!order.has(p.id)) order.set(p.id, n++);
+  }
+  return order;
+}
+
 /** Group pedals into rows by y, tolerant of sub-inch jitter. */
 function rowsOf(pedals) {
   const rows = [];
@@ -75,21 +109,23 @@ async function checkConfig(page, href) {
     }
   }
 
-  // 3. Chain order within each row, and row progression
+  // 3. Signal order within each row, and row progression
+  const order = signalOrder(after);
+  const seq = (p) => order.get(p.id) ?? p.chainPosition;
   const straddling = straddlers(after.pedals);
   const rows = rowsOf(after.pedals.filter((p) => !straddling.has(p.id)));
   const rowOfChain = [];
   rows.forEach((r, ri) => {
-    const byChain = [...r.pedals].sort((a, b) => a.chainPosition - b.chainPosition);
+    const byChain = [...r.pedals].sort((a, b) => seq(a) - seq(b));
     for (let i = 1; i < byChain.length; i++) {
       if (byChain[i].xInches > byChain[i - 1].xInches + 0.01) {
         fails.push(
-          `row y=${r.y.toFixed(1)}: chain ${byChain[i].chainPosition} (${byChain[i].name}) sits RIGHT of ` +
-          `chain ${byChain[i - 1].chainPosition} - signal should read right to left`
+          `row y=${r.y.toFixed(1)}: ${byChain[i].name} sits RIGHT of ${byChain[i - 1].name}, ` +
+          `but comes after it in the signal path - should read right to left`
         );
       }
     }
-    for (const p of r.pedals) rowOfChain.push({ chain: p.chainPosition, row: ri, y: r.y });
+    for (const p of r.pedals) rowOfChain.push({ chain: seq(p), row: ri, y: r.y });
   });
   // The chain must walk rows in ONE direction. Front-to-back (y decreasing)
   // is what the packer intends; either direction is acceptable, but hopping
