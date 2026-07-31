@@ -4,6 +4,92 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-07-30 (later) - Placement rework
+
+### Summary
+Optimize was unusable on the main 20-pedal Classic Pro board ("Could not fit
+these pedals on this board"). Two root causes found and fixed; one arithmetic
+constraint remains. Also fixed a knockout regression that hollowed out pedal
+photos, and added per-pedal image overrides.
+
+### Root causes found (both by TRACING, not by reading)
+1. **Rails were treated as rows.** A Classic Pro has rails at [0, 3.75, 7.5,
+   11.25] - mounting bars a 5.08in pedal sits ACROSS. One row per rail gave a
+   3.75in pitch, the "rails too close" guard fired, and the board collapsed to
+   TWO rows = an 18-pedal ceiling. Every real board has rails, so this ran
+   every time and depth-derived rows never did - which is why synthetic tests
+   passed while the real board failed.
+2. **Row spacing was not axis-aware.** Row1 pedals span 5.45-10.53, row0 starts
+   at 10.90: a 0.37in gap, but isValidPlacement demanded COLLISION_SPACING
+   (0.5in) in BOTH axes. Rows 0 and 1 were mutually exclusive - nothing could
+   ever occupy row1 - so the chain skipped it and came back later, reading
+   front -> back -> middle. Split into ROW_GAP (0.35in, front-to-back) vs
+   COLLISION_SPACING (0.5in, side-to-side): a cable leaves through SIDE jacks.
+
+### Results
+| | before | after |
+|---|---|---|
+| 20-pedal Classic Pro | "could not fit" | works, 3316.7 -> 1129.9 |
+| row order | front -> back -> middle | 10.9 -> 5.5 -> 0.0 monotonic |
+| 7-pedal Classic Jr | reported broken | clean (checker was wrong) |
+| open problems | 3 | 1 |
+
+### THE REMAINING PROBLEM - start here next session
+`DD-7 sits RIGHT of PH-3` on the 20-pedal board. Not a code bug - arithmetic:
+
+**EQ-200 is 5.43in deep and fits NO row band.** Three 5.43in rows need 16.29in
+on a 16in board. So it straddles two bands, and can only do so where no row-1
+pedal sits above it (x < 18.1). That truncates the run to 5 of 8 pedals and the
+tail wraps to the empty right side of the row.
+
+**The fix: variable row heights.** 2 rows at 5.08 + 1 row at 5.43 = 15.59in;
+with 2 gaps of 0.2in that is 15.99in <= 16in. Uniform rows cannot do it.
+Implement in `deriveRows()` (src/lib/engine/layout/index.ts ~line 115):
+  - return per-row heights, not one rowDepth
+  - grow rows deepest-first while `sum(heights) + (count-1)*ROW_GAP <= depth`
+  - put the deepest row at the BACK (y=0); the front row is capped by the board edge
+  - `rowBandDepth()` then reads the per-row height
+  - NOTE: ROW_GAP may need to drop from 0.35 to ~0.2 for the budget to close.
+    Watch config-matrix - tighter corridors starve the cable router.
+
+**I attempted this and the patch silently no-oped** (an earlier `git checkout`
+had reverted deriveRows to a different signature, so the replace matched
+nothing). Verify the patch actually applied before testing.
+
+### Verification tooling added
+- `.claude/scripts/verify-placement.js` - drives Optimize in the real app,
+  asserts no overlaps/off-board, signal order right-to-left per row, and
+  monotonic row progression. Walks the CABLE GRAPH for signal order, not
+  chainPosition (a hub pedal's loop members come after it in signal but
+  before it in the list - comparing to chainPosition flags correct layouts).
+- `.claude/scripts/dump-state.js` - dumps a config's exact store state to JSON
+- `DEBUG_PLACEMENT=1` now works offline, so the placer's row decisions can be
+  traced against a dumped state. This is what found both root causes.
+
+### Also this session
+- Knockout regression: the FORCE re-mirror hollowed out 14 of 64 photos
+  (BF-3/PH-3 rendered as black blobs). Gradient-following walked out of the
+  backdrop into pedals' light areas. Added a centre guard + strict retry.
+- `PEDAL_OVERRIDES` in the mirror script: 4 pedals the flood fill cannot
+  handle are explicit, reviewable entries instead of constant-tuning that
+  shifts all 64 outcomes. State: 60 photos, 1 referenced (Klon), 4 rects.
+- Deleted ~330 lines of dead placement code (placePedalGroupSnake cluster) -
+  it is the code whose name matches "zigzag" while the live placer is
+  placePackedChain, so it misdirects debugging.
+- Cable diagonals: separateParallelRuns tilts a neighbour when it shifts a
+  run; paths are now repaired with manhattanize() (shared in engine/geometry)
+  rather than the shift being rejected, which cost the lane separation.
+
+### Next Tasks
+- [ ] Variable row heights in deriveRows (see THE REMAINING PROBLEM above)
+- [ ] Un-skip `dense boards still hit the overlapping fallback` in
+      optimize-e2e.test.ts once the overflow path stops stacking pedals
+- [ ] Optional: replace the image flood-fill with a real matting model
+      (rembg, local, free) - 4 hand-written overrides out of 64 is the signal
+      that the heuristic is at its limit. Would not fix Big Muff (wrong angle).
+
+---
+
 ## Session: 2026-07-30
 
 ### Summary
