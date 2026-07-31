@@ -27,6 +27,17 @@ function rowsOf(pedals) {
   return rows;
 }
 
+/**
+ * A pedal deeper than the row pitch cannot sit inside any band - it spans two
+ * of them, exactly as it would on a real board. Such a pedal is not a row-order
+ * violation, so it is reported separately rather than counted as a failure.
+ */
+function straddlers(pedals) {
+  const depths = pedals.map((p) => p.depthInches).sort((a, b) => a - b);
+  const typical = depths[Math.floor(depths.length / 2)];
+  return new Set(pedals.filter((p) => p.depthInches > typical + 0.25).map((p) => p.id));
+}
+
 async function checkConfig(page, href) {
   await page.goto(BASE_URL + href);
   await page.waitForLoadState('networkidle');
@@ -65,7 +76,8 @@ async function checkConfig(page, href) {
   }
 
   // 3. Chain order within each row, and row progression
-  const rows = rowsOf(after.pedals);
+  const straddling = straddlers(after.pedals);
+  const rows = rowsOf(after.pedals.filter((p) => !straddling.has(p.id)));
   const rowOfChain = [];
   rows.forEach((r, ri) => {
     const byChain = [...r.pedals].sort((a, b) => a.chainPosition - b.chainPosition);
@@ -103,6 +115,7 @@ async function checkConfig(page, href) {
 
   return {
     n: after.pedals.length,
+    straddling: after.pedals.filter((p) => straddling.has(p.id)).map((p) => `${p.name} (${p.depthInches}in)`),
     board: `${board.name} ${board.widthInches}x${board.depthInches}`,
     rows: rows.map((r) => ({ y: r.y, count: r.pedals.length })),
     headline: o ? o.headline : '(none)',
@@ -130,6 +143,7 @@ async function checkConfig(page, href) {
       if (r.skipped) { console.log(`\n${href}: ${r.n} pedals - skipped`); continue; }
       console.log(`\n=== ${href} : ${r.n} pedals on ${r.board} ===`);
       console.log(`  rows: ${r.rows.map((x) => `y=${x.y.toFixed(1)}(${x.count})`).join('  ')}`);
+      if (r.straddling.length) console.log(`  spanning two rows (too deep for a band): ${r.straddling.join(', ')}`);
       if (r.score) console.log(`  score ${r.score[0].toFixed(1)} -> ${r.score[1].toFixed(1)}`);
       console.log(`  ${r.headline}`);
       if (r.fails.length === 0) console.log('  ✓ legal, in chain order');

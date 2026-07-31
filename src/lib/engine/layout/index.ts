@@ -3,6 +3,22 @@ import { deriveSignalTopology, primaryChain, ampClusters, hubClusters } from '..
 import { calculateRoutingCost, type RoutingCostResult } from './routing-cost';
 import { identifySwappableGroups } from '../signal-chain';
 import { COLLISION_SPACING } from '../collision';
+
+/**
+ * Front-to-back clearance between pedals in ADJACENT ROWS, as opposed to the
+ * side-to-side COLLISION_SPACING between neighbours in the same row.
+ *
+ * They are different quantities and conflating them cost a whole row. A cable
+ * leaves a pedal through its side jacks, so the gap between two pedals sitting
+ * beside each other must fit a cable run; the gap between rows carries the
+ * corridor but does not have to admit a cable BETWEEN two specific pedals.
+ * Requiring 0.5in in both axes meant a 32x16 board could hold only two rows of
+ * 5.08in pedals (3 rows need 15.24in of pedal, leaving 0.38in per gap), so any
+ * third row was unreachable: every candidate there collided with the row in
+ * front of it, and the chain silently skipped that row and came back for it
+ * later - which is what made a 20-pedal board read front -> back -> middle.
+ */
+const ROW_GAP = 0.35;
 import { getExternalEndpointInches } from '../cables/endpoints';
 
 interface PlacedBox {
@@ -73,7 +89,7 @@ export function calculateGreedyPlacement(
    * its side jacks, not its front or back edge, so the front-to-back gap
    * carries less cable traffic.
    */
-  const MIN_ROW_GAP = 0.35;
+  const MIN_ROW_GAP = ROW_GAP;
 
   /**
    * The depth rows are SIZED for - deliberately not the deepest pedal.
@@ -161,7 +177,11 @@ export function calculateGreedyPlacement(
 
   const placements: PedalPlacement[] = [];
   const placedBoxes: PlacedBox[] = [];
-  const DEBUG_PLACEMENT = typeof window !== 'undefined' && new URLSearchParams(window.location?.search || '').has('debug');
+  // Enabled by ?debug in the browser, or DEBUG_PLACEMENT=1 for offline replay
+  // of a dumped store state (see .claude/scripts/dump-state.js).
+  const DEBUG_PLACEMENT =
+    (typeof window !== 'undefined' && new URLSearchParams(window.location?.search || '').has('debug')) ||
+    (typeof process !== 'undefined' && !!process.env?.DEBUG_PLACEMENT);
 
   // Set by placePackedChain when it has to fall back to order-relaxed or
   // anywhere-on-board placement - the signal to retry with less corridor
@@ -229,9 +249,7 @@ export function calculateGreedyPlacement(
       }
       const firstWidth = effWidth(chain[startIdx]);
       const stripX = findStripStart(total, depthNeeded, rowY, placedBoxes, board, packMinX);
-      if (stripX !== null) {
-        return stripX + total - firstWidth;
-      }
+      if (stripX !== null) return stripX + total - firstWidth;
       return Math.min(board.widthInches - firstWidth, packMinX + total - firstWidth);
     };
 
@@ -245,6 +263,12 @@ export function calculateGreedyPlacement(
       const width = effWidth(placed); // padded footprint for hubs/cluster edges
 
       const rowY = rowYPositions[rowOrder[rowPos]] ?? board.depthInches * 0.5;
+      if (DEBUG_PLACEMENT) {
+        console.log(
+          `[ROW] chain${placed.chainPosition} w=${width.toFixed(2)} d=${depth.toFixed(2)} ` +
+          `try row${rowPos}(y=${rowY.toFixed(2)}) cursorX=${cursorX.toFixed(2)}`
+        );
+      }
       let spot = findValidPositionInRowStartingFrom(
         width, depth, placedBoxes, board, rowY,
         packMinX, board.widthInches,
@@ -254,6 +278,7 @@ export function calculateGreedyPlacement(
       );
 
       if (!spot && rowPos < rowOrder.length - 1) {
+        if (DEBUG_PLACEMENT) console.log(`      row${rowPos} FULL -> advancing`);
         rowPos++;
         const nextRowY = rowYPositions[rowOrder[rowPos]] ?? board.depthInches * 0.5;
         cursorX = packedStartX(idx, nextRowY);
@@ -285,6 +310,7 @@ export function calculateGreedyPlacement(
 
       if (!spot) {
         placementDegraded = true;
+        if (DEBUG_PLACEMENT) console.log(`      advance FAILED too -> order-relax scan`);
         console.warn(`[GREEDY] Order relaxed for ${placed.id} - no space without breaking chain order`);
         for (let tryPos = rowPos; tryPos < rowOrder.length && !spot; tryPos++) {
           const tryRowY = rowYPositions[rowOrder[tryPos]] ?? board.depthInches * 0.5;
@@ -309,7 +335,7 @@ export function calculateGreedyPlacement(
       }
 
       if (DEBUG_PLACEMENT) {
-        console.log(`[GREEDY] Placed ${placed.chainPosition}:${placed.id} at (${(spot.x + pad).toFixed(2)}, ${spot.y.toFixed(2)})`);
+        console.log(`   -> chain${placed.chainPosition} PLACED at (${(spot.x + pad).toFixed(2)}, ${spot.y.toFixed(2)}) row${rowPos}`);
       }
       // The recorded position excludes the pad; the collision box keeps it
       // so neighbors leave the corridor free
@@ -640,21 +666,27 @@ function isValidPlacement(candidate: PlacedBox, placedBoxes: PlacedBox[], board:
   if (candidate.y < 0 || candidate.y + candidate.height > board.depthInches) return false;
 
   // Check collisions
-  return !placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING));
+  return !placedBoxes.some(box => boxesOverlap(candidate, box, COLLISION_SPACING, ROW_GAP));
 }
 
 /**
  * Check if two boxes overlap (with optional spacing)
  */
-function boxesOverlap(a: PlacedBox, b: PlacedBox, spacing: number = 0): boolean {
+function boxesOverlap(
+  a: PlacedBox,
+  b: PlacedBox,
+  spacing: number = 0,
+  /** Front-to-back clearance; defaults to the same value as side-to-side. */
+  spacingY: number = spacing
+): boolean {
   // Small epsilon so pedals packed at EXACTLY the required spacing
   // (accumulated float arithmetic) don't register as colliding
   const EPSILON = 1e-6;
   return !(
     a.x + a.width + spacing <= b.x + EPSILON ||
     b.x + b.width + spacing <= a.x + EPSILON ||
-    a.y + a.height + spacing <= b.y + EPSILON ||
-    b.y + b.height + spacing <= a.y + EPSILON
+    a.y + a.height + spacingY <= b.y + EPSILON ||
+    b.y + b.height + spacingY <= a.y + EPSILON
   );
 }
 
