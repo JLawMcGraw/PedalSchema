@@ -4,6 +4,74 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-07-31 - Variable row heights (the placement rework's last open item)
+
+### Summary
+Closed the one problem the previous session left open: the tail of the chain
+wrapped back to the right of the back row (DD-7 right of PH-3). Rows now have
+VARIABLE heights, so a deeper-than-typical pedal gets a band instead of
+straddling two. No open placement problems remain.
+
+### The fix
+`deriveRows()` returns bands (`{y, height}`), not bare y positions. Every row
+starts at the typical (80th-percentile) depth; rows are then grown deepest-first
+with the deepest at the BACK, while the budget closes.
+
+It needs TWO constants, and conflating them was the whole bug:
+- `ROW_GAP` (0.35) - the corridor rows are DESIGNED for. Still what row COUNT is
+  derived at: buying an extra row by squeezing every corridor would starve the
+  cable router board-wide, where a grown band only narrows the corridor above
+  the one deep pedal.
+- `MIN_ROW_CLEARANCE` (0.15) - what makes a placement LEGAL. A grown band
+  necessarily sits closer than the designed corridor, so judging its pedals
+  against 0.35in rejected every candidate in it.
+
+### Results (real app, verify-placement.js)
+| | before | after |
+|---|---|---|
+| routing score | 1129.9 | 564.9 (baseline 3316.7) |
+| back row | 10.8 → 7.4 → 4.0 → 0.6 → **22.0 → 18.6 → 15.3** | 23.6 → … → 0.0 |
+| chain-order failures | 1 | 0 |
+| lane violations | 1 | 0 |
+| invalid cables | 1 | 1 (pre-existing) |
+| min front-to-back | 0.350in | 0.185in |
+| Classic Jr | 215.3 | 214.9 (unchanged) |
+
+### Two traps, both hit this session
+1. **The arithmetic in the last session log was wrong** and my first patch
+   silently did nothing because of it. It assumed 5.08in rows; four of those
+   pedals are really 5.10in, so the grown budget is 5.43 + 2x5.10 = 15.63in
+   leaving **0.185in** per corridor, not 0.205. With the floor at a rounder 0.2
+   the budget does not close, the row never grows, and the mechanism no-ops.
+   Do not round `MIN_ROW_CLEARANCE` up. (Last session's lesson was "verify the
+   patch applied"; this one's is "verify it CHANGED THE OUTPUT" - the patch
+   applied fine and the layout was still byte-identical.)
+2. **The verifier excused the bug.** `verify-placement.js` decided "too deep for
+   a band" by depth alone, so EQ-200 was exempt from the row-order check and the
+   broken layout would have passed. It now asks whether a pedal's body actually
+   reaches into the row in front. Only PW-3 (7.56in, deeper than any band can
+   be) is still reported as spanning two rows.
+
+### Method that worked
+Replaying the dumped store state (`/tmp/livestate.json`) offline through
+`calculateOptimalLayoutJoint` AND `simulateConfiguration` (the matrix harness's
+full pipeline) gave placement + cable-routing invariants in ~0.5s per run, with
+before/after isolated by `git stash`. Every number in the table above came from
+that before the app was ever opened. New tests were checked against the OLD code
+to confirm they actually fail on it - one of the three did not, and was rewritten
+(it asserted where the pedal sat, not that the BAND was sized for it).
+
+### Next Tasks
+- [ ] One cable on the 20-pedal board still cannot route (pedal→pedal, invalid).
+      Pre-existing and unrelated to placement; unexamined.
+- [ ] Un-skip `dense boards still hit the overlapping fallback` in
+      optimize-e2e.test.ts once the overflow path stops stacking pedals
+- [ ] Optional: EQ-200 has top/bottom jacks, so rotated it is 3.98in deep and
+      needs no grown row at all. The rotation search did not pick that - worth
+      checking whether the routing cost sees the corridor it would buy back.
+
+---
+
 ## Session: 2026-07-30 (later) - Placement rework
 
 ### Summary
