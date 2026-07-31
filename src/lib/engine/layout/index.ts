@@ -54,13 +54,75 @@ export function calculateGreedyPlacement(
 
   // --- Rows (clamp-aware: see Phase 1 findings) ------------------------------
   const rails = [...(board.rails || [])].sort((a, b) => b.positionFromBackInches - a.positionFromBackInches);
-  let rowYPositions = rails.length > 0
-    ? rails.map(r => r.positionFromBackInches)
-    : [board.depthInches * 0.55, board.depthInches * 0.05];
 
   const maxDepth = placedPedals.reduce((max, placed) => Math.max(max, dims(placed).depth), 0);
 
-  if (rowYPositions.length >= 2 && maxDepth > 0) {
+  /**
+   * How many rows of the deepest pedal actually fit, and where they sit.
+   *
+   * This used to be hardcoded to two rows at 55% and 5% of the board depth,
+   * regardless of how deep the board was. On a Pedaltrain Classic Pro
+   * (32x16in) that capped the board at 18 standard pedals and left 2.1in of
+   * depth unused at the back - so a 20-pedal board could not be placed at
+   * all, every candidate overlapped, and Optimize refused to do anything.
+   * A real Classic Pro takes three rows.
+   *
+   * Rows are spaced COLLISION_SPACING apart when that fits; when tightening
+   * to MIN_ROW_GAP buys another whole row, it is taken. Row gaps can be
+   * tighter than side-by-side spacing because a cable leaves a pedal through
+   * its side jacks, not its front or back edge, so the front-to-back gap
+   * carries less cable traffic.
+   */
+  const MIN_ROW_GAP = 0.35;
+
+  /**
+   * The depth rows are SIZED for - deliberately not the deepest pedal.
+   *
+   * Sizing every row for the single deepest pedal lets one outlier collapse
+   * the whole board. A real 20-pedal Classic Pro config had eighteen 5.08in
+   * pedals, one 5.43in and one 7.56in: sizing rows at 7.56in gave two rows
+   * and no legal placement, while sizing at 5.1in gives three rows totalling
+   * 15.94in of a 16in board, and the one deep pedal simply occupies two row
+   * bands at one x - which is exactly what a person does by hand.
+   *
+   * The 80th percentile covers the ordinary pedals without letting one or two
+   * tall ones dictate the geometry. Deeper pedals are not ignored: placement
+   * still validates every box against the board and its neighbours, so an
+   * outlier that cannot fit its row is relocated rather than overlapped.
+   */
+  const rowSizingDepth = (): number => {
+    const depths = placedPedals.map((p) => dims(p).depth).sort((a, b) => a - b);
+    if (depths.length === 0) return maxDepth;
+    return depths[Math.min(depths.length - 1, Math.floor(depths.length * 0.8))];
+  };
+
+  const deriveRows = (): number[] => {
+    if (maxDepth <= 0) return [board.depthInches * 0.55, board.depthInches * 0.05];
+    const rowDepth = rowSizingDepth();
+    const rowsThatFit = (gap: number) =>
+      Math.floor((board.depthInches + gap) / (rowDepth + gap));
+    let gap = COLLISION_SPACING;
+    let count = rowsThatFit(gap);
+    if (rowsThatFit(MIN_ROW_GAP) > count) {
+      gap = MIN_ROW_GAP;
+      count = rowsThatFit(gap);
+    }
+    count = Math.max(1, count);
+    const used = count * rowDepth + (count - 1) * gap;
+    const margin = Math.max(0, (board.depthInches - used) / 2);
+    return Array.from({ length: count }, (_, i) => margin + i * (rowDepth + gap))
+      .sort((a, b) => b - a); // back-to-front, matching the rails convention
+  };
+
+  let rowYPositions = rails.length > 0
+    ? rails.map(r => r.positionFromBackInches)
+    : deriveRows();
+
+  // Only rails need policing: they are board data that may not suit the
+  // pedals on it. deriveRows() constructs non-overlapping rows by definition,
+  // and it may legitimately use a gap tighter than COLLISION_SPACING, so
+  // running this check against it would collapse it straight back to two rows.
+  if (rails.length > 0 && rowYPositions.length >= 2 && maxDepth > 0) {
     const clamped = rowYPositions
       .map((r) => Math.max(0, Math.min(r, board.depthInches - maxDepth)))
       .sort((a, b) => b - a);

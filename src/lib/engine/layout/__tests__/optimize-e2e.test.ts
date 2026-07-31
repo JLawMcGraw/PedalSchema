@@ -3,7 +3,7 @@
  * reported explanation matches the scores it actually chose with.
  */
 import { describe, expect, it } from 'vitest';
-import { calculateOptimalLayoutJoint } from '../index';
+import { calculateGreedyPlacement, calculateOptimalLayoutJoint } from '../index';
 import { summarizeOptimization } from '../routing-cost';
 import type { Board, Pedal, PlacedPedal } from '@/types';
 
@@ -258,18 +258,21 @@ describe('optimize never returns an illegal layout', () => {
 
 describe('when nothing legal can be placed', () => {
   it('says so instead of claiming the board is already optimal', () => {
-    // 21 pedals: greedy placement overlaps (6 pairs even on a 32x16 board),
-    // so every candidate scores Infinity and the user's layout is kept. That
-    // is NOT "already optimal" - reporting it as such tells the user their
-    // crowded board is fine when the optimizer simply failed.
+    // 21 standard pedals on a Pedaltrain Classic Jr (18x12.5in): two rows of
+    // five is a real capacity of ~10, so no legal arrangement exists. That is
+    // NOT "already optimal" - saying so would tell the user their overloaded
+    // board is fine when the optimizer simply could not place it.
+    //
+    // NB this deliberately uses the SMALL board. On a 32x16 Classic Pro these
+    // 21 now fit, since row count is derived from board depth.
     const cats = [
       'wah', 'compressor', 'compressor', 'compressor', 'pitch', 'pitch',
       'distortion', 'distortion', 'distortion', 'distortion', 'fuzz', 'utility',
       'eq', 'eq', 'eq', 'modulation', 'phaser', 'delay', 'delay', 'delay', 'utility',
     ];
     const byId: Record<string, Pedal> = {};
-    const big = {
-      id: 'b', name: 'Big', widthInches: 32, depthInches: 16,
+    const small = {
+      id: 'b', name: 'Classic Jr', widthInches: 18, depthInches: 12.5,
       railWidthInches: 0.6, isSystem: true,
     } as Board;
     const placed = cats.map((c, i) => {
@@ -282,11 +285,142 @@ describe('when nothing legal can be placed', () => {
       } as unknown as PlacedPedal;
     });
 
-    const r = calculateOptimalLayoutJoint(placed, byId, big);
+    const r = calculateOptimalLayoutJoint(placed, byId, small);
     const s = summarizeOptimization(r.baselineCost!, r.cost!, r.noLegalCandidate);
 
     expect(r.noLegalCandidate).toBe(true);
     expect(s.headline).not.toMatch(/already optimal/i);
     expect(s.headline).toMatch(/could not fit/i);
+  });
+});
+
+
+describe('row count follows board depth', () => {
+  /** Distinct row y-positions the placer actually used. */
+  const rowsUsed = (pl: Array<{ y: number }>) =>
+    [...new Set(pl.map((p) => Math.round(p.y * 10) / 10))].sort((a, b) => a - b);
+
+  function board(widthInches: number, depthInches: number) {
+    return { id: 'b', name: 'B', widthInches, depthInches, railWidthInches: 0.6, isSystem: true } as Board;
+  }
+  function pedals(n: number) {
+    const cats = ['wah', 'compressor', 'pitch', 'distortion', 'fuzz', 'utility', 'eq', 'modulation', 'delay'];
+    const byId: Record<string, Pedal> = {};
+    const placed = Array.from({ length: n }, (_, i) => {
+      const id = `p${i}`;
+      byId[id] = pedal(id, cats[i % cats.length]);
+      return {
+        id, pedalId: id, pedal: byId[id],
+        xInches: (i % 9) * 3.4, yInches: Math.floor(i / 9) * 5.4,
+        rotationDegrees: 0, chainPosition: i + 1, isInLoop: false,
+      } as unknown as PlacedPedal;
+    });
+    return { placed, byId };
+  }
+
+  it('uses a third row on a 16in-deep board when the pedals need one', () => {
+    // The bug: rows were hardcoded to two at 55%/5% of depth regardless of
+    // how deep the board was, capping a 32x16 Classic Pro at 18 pedals and
+    // wasting 2.1in at the back. 20 pedals then had no legal placement.
+    const b = board(32, 16);
+    const { placed, byId } = pedals(20);
+
+    const placements = calculateGreedyPlacement(placed, byId, b, undefined);
+
+    expect(rowsUsed(placements).length).toBe(3);
+    // and every pedal is legally placed
+    const W = 2.9;
+    const H = 5.1;
+    for (const p of placements) {
+      expect(p.x).toBeGreaterThanOrEqual(-0.01);
+      expect(p.y).toBeGreaterThanOrEqual(-0.01);
+      expect(p.x + W).toBeLessThanOrEqual(b.widthInches + 0.01);
+      expect(p.y + H).toBeLessThanOrEqual(b.depthInches + 0.01);
+    }
+    for (let i = 0; i < placements.length; i++) {
+      for (let j = i + 1; j < placements.length; j++) {
+        const a = placements[i];
+        const c = placements[j];
+        const ox = Math.min(a.x + W, c.x + W) - Math.max(a.x, c.x);
+        const oy = Math.min(a.y + H, c.y + H) - Math.max(a.y, c.y);
+        expect(ox > 0.01 && oy > 0.01, `${a.id} overlaps ${c.id}`).toBe(false);
+      }
+    }
+  });
+
+  it('does not invent rows a shallow board cannot hold', () => {
+    // 12.5in holds exactly two rows of 5.1in pedals - a third would hang off.
+    const { placed, byId } = pedals(10);
+    expect(rowsUsed(calculateGreedyPlacement(placed, byId, board(18, 12.5), undefined)).length)
+      .toBeLessThanOrEqual(2);
+  });
+
+  it('does not spread onto more rows than the pedals need', () => {
+    // 8 pedals fit one row of a 32in board; using three would stretch cables.
+    const { placed, byId } = pedals(8);
+    expect(rowsUsed(calculateGreedyPlacement(placed, byId, board(32, 16), undefined)).length)
+      .toBeLessThanOrEqual(2);
+  });
+});
+
+describe('one deep pedal does not collapse the board', () => {
+  it('derives rows from typical depth, not the deepest outlier', () => {
+    // A real saved config: eighteen 2.87x5.08 pedals, one 3.98x5.43, one
+    // 3.15x7.56. Sizing every row for the 7.56in outlier gave TWO rows and no
+    // legal placement, so Optimize refused to act on a board arrangeable by
+    // hand. Row sizing now uses the 80th-percentile depth, so the outlier
+    // straddles bands instead of dictating all of them.
+    const b = {
+      id: 'b', name: 'Classic Pro', widthInches: 32, depthInches: 16,
+      railWidthInches: 0.6, isSystem: true,
+    } as Board;
+    const spec = [
+      ...Array.from({ length: 18 }, () => [2.87, 5.08]),
+      [3.98, 5.43],
+      [3.15, 7.56],
+    ] as Array<[number, number]>;
+    const byId: Record<string, Pedal> = {};
+    const placed = spec.map(([w, d], i) => {
+      const id = `p${i}`;
+      byId[id] = { ...pedal(id, 'utility'), widthInches: w, depthInches: d } as Pedal;
+      return {
+        id, pedalId: id, pedal: byId[id],
+        xInches: (i % 9) * 3.4, yInches: Math.floor(i / 9) * 5.4,
+        rotationDegrees: 0, chainPosition: i + 1, isInLoop: false,
+      } as unknown as PlacedPedal;
+    });
+
+    const placements = calculateGreedyPlacement(placed, byId, b, undefined);
+    const rows = [...new Set(placements.map((p) => Math.round(p.y * 10) / 10))];
+
+    // Three usable bands, not two. (A fourth appears when the deep pedal
+    // straddles two of them, which is the intended behaviour.)
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+
+    const dimOf = (id: string) => byId[placed.find((p) => p.id === id)!.pedalId];
+    for (const p of placements) {
+      const d = dimOf(p.id);
+      expect(p.x + d.widthInches).toBeLessThanOrEqual(b.widthInches + 0.01);
+      expect(p.y + d.depthInches).toBeLessThanOrEqual(b.depthInches + 0.01);
+    }
+    // NOT asserted here: zero overlaps. Dense boards still reach the
+    // overlapping fallback documented below. What this test pins is the row
+    // geometry - three bands instead of two, and nothing off the board.
+  });
+
+  /**
+   * KNOWN LIMITATION, not yet fixed. When chain-ordered placement runs out of
+   * room, calculateGreedyPlacement falls back to a path that places a pedal
+   * WITHOUT a collision check ("[GREEDY] Fallback placement - no valid spot"),
+   * stacking it on a neighbour. The collision guard in the optimizer rejects
+   * such candidates, so nothing broken reaches the board - but the user is
+   * told "could not fit" on arrangements that are geometrically fine
+   * (~68in of run needed across 96in of row).
+   */
+  it.skip('dense boards still hit the overlapping fallback', () => {
+    // Reproduces p9 (2.87x5.08 at x=29.13) overlapping p19 (3.15x7.56 at
+    // x=28.85) after two "[GREEDY] Fallback placement - no valid spot" logs,
+    // on 20 pedals needing ~68in of run across 96in of available row.
+    // Un-skip when the fallback is made collision-aware.
   });
 });
