@@ -1147,15 +1147,26 @@ export function calculateOptimalLayoutJoint(
   // against what the user actually had. Ties keep the baseline: doing nothing
   // beats shuffling a board for no gain.
   //
-  // HONESTLY: no input has yet been found where this changes the outcome -
-  // 300 random legal layouts and 24 tight-board configurations all produced a
-  // greedy candidate at least as good as the baseline. It is kept because it
-  // is the exact analogue of a bug PROVEN real in the sibling early-return
-  // path above (which returned a colliding layout scoring better than a legal
-  // one), and because `evaluate()` yields Infinity for every colliding
-  // candidate - so if all 48 orders collide, `best.placements` would be a
-  // colliding layout that a legal baseline should beat. Guarding one path and
-  // not the other is how the two drift apart.
+  // HONESTLY: this guard cannot currently fire, and we now know WHY rather
+  // than merely that no input was found. Overlapping pedals make the cables
+  // between them unroutable, and the routing cost penalises that far more than
+  // tight packing can save - measured, a 0.02in overlap (pedals all but
+  // touching, cables all but zero-length) still scores about FOUR times worse
+  // than a properly spaced layout. A colliding baseline can never win on
+  // points, so this never has to reject one: disabling it leaves the whole
+  // suite green.
+  //
+  // It is kept because that is a property of the COST function, not of this
+  // one, and cost functions get rebalanced. It is also the exact analogue of a
+  // bug PROVEN real in the sibling early-return path above (which returned a
+  // colliding layout scoring better than a legal one), and `evaluate()` yields
+  // Infinity for every colliding candidate - so if all 48 orders collide,
+  // `best.placements` would be a colliding layout that a legal baseline should
+  // beat. Guarding one path and not the other is how the two drift apart.
+  //
+  // The precondition is pinned by "cannot profit from colliding, however small
+  // the overlap" in __tests__/placement-property.test.ts, which fails the day
+  // this guard becomes load-bearing.
   if (baselineCandidate.score <= best.score + 1e-9) {
     best = baselineCandidate;
   }
