@@ -15,6 +15,13 @@
  * one edit away from not enforcing it at all: a reorder must save, and a
  * genuinely duplicated final state must still be refused.
  *
+ * It also covers the SECOND collision, which deferring does not fix and which
+ * was the one actually reported: handleSave used to upsert before pruning, so a
+ * removed pedal's row was still holding its chain position when the upsert
+ * committed. If any kept pedal had moved into that position - routine, since
+ * removing a pedal renumbers the chain - the duplicate was real at commit time
+ * and no amount of deferring helped. handleSave now prunes FIRST.
+ *
  * Works on a throwaway configuration and deletes it afterwards. Never touches a
  * real board.
  *
@@ -66,11 +73,32 @@ const uuid = () => require('crypto').randomUUID();
       'inserting onto an occupied position is still refused',
       r.error ? r.error.code : 'NO ERROR: uniqueness is no longer enforced');
 
+    // The reported bug: a stale row still occupying a position at commit.
+    // Reset to a known state first.
+    await sb.from('configuration_pedals').delete().eq('configuration_id', cfgId);
+    await sb.from('configuration_pedals').insert([
+      row(a, pedals[0].id, 1), row(b, pedals[1].id, 2), row(c, pedals[2].id, 3),
+    ]);
+    const d = uuid();
+    // The user removed C and added D, which took position 3. Upsert-then-prune
+    // sent this while C@3 was still in the table:
+    r = await sb.from('configuration_pedals')
+      .upsert([row(a, pedals[0].id, 1), row(b, pedals[1].id, 2), row(d, pedals[0].id, 3)], { onConflict: 'id' });
+    check(!!r.error && r.error.code === '23505',
+      'a STALE row at the same position still collides - so the prune must come first',
+      r.error ? r.error.code : 'no error: this scenario no longer collides, check why');
+
+    // Prune first, then the same upsert succeeds - which is what handleSave does now.
+    await sb.from('configuration_pedals').delete().eq('id', c);
+    r = await sb.from('configuration_pedals')
+      .upsert([row(a, pedals[0].id, 1), row(b, pedals[1].id, 2), row(d, pedals[0].id, 3)], { onConflict: 'id' });
+    check(!r.error, 'pruning first makes that exact save succeed', r.error?.message);
+
     const { data: final } = await sb.from('configuration_pedals')
       .select('chain_position').eq('configuration_id', cfgId).order('chain_position');
     const nums = final.map((x) => x.chain_position);
-    check(JSON.stringify(nums) === '[1,2]',
-      'the rejected writes left the table in its last good state', JSON.stringify(nums));
+    check(JSON.stringify(nums) === '[1,2,3]',
+      'the table ends in the intended state', JSON.stringify(nums));
   } finally {
     await sb.from('configuration_pedals').delete().eq('configuration_id', cfgId);
     await sb.from('configurations').delete().eq('id', cfgId);

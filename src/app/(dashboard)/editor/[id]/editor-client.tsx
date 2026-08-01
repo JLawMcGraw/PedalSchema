@@ -97,11 +97,30 @@ export function EditorClient({
   ]);
 
   // Save handler
+  //
   // Everything is read from getState() at call time (never from render closures -
   // a stale closure here previously saved modulation_in_loop's initial value forever).
-  // Pedal rows are upserted with their client ids and stale rows pruned AFTERWARDS,
-  // so a mid-save failure can no longer wipe the board (the old delete-then-insert
-  // had a data-loss window).
+  //
+  // ORDER OF WRITES. Prune the rows the user removed FIRST, then upsert what is
+  // left. Both halves of that matter and both were once wrong:
+  //
+  //   * It must not be delete-ALL-then-insert. That had a data-loss window: a
+  //     failure between the two wiped the board.
+  //   * It must not be upsert-then-prune either, which is what replaced it.
+  //     configuration_pedals has UNIQUE(configuration_id, chain_position), and
+  //     the prune is a SEPARATE request, so the upsert commits while the
+  //     removed pedal's row is still holding its old position. If any kept
+  //     pedal has moved into that position - which is routine, since removing a
+  //     pedal renumbers the chain - the upsert fails on a duplicate that is
+  //     entirely real at commit time:
+  //       23505 Key (configuration_id, chain_position)=(..., 3) already exists
+  //     Deferring the constraint does not help; the row genuinely is there.
+  //
+  // Pruning first is safe in a way delete-all was not: it removes ONLY rows the
+  // user has already deleted, so a failure part-way through cannot lose a pedal
+  // they still have. Reordering among the rows that REMAIN is what the deferred
+  // constraint covers (migration 20260801000005) - the two fixes address
+  // different collisions and are both required.
   const handleSave = useCallback(async () => {
     const {
       id, name, description, placedPedals, amp,
@@ -131,7 +150,20 @@ export function EditorClient({
         .eq('id', id);
       failIf('Saving the configuration', configError);
 
-      // Upsert current pedals (stable ids), then prune rows no longer present.
+      // Prune rows for pedals the user removed. Must precede the upsert - see
+      // the note on this callback.
+      let pruneQuery = supabase
+        .from('configuration_pedals')
+        .delete()
+        .eq('configuration_id', id);
+      if (placedPedals.length > 0) {
+        const keepIds = placedPedals.map((p) => `"${p.id}"`).join(',');
+        pruneQuery = pruneQuery.not('id', 'in', `(${keepIds})`);
+      }
+      const { error: pruneError } = await pruneQuery;
+      failIf('Removing deleted pedals', pruneError);
+
+      // Then upsert what remains, by stable client id.
       if (placedPedals.length > 0) {
         const { error: upsertError } = await supabase
           .from('configuration_pedals')
@@ -154,17 +186,6 @@ export function EditorClient({
           );
         failIf('Saving the pedals', upsertError);
       }
-
-      let pruneQuery = supabase
-        .from('configuration_pedals')
-        .delete()
-        .eq('configuration_id', id);
-      if (placedPedals.length > 0) {
-        const keepIds = placedPedals.map((p) => `"${p.id}"`).join(',');
-        pruneQuery = pruneQuery.not('id', 'in', `(${keepIds})`);
-      }
-      const { error: pruneError } = await pruneQuery;
-      failIf('Removing deleted pedals', pruneError);
 
       markClean();
     } catch (error) {
