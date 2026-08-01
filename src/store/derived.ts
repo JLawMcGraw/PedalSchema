@@ -29,6 +29,7 @@ import { detectCollisions } from '@/lib/engine/collision';
 import { signalChainEngine } from '@/lib/engine/signal-chain';
 import { calculateCables } from '@/lib/engine/cables';
 import { routeAllCables, type RoutedCable } from '@/lib/engine/cables/route-cables';
+import { derivePowerSummary, type PowerSummary } from '@/lib/engine/power';
 import { useConfigurationStore } from './configuration-store';
 
 /** Editor canvas scale - pixels per inch at zoom 1 */
@@ -45,6 +46,12 @@ export interface DerivedBoardState {
   warnings: ChainWarning[];
   /** Signal chain suggestions */
   suggestions: ChainSuggestion[];
+  /**
+   * What the board asks of a power supply. Derived like everything else here,
+   * and deliberately reports its KNOWN total separately from the pedals it
+   * could not account for - see src/lib/engine/power.
+   */
+  power: PowerSummary;
 }
 
 /** The source slice everything is derived from */
@@ -66,6 +73,7 @@ const EMPTY: DerivedBoardState = {
   collisions: [],
   warnings: [],
   suggestions: [],
+  power: { knownTotalMa: 0, unknown: [], pedalCount: 0, highDraw: [], byVoltage: [] },
 };
 
 // Last-call memoization on input identities
@@ -140,7 +148,10 @@ export function deriveBoardState(s: SourceSlice): DerivedBoardState {
     };
     const { warnings, suggestions } = signalChainEngine.analyze(s.placedPedals, s.pedalsById, context);
 
-    result = { cables, routedCables, collisions, warnings, suggestions };
+    result = {
+      cables, routedCables, collisions, warnings, suggestions,
+      power: derivePowerSummary(s.placedPedals, s.pedalsById),
+    };
   }
 
   lastInputs = inputs;

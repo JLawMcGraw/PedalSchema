@@ -11,6 +11,7 @@ import { SignalChainPanel } from '@/components/editor/panels/signal-chain-panel'
 import { PropertiesPanel } from '@/components/editor/panels/properties-panel';
 import { CableListPanel } from '@/components/editor/panels/cable-list-panel';
 import { RoutingOptionsPanel } from '@/components/editor/panels/routing-options-panel';
+import { PowerPanel } from '@/components/editor/panels/power-panel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
@@ -214,6 +215,12 @@ export function EditorClient({
           Routing
         </TabsTrigger>
         <TabsTrigger
+          value="power"
+          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-3 py-2 shrink-0"
+        >
+          Power
+        </TabsTrigger>
+        <TabsTrigger
           value="properties"
           className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-3 py-2 shrink-0"
         >
@@ -228,6 +235,9 @@ export function EditorClient({
       </TabsContent>
       <TabsContent value="routing" className="flex-1 mt-0 min-h-0 w-full max-w-full overflow-hidden">
         <RoutingOptionsPanel availableAmps={availableAmps} />
+      </TabsContent>
+      <TabsContent value="power" className="flex-1 mt-0 min-h-0 w-full max-w-full overflow-hidden">
+        <PowerPanel />
       </TabsContent>
       <TabsContent value="properties" className="flex-1 mt-0 min-h-0 w-full max-w-full overflow-hidden">
         <PropertiesPanel />
