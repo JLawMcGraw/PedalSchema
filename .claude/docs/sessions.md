@@ -105,6 +105,49 @@ the phase 6 session below, which retracts it.**
 
 ---
 
+## Bugs reported by the owner (same session)
+
+Four, all real, all from using the app rather than reading it.
+
+1. **NS-2 SEND was on the wrong side.** The entry had input, send AND return on
+   the right. Its own notes showed the error: the compact-series rule "OUTPUTs
+   left, INPUTs right" had been applied to the jack NAMES, not their function -
+   SEND is an output and RETURN is an input, so send always belonged on the
+   left. Worst possible place to be wrong: the NS-2 is the hub on both boards.
+
+2. **Optimize turned a pedal upside down.** Half turns are now refused; a pedal
+   at 180 degrees reads inverted with its footswitch at the far edge, which the
+   routing score cannot see because it only measures length. The FIRST version
+   of the rule used a bad argument - "no signal jack on the front edge, cables
+   run where your feet are" - which holds only for a FRONT-ROW pedal; at the
+   back a front-facing jack feeds the corridor between rows. Right case, wrong
+   reason. Cost, measured: on the twelve-pedal fixture the half turn was the
+   ONLY rotation that ever helped, so that board is now left alone; the real
+   board still gains 4-7% from quarter turns.
+
+3. **"Keep facing forward" did not face the pedal forward.** It set a flag and
+   left the angle, and re-optimizing could not fix it either, because a locked
+   pedal is excluded from the rotation search and keeps its angle permanently.
+   Locking now sets the angle to 0; undo restores it.
+
+4. **A chain reorder could not be SAVED.** `UNIQUE(configuration_id,
+   chain_position)` was IMMEDIATE, and Postgres checks those row by row during
+   a statement. The save upserts the whole chain at once, so any renumbering -
+   adding a pedal mid-chain is enough, since normalizeChain re-sorts by
+   category - collided with a row that had not moved yet:
+   `23505 ... Key (configuration_id, chain_position)=(..., 2) already exists`.
+   The FINAL state was always legal. Now DEFERRABLE INITIALLY DEFERRED
+   (migration 20260801000005), with `verify-save-reorder.js` holding both
+   halves: a reorder must save, AND a duplicated final state must still be
+   refused.
+
+**Four rotation-search tests were rebuilt, not relaxed.** Their fixture's only
+beneficial rotation was the half turn, so once it was banned they asserted the
+search should do something forbidden - and two that still PASSED had gone
+vacuous the same way. They now use a board where a quarter turn genuinely pays
+(134.17 at rest against 51.61 turned) and share an `expectRealTemptation()`
+helper that fails loudly if a case ever empties again.
+
 ## P0 and the power budget (same session, after the roadmap)
 
 ### P0 - unattributed jack layouts: RESOLVED BY DELETION
