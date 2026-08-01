@@ -4,6 +4,68 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-01 - Rotation rework: the veto is gone
+
+Built the rework designed on 2026-07-31 (below). The optimizer can now turn
+pedals; before today it could turn none.
+
+### Done
+1. **Width veto deleted.** `isLargePedal` survives only as the DEFAULT for a new
+   per-board lock. `isFootSwept` stays a hard rule. `hasTopOrBottomSignalJack`
+   is documented as the search PRUNE it always was. No fit rule added -
+   `hasPlacementCollision` already scores overlapping/off-board candidates
+   Infinity using ROTATED dimensions.
+2. **Per-board lock**: `PlacedPedal.rotationLocked`, migration
+   `20260801000001`, `setRotationLocked` store action (undoable), save/load
+   wiring, and an Orientation section in the properties panel whose helper text
+   is accurate in all four states (foot-swept / locked / can-gain / side-jacks).
+3. **Raised the lock default** - see the finding below.
+4. **Backfill migration** `20260801000002` so a pedal does not behave
+   differently depending on when it was added. Only ever LOCKS, so re-running
+   cannot undo a deliberate unlock.
+5. `.claude/scripts/dump-configs-offline.js` - pulls every saved config into one
+   store-shaped JSON with no dev server and no browser, for offline engine
+   fingerprinting.
+
+### The finding that matters
+**Splitting a veto into a lock nearly rebuilt the veto.** The agreed plan said
+to reuse the 3.5 x 5.5in threshold as the lock's default. But all seven pedals
+that can gain from turning are wider than 3.5in - that is WHY the veto was
+wrong - so every one of them would have arrived locked, and rotation would
+have done nothing on a fresh board. The numbers were calibrated to exclude
+EQ-200, so they could not be reused to decide what EQ-200 does by default.
+Raised to 4.5 x 6.5in, placed in the catalogue's empty bands (widths jump
+4.0 -> 4.8, depths 5.6 -> 7.3) so nothing sits near a line. Owner's call, taken
+with the numbers in hand.
+
+### Verification
+- 217 tests pass (+4), tsc clean, eslint clean (0 errors), production build ok.
+- Real-board fingerprint before/after: every placement BYTE-IDENTICAL. The only
+  diff is `rotation-eligible: 0 -> 1 [EQ-200]` on the 20-pedal board.
+- Rotation declined on the merits, not for want of budget: EQ-200 scored
+  directly at all four orientations - 0deg 1095.66 vs 1245.76 / 1416.60 /
+  1495.59. Stage 1 is capped at 48 orders of the 200-evaluation budget
+  (`enumerateChainOrders(..., 48)`), so stage 2 is never starved.
+- Catalogue-wide: optimizer-eligible pedals 0 -> 7 of 63 (PW-3 refused as a
+  treadle). Of the 7, five now rotate by default and the two 6.5in Strymons
+  arrive locked.
+- Migrations applied and round-tripped against the live DB (write true/false,
+  read back, restore). Backfill predicted one row before running; got that row.
+
+### A test that caught itself
+The new treadle case was vacuous as first written: at 7.56in deep NO rotation
+improved the score, so "it refused to rotate" proved nothing. The
+assert-the-temptation-is-real line failed and exposed it. Rewritten to use the
+EQ-200 with only its CATEGORY changed, so foot-sweptness is the single variable.
+
+### Next Tasks
+- [ ] Phase 5: place straddling pedals before the packed run
+- [ ] Phase 6: the one unroutable pedal-to-pedal cable on the 20-pedal board
+- [ ] 13 non-BOSS pedals still carry unattributed jack rows (makers do not
+      publish placement). Rotation stays dark for them until sourced.
+
+---
+
 ## Session: 2026-07-31 (later) - Rotation, jack research, worker
 
 Roadmap phases 1-4 of `.claude/plans/smooth-knitting-walrus.md`. Phase 5 traced
@@ -53,7 +115,10 @@ re-run the config matrix.
 
 ### Next Tasks
 - [x] Apply the migration, then `node scraper/import-pedal-jacks.js` - DONE
-- [ ] **Rotation rework - designed, agreed, NOT built.** The width veto is wrong
+- [x] **Rotation rework - BUILT 2026-08-01, see the session above.** The plan
+      below is kept for its reasoning; note that step 1's "keep the same
+      threshold as the default" turned out to be wrong and was raised to
+      4.5 x 6.5in. The width veto is wrong
       and should go. Reasoning, so it is not relitigated: "does it fit?" is
       already answered without it - hasPlacementCollision scores any overlapping
       or off-board candidate Infinity and measures with ROTATED dimensions, and
