@@ -4,6 +4,59 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-07-31 (later) - Rotation, jack research, worker
+
+Roadmap phases 1-4 of `.claude/plans/smooth-knitting-walrus.md`. Phase 5 traced
+and diagnosed but deliberately NOT fixed; phase 6 untouched.
+
+### Done
+1. **Shared rotation helpers** (`engine/geometry/rotation.ts`). Twelve copies of
+   `deg===90||deg===270` and three copies of the jack-side ring, consolidated.
+   Two latent bugs fell out: negative rotation read as "not rotated" everywhere
+   but the layout engine, and the canvas rotated jack dots only at 90/270 so at
+   180 the drawn dot and the attached cable disagreed. Verified a PURE refactor -
+   45-line layout fingerprint byte-identical before/after.
+2. **Guarded rotation** (`layout/rotation-eligibility.ts`) + `allowRotation`
+   toggle, default on. Eligible = top/bottom signal jack AND not large
+   (>3.5w or >5.5d) AND not foot-swept. Manual rotation deliberately unrestricted.
+3. **Jack research**: 50 pedals, 46 confirmed / 4 unknown, each with a source URL
+   and provenance columns mirroring the image contract. Catalogue repaired:
+   25 concatenated names split, CE-2W and CS-3 duplicates merged by repointing
+   board rows first (0 orphans, 27 board rows before and after).
+4. **Optimize in a Web Worker.** Measured: before, a 10ms ticker fired ZERO times
+   during the run - the thread never got a turn. After, longest gap 24ms. Score
+   and layout identical.
+
+### The finding that matters
+**Zero pedals in the catalogue are rotation-eligible.** Every pedal with a
+top-edge signal jack is wider than the 3.5in threshold, because manufacturers
+put jacks on top precisely when the pedal is wide enough to have room there.
+EQ-200/IR-200/MD-200/RV-200/SY-200 are 3.98in; the Strymons 6.5in; PW-3 is also
+foot-swept. So the toggle is currently a no-op for every buildable board.
+Raising MAX_ROTATABLE_WIDTH_INCHES 3.5 -> 4.0 admits the five 200-series pedals
+and nothing else. One constant, but it is a foot-access judgement - owner's call.
+
+### Phase 5 diagnosed, not fixed
+The dense-board overlap is ORDERING, not the fallback. A pedal deeper than any
+row band must straddle two, which needs a free column; placed chain-LAST there
+is none left. The real board escapes only because its 7.56in PW-3 is chain-FIRST.
+Fix = place straddlers before the packed run. Left for a session with room to
+re-run the config matrix.
+
+### Blocked on the owner
+- `supabase link --project-ref svettejruydudcecvnhf` then `db push` - the CLI's
+  cached pooler URL points at the dead project, and re-linking prompts for the
+  database password. Until then the jack data cannot be imported.
+- 13 non-BOSS pedals: no manufacturer publishes jack placement (the MXR manual
+  names the jacks but never says which side). Left unresearched rather than
+  invented; verify-pedal-jacks.js lists them.
+
+### Next Tasks
+- [ ] Apply the migration, then `node scraper/import-pedal-jacks.js`
+- [ ] Decide MAX_ROTATABLE_WIDTH_INCHES (3.5 keeps rotation inert; 4.0 enables it)
+- [ ] Phase 5: place straddling pedals before the packed run
+- [ ] Phase 6: the one unroutable pedal-to-pedal cable on the 20-pedal board
+
 ## Session: 2026-07-31 - Variable row heights (the placement rework's last open item)
 
 ### Summary
