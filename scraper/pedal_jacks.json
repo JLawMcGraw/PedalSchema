@@ -20,7 +20,17 @@
     "",
     "confidence 'confirmed' = every recorded jack's edge was read off sourceUrl.",
     "confidence 'unknown'   = researched and NOT confirmable; jacks MUST be empty, and",
-    "                         routing falls back to its default assumption."
+    "                         routing falls back to its default assumption.",
+    "",
+    "SOURCES. sourceUrl is normally a manufacturer manual or panel diagram. It may",
+    "also be the token 'owner-inspection', meaning the edges were read off the",
+    "physical pedal by the board's owner - better evidence than a drawing, since it",
+    "cannot be a different revision and cannot fall foul of the mirroring trap. See",
+    "supabase/migrations/20260801000003_jacks_owner_inspection.sql.",
+    "",
+    "A jack nobody observed is OMITTED, not guessed. Entries sourced by inspection",
+    "may therefore be missing rows - typically the DC jack - and that is a smaller",
+    "lie than inventing an edge for it."
   ],
   "pedals": [
     {
@@ -1732,6 +1742,108 @@
           "side": "top",
           "positionPercent": 92,
           "label": "POWER"
+        }
+      ]
+    },
+    {
+      "manufacturer": "Way Huge",
+      "name": "Aqua-Puss",
+      "confidence": "confirmed",
+      "sourceUrl": "owner-inspection",
+      "notes": "WM71 Smalls. Owner reports the input and output are both on the TOP (rear) edge, input at the right end and output at the left - the standard arrangement, and the same as this catalogue's two confirmed Strymon entries. The DC jack was not reported and is deliberately omitted rather than assumed. Top-edge signal jacks make this pedal rotation-eligible.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 25,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 75,
+          "label": "INPUT"
+        }
+      ]
+    },
+    {
+      "manufacturer": "Way Huge",
+      "name": "Conspiracy Theory",
+      "confidence": "confirmed",
+      "sourceUrl": "owner-inspection",
+      "notes": "WM20 Smalls, same enclosure and jack arrangement as the WM71 Aqua-Puss. Owner reports input and output both on the TOP (rear) edge, input right, output left. DC jack not reported, so omitted. Top-edge signal jacks make this pedal rotation-eligible.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 25,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 75,
+          "label": "INPUT"
+        }
+      ]
+    },
+    {
+      "manufacturer": "Strymon",
+      "name": "Flint",
+      "confidence": "confirmed",
+      "sourceUrl": "owner-inspection",
+      "notes": "V2. Owner reports EVERY jack is on the TOP (rear) edge, with input to the right and output to the left - matching the BigSky and Timeline entries, whose rear panels were read off Strymon's own manuals. Stereo: the product page lists 'low impedance independent TS stereo outputs (left and right)' and a single 'high impedance TRS stereo audio input', so two output rows and one input row. EXP and POWER are on the same edge; their positions along it are approximate, which the positionPercent contract permits - the edge is what was observed. USB is not modelled as a jack type.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 10,
+          "label": "LEFT OUT"
+        },
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 24,
+          "label": "RIGHT OUT"
+        },
+        {
+          "jackType": "expression",
+          "side": "top",
+          "positionPercent": 45,
+          "label": "EXP/MIDI"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 70,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 88,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "PastFX",
+      "name": "Chorus Ensemble Deluxe",
+      "confidence": "confirmed",
+      "sourceUrl": "owner-inspection",
+      "notes": "Owner reports the input on the RIGHT side and the output on the LEFT - the ordinary side-jack layout, so rotation would move both jacks off the sides and this pedal gains nothing from being turned. The Deluxe also has a second (stereo) output and a DC jack; neither was reported, so neither is recorded. Only the mono output is claimed here.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 50,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 50,
+          "label": "INPUT"
         }
       ]
     }

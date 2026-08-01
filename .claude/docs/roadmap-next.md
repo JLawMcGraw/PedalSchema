@@ -10,6 +10,9 @@ it, so none of this has to be re-derived to decide whether it is worth doing.
 
 ## P0 — Thirteen pedals are routed on invented jack data
 
+*(Updated 2026-08-01: was 13 of 17 outstanding; the owner's four are now
+confirmed by inspection, leaving these 13.)*
+
 `node .claude/scripts/verify-pedal-jacks.js` reports **13 contract
 violations**: pedals carrying three jack rows each with no `jacks_source_url`.
 They came from the original seed, and nobody wrote down where the layout came

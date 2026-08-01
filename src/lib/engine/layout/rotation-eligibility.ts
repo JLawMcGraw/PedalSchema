@@ -39,14 +39,20 @@ import type { Pedal, PlacedPedal } from '@/types';
  * per-board rotation lock - not a veto.
  *
  * It was a veto once, at 3.5 x 5.5in, as a proxy for "can you still step on
- * the footswitch", and it was wrong twice over. Rotation turns the footswitch
- * sideways on ANY pedal, a 2.87in compact as much as a 3.98in EQ-200, so width
- * never discriminated on foot access. And it excluded precisely the pedals
- * rotation exists to help, because manufacturers put jacks on the top edge
- * PRECISELY when a pedal is wide enough to have room there: "has top jacks"
- * and "wider than a compact" are nearly the same statement. It left ZERO
- * rotatable pedals in a 63-pedal catalogue - a rule that only ever fired as a
- * false negative.
+ * the footswitch", and that is simply not what width measures: rotation turns
+ * the footswitch sideways on ANY pedal, a 2.87in compact as much as a 3.98in
+ * EQ-200. It also excluded the pedals rotation exists to help, leaving ZERO
+ * rotatable pedals in what was then a 63-pedal catalogue - a rule that only
+ * ever fired as a false negative.
+ *
+ * The explanation offered at the time was that makers put jacks on the top
+ * edge precisely when a pedal is wide enough to have room there, so "has top
+ * jacks" and "wider than a compact" were nearly the same statement. That
+ * generalisation is FALSE and the catalogue now disproves it: the Way Huge
+ * Smalls series is 2.4in wide - narrower than a BOSS compact - with both
+ * signal jacks on the top edge. The zero was an artefact of a BOSS-heavy
+ * catalogue, not a law about pedals. The veto is still wrong, but for the
+ * first reason alone, which is the one that was always doing the work.
  *
  * As a default it is honest: a size heuristic is a good guess at what someone
  * would rather not have turned, and they can say otherwise per pedal. But the
