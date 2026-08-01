@@ -417,10 +417,64 @@ describe('one deep pedal does not collapse the board', () => {
    * told "could not fit" on arrangements that are geometrically fine
    * (~68in of run needed across 96in of row).
    */
-  it.skip('dense boards still hit the overlapping fallback', () => {
-    // Reproduces p9 (2.87x5.08 at x=29.13) overlapping p19 (3.15x7.56 at
-    // x=28.85) after two "[GREEDY] Fallback placement - no valid spot" logs,
-    // on 20 pedals needing ~68in of run across 96in of available row.
-    // Un-skip when the fallback is made collision-aware.
+  it.skip('never returns a placement that overlaps, even on a dense board', () => {
+    // STILL FAILING, but the cause is now known, and it is NOT what the note
+    // here used to claim ("make the fallback collision-aware").
+    //
+    // Traced with DEBUG_PLACEMENT. Rows come out at y = 10.92 / 5.63 / 0.00.
+    // p19 is 7.56in deep - deeper than ANY band - so it can only sit
+    // straddling two of them, which needs a column with nothing above or below
+    // it. It is chain-LAST, so by the time it is placed row1 already spans
+    // x 2.17 to 32.0 and no such column is left. The fallback then clamps it
+    // on top of p9 at (28.85, 0.00), overlapping by 2.87 x 1.92in - exactly
+    // the recorded repro.
+    //
+    // Making the fallback return null instead would not fix this; it would
+    // only turn a wrong answer into no answer. The fix is ORDERING: a pedal
+    // deeper than the deepest row band has to be placed BEFORE the rows fill,
+    // at the end of the board its chain position calls for. Note the real
+    // 20-pedal board does NOT hit this, because there the 7.56in PW-3 is
+    // chain-FIRST and gets its column before anything else needs one.
+    //
+    // Un-skip when straddling pedals are placed ahead of the packed run.
+    const b = {
+      id: 'b', name: 'Classic Pro', widthInches: 32, depthInches: 16,
+      railWidthInches: 0.6, isSystem: true,
+    } as Board;
+    const spec = [
+      ...Array.from({ length: 18 }, () => [2.87, 5.08]),
+      [3.98, 5.43],
+      [3.15, 7.56],
+    ] as Array<[number, number]>;
+    const byId: Record<string, Pedal> = {};
+    const placed = spec.map(([w, d], i) => {
+      const id = `p${i}`;
+      byId[id] = { ...pedal(id, 'utility'), widthInches: w, depthInches: d } as Pedal;
+      return {
+        id, pedalId: id, pedal: byId[id],
+        xInches: 0, yInches: 0,
+        rotationDegrees: 0, chainPosition: i + 1, isInLoop: false,
+      } as unknown as PlacedPedal;
+    });
+
+    const placements = calculateGreedyPlacement(placed, byId, b, undefined);
+    const boxes = placements.map((p) => {
+      const d = byId[placed.find((q) => q.id === p.id)!.pedalId];
+      return { id: p.id, x: p.x, y: p.y, w: d.widthInches, h: d.depthInches };
+    });
+
+    const overlaps: string[] = [];
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i];
+        const c = boxes[j];
+        const ox = Math.min(a.x + a.w, c.x + c.w) - Math.max(a.x, c.x);
+        const oy = Math.min(a.y + a.h, c.y + c.h) - Math.max(a.y, c.y);
+        if (ox > 0.01 && oy > 0.01) {
+          overlaps.push(`${a.id} overlaps ${c.id} by ${ox.toFixed(2)}x${oy.toFixed(2)}in`);
+        }
+      }
+    }
+    expect(overlaps).toEqual([]);
   });
 });
