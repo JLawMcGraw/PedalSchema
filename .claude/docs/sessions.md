@@ -52,8 +52,44 @@ re-run the config matrix.
   invented; verify-pedal-jacks.js lists them.
 
 ### Next Tasks
-- [ ] Apply the migration, then `node scraper/import-pedal-jacks.js`
-- [ ] Decide MAX_ROTATABLE_WIDTH_INCHES (3.5 keeps rotation inert; 4.0 enables it)
+- [x] Apply the migration, then `node scraper/import-pedal-jacks.js` - DONE
+- [ ] **Rotation rework - designed, agreed, NOT built.** The width veto is wrong
+      and should go. Reasoning, so it is not relitigated: "does it fit?" is
+      already answered without it - hasPlacementCollision scores any overlapping
+      or off-board candidate Infinity and measures with ROTATED dimensions, and
+      a rotation is kept only if strictly better. The width rule was a proxy for
+      "can you still step on the footswitch", but rotation turns the footswitch
+      sideways on ANY pedal, a 2.87in compact as much as a 3.98in EQ-200 - so
+      width does not discriminate on foot access at all. What it DID do was
+      exclude precisely the top-jack pedals rotation exists to help: a rule that
+      only ever fires as a false negative.
+      The plan:
+        1. Delete isLargePedal as a VETO. Keep the same threshold as the
+           DEFAULT for the new per-pedal lock (below) - a heuristic belongs in
+           a default, not a hard rule.
+        2. Keep isFootSwept as a hard rule. A rotated wah or volume treadle
+           cannot be rocked heel-to-toe; that is broken, not awkward.
+        3. Demote hasTopOrBottomSignalJack in the comments from a veto to what
+           it really is - a search PRUNE, so the 200-evaluation budget is not
+           spent on pedals that provably cannot gain.
+        4. NEW per-pedal lock, because most people would not want a BigSky
+           turned even though it fits:
+           - `PlacedPedal.rotationLocked?: boolean` (per BOARD, not per
+             catalogue pedal - it is a decision about this pedal on this board)
+           - migration: `configuration_pedals.rotation_locked BOOLEAN DEFAULT false`
+           - default it ON when the pedal is added if isLargePedal(pedal), so
+             the common case is protected without being unoverridable
+           - store action setRotationLocked + persist in editor-client save and
+             the page.tsx load mapping
+           - toggle in properties-panel beside "Rotate 90 degrees", worded as
+             intent not mechanism ("Keep facing forward")
+           - canOptimizerRotate takes the placed pedal too and honours the lock
+        5. Tests: the current rotation-search case asserting EQ-200 is REFUSED
+           becomes EQ-200 is allowed; add one proving a locked pedal is not
+           rotated even when rotating would score better (assert the temptation
+           is real, as that test already does, so it cannot pass vacuously).
+      Verify: real-board fingerprint before/after, and 8 rotation candidates
+      exist now so this will actually change layouts - check both boards.
 - [ ] Phase 5: place straddling pedals before the packed run
 - [ ] Phase 6: the one unroutable pedal-to-pedal cable on the 20-pedal board
 
