@@ -62,7 +62,7 @@ real-board fingerprint to see whether any routing actually changes.
 
 ---
 
-## P1 — A board-level power budget
+## P1 — A board-level power budget — DONE 2026-08-01 (first half)
 
 There is no power total anywhere. `currentMa` is shown per pedal in the
 properties panel (`9V / 300mA`) and nowhere else, so nothing tells you a
@@ -84,8 +84,21 @@ total, plus a count of unknowns, e.g. "986mA across 20 pedals (3 unknown)".
 All 27 rows on the two real boards currently have a value, so the null path
 will not show up in testing by accident - it needs its own test.
 
-Worth building in one step: total draw, per-output assignment against a supply
-model, and a warning when a single output is over its rating.
+**Built:** `src/lib/engine/power`, derived into board state, shown in a Power
+tab. Known total kept separate from the pedals it cannot account for, rendered
+as `>= 301 mA`; pedals over a typical 100mA output flagged; split by voltage.
+Bypassed pedals counted - isActive is a signal-path state, not a power one.
+
+**Still open (the supply half):** modelling an actual supply - outputs, their
+ratings, and which pedal is on which - so the app can say "output 3 is over"
+rather than only "the board wants 986mA". That needs a supplies table and an
+assignment UI, and is worth doing only if you want the app to plan wiring
+rather than just report demand.
+
+Note for whoever builds it: the catalogue has exactly ONE pedal with no
+recorded draw (IR-200), and it is on nobody's board, so the null path cannot
+be reached by clicking around. `PROBE_UNKNOWN=1 node
+.claude/scripts/verify-power-panel.js` adds it to client state without saving.
 
 ---
 

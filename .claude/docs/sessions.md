@@ -105,6 +105,51 @@ the phase 6 session below, which retracts it.**
 
 ---
 
+## P0 and the power budget (same session, after the roadmap)
+
+### P0 - unattributed jack layouts: RESOLVED BY DELETION
+The 13 pedals were not mis-researched, they were never researched. Every one of
+the 26 signal rows was `input:right @50` / `output:left @50` - byte-for-byte
+what `findJack()` synthesises for a pedal with NO data. The fallback had been
+written into the database as fact, where it outranked the fallback it came from
+and reported itself as knowledge.
+
+Proven routing-neutral BEFORE deleting (118 lines of placements and cable paths,
+both boards, both loop settings, byte-identical), then deleted in migration
+20260801000004. Contract violations 13 -> 0.
+
+Deletion exposed a real bug: the canvas drew `pedal.jacks` directly, so a pedal
+with no data drew NO jacks while its cables attached happily to its edges - the
+picture and the wiring disagreed. Both now come from `jacksToRender()`, and an
+ASSUMED jack draws hollow so a guess does not look like a fact.
+
+**A verification detour worth keeping.** The real-board fingerprint moved after
+the deletion, which contradicted the neutrality proof. It was not the deletion:
+the baseline predated phase 6, and the perimeter route had removed a 100-point
+`routingFailures` penalty (cableLength 107.68 -> 134.18). Chasing it found
+something better - **the cost model and the drawn routing use DIFFERENT
+routers and disagreed about one cable**: `calculateRoutingCost` scored it
+`fallback-invalid` while `deriveBoardState` routed it fine. The optimizer is
+scoring against a more pessimistic model than the one that draws the board.
+Logged as P1.5.
+
+### Power budget: BUILT
+`src/lib/engine/power` -> derived state -> a Power tab. The design constraint is
+the tri-state: `currentMa` is nullable and a `?? 0` turns "unknown" into "free".
+Known total and unknown pedals are returned separately; the UI renders
+`>= 301 mA`. Also flags pedals over a typical 100mA output and splits by
+voltage. Bypassed pedals count - they are still plugged in.
+
+Verified three ways: mutation-tested unit tests (the `?? 0` bug fails 5,
+including the exact symptom), the engine against both real boards, and
+`.claude/scripts/verify-power-panel.js` driving the real app and asserting on
+EXTRACTED TEXT rather than a screenshot. That script has a `PROBE_UNKNOWN` mode
+because the branch that matters cannot be reached by clicking: the catalogue has
+exactly one pedal with no recorded draw and it is on nobody's board.
+
+Still open: modelling an actual supply (outputs, ratings, assignment) so the app
+can say "output 3 is over" rather than only "the board wants 986mA".
+
 ## Owner's pedals added (same session, after the roadmap)
 
 Catalogue 63 -> 67: PastFX Chorus Ensemble Deluxe, Strymon Flint V2, Way Huge
