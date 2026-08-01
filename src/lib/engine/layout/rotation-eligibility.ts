@@ -38,24 +38,37 @@ import type { Pedal, PlacedPedal } from '@/types';
  * Above either of these a pedal is "large", which is the DEFAULT for the
  * per-board rotation lock - not a veto.
  *
- * It was a veto once, as a proxy for "can you still step on the footswitch",
- * and it was wrong twice over. Rotation turns the footswitch sideways on ANY
- * pedal, a 2.87in compact as much as a 3.98in EQ-200, so width never
- * discriminated on foot access. And it excluded precisely the pedals rotation
- * exists to help, because manufacturers put jacks on the top edge PRECISELY
- * when a pedal is wide enough to have room there: "has top jacks" and "wider
- * than a compact" are nearly the same statement. It left ZERO rotatable pedals
- * in a 63-pedal catalogue - a rule that only ever fired as a false negative.
+ * It was a veto once, at 3.5 x 5.5in, as a proxy for "can you still step on
+ * the footswitch", and it was wrong twice over. Rotation turns the footswitch
+ * sideways on ANY pedal, a 2.87in compact as much as a 3.98in EQ-200, so width
+ * never discriminated on foot access. And it excluded precisely the pedals
+ * rotation exists to help, because manufacturers put jacks on the top edge
+ * PRECISELY when a pedal is wide enough to have room there: "has top jacks"
+ * and "wider than a compact" are nearly the same statement. It left ZERO
+ * rotatable pedals in a 63-pedal catalogue - a rule that only ever fired as a
+ * false negative.
  *
  * As a default it is honest: a size heuristic is a good guess at what someone
- * would rather not have turned, and they can say otherwise per pedal.
+ * would rather not have turned, and they can say otherwise per pedal. But the
+ * OLD numbers could not be reused as that default, because they were tuned to
+ * exclude EQ-200 - the very pedal we just decided should be turnable. Reusing
+ * them would have carried the rejected judgement forward, and left all seven
+ * newly-eligible pedals locked out of the box: the veto again, wearing a
+ * default's clothes.
  *
- * Calibrated against the real catalogue, not chosen for roundness: a BOSS
- * compact is 2.87 x 5.08in and stays unlocked; EQ-200 is 3.98 x 5.43in and
- * PW-3 is 3.15 x 7.56in and both lock by default.
+ * These are placed in the EMPTY BANDS of the real catalogue, so no pedal sits
+ * near a line and a small data correction cannot flip one:
+ *
+ *   widths ... 3.5, 3.98, 4.0 | 4.5 | 4.8, 5.5, 5.79, 6.5, 6.69, 10.04
+ *   depths ... 5.43, 5.5, 5.6 | 6.5 | 7.3, 7.52, 7.56, 9.06, 10.0
+ *
+ * What that buys: the 3.98in 200-series and the 5.6in-deep RAT stay unlocked
+ * and can be turned to shorten a cable run; the 6.5in Strymons, the 5.5in
+ * fuzzes and the 10in SY-300 arrive locked, because "big enough that you would
+ * mind it sitting sideways" is what the default is actually guessing at.
  */
-export const MAX_ROTATABLE_WIDTH_INCHES = 3.5;
-export const MAX_ROTATABLE_DEPTH_INCHES = 5.5;
+export const MAX_ROTATABLE_WIDTH_INCHES = 4.5;
+export const MAX_ROTATABLE_DEPTH_INCHES = 6.5;
 
 /**
  * A treadle is deep. This is an independent functional test rather than a size

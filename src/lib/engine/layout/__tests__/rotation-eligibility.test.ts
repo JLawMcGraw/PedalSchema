@@ -33,6 +33,8 @@ const BOSS_COMPACT_5_10 = pedal({ name: 'CS-3', widthInches: 2.9, depthInches: 5
 const EQ_200 = pedal({ name: 'EQ-200', category: 'eq', widthInches: 3.98, depthInches: 5.43, jacks: TOP_JACKS });
 const PW_3 = pedal({ name: 'PW-3', category: 'filter', widthInches: 3.15, depthInches: 7.56, jacks: TOP_JACKS });
 const FV_500 = pedal({ name: 'FV-500', category: 'volume', widthInches: 3.5, depthInches: 5.0, jacks: TOP_JACKS });
+const BIGSKY = pedal({ name: 'BigSky', category: 'reverb', widthInches: 6.5, depthInches: 5.1, jacks: TOP_JACKS });
+const RAT_2 = pedal({ name: 'RAT 2', category: 'distortion', widthInches: 3.3, depthInches: 5.6 });
 
 describe('isLargePedal', () => {
   // No longer a veto - this is the DEFAULT for the per-board rotation lock.
@@ -41,8 +43,18 @@ describe('isLargePedal', () => {
     expect(isLargePedal(BOSS_COMPACT_5_10)).toBe(false);
   });
 
-  it('locks EQ-200 on width and PW-3 on depth by default', () => {
-    expect(isLargePedal(EQ_200)).toBe(true); // 3.98in wide
+  it('leaves the 200-series unlocked - locking them would restore the veto', () => {
+    // The whole point of the rework. EQ-200 is 3.98 x 5.43in: bigger than a
+    // compact, but not "big enough that you would mind it sideways", and it is
+    // one of only seven pedals in the catalogue that can gain from turning at
+    // all. Under the old 3.5 x 5.5in numbers all seven defaulted to locked,
+    // which is the veto by another name.
+    expect(isLargePedal(EQ_200)).toBe(false);
+    expect(isLargePedal(RAT_2)).toBe(false); // 5.6in deep, still an ordinary box
+  });
+
+  it('locks the genuinely big - Strymon on width, PW-3 on depth', () => {
+    expect(isLargePedal(BIGSKY)).toBe(true); // 6.5in wide
     expect(isLargePedal(PW_3)).toBe(true); // 7.56in deep
   });
 });
