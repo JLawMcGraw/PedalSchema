@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import type { Pedal, PedalJack } from '@/types';
 import {
   canOptimizerRotate,
+  mayRotateTo,
   hasTopOrBottomSignalJack,
   isFootSwept,
   isLargePedal,
@@ -126,5 +127,38 @@ describe('canOptimizerRotate', () => {
     expect(canOptimizerRotate(pedal({ jacks: [] }))).toBe(false);
     expect(canOptimizerRotate(pedal({ jacks: undefined }))).toBe(false);
     expect(canOptimizerRotate(undefined)).toBe(false);
+  });
+});
+
+describe('mayRotateTo - no upside-down pedals', () => {
+  /*
+   * A pedal at 180 degrees reads inverted and puts its footswitch at the far
+   * edge. The routing score cannot see that - it measures length, and the half
+   * turn is sometimes the SHORTEST option, so it wins on points while being
+   * the one arrangement nobody would build.
+   */
+  it('refuses the half turn', () => {
+    expect(mayRotateTo(180)).toBe(false);
+    expect(mayRotateTo(-180)).toBe(false);
+  });
+
+  it('allows rest and the quarter turns', () => {
+    // A pedal on its side is a thing people really do build, especially one
+    // with top-mounted jacks. A pedal on its head is not.
+    expect(mayRotateTo(0)).toBe(true);
+    expect(mayRotateTo(90)).toBe(true);
+    expect(mayRotateTo(270)).toBe(true);
+    expect(mayRotateTo(-90)).toBe(true);
+    expect(mayRotateTo(360)).toBe(true);
+  });
+
+  it('is about the ANGLE, not the pedal - it needs nothing else to decide', () => {
+    // The first version of this rule refused any rotation that put a signal
+    // jack on the front edge, on the grounds that cables there run where your
+    // feet are. That holds only for a FRONT-ROW pedal: at the back, a
+    // front-facing jack feeds the corridor between rows, which is where cables
+    // belong. Upside-down is true wherever the pedal sits, so the rule needs
+    // no jack data and cannot be fooled by a pedal that has none.
+    expect(mayRotateTo(180)).toBe(false);
   });
 });

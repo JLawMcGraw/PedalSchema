@@ -812,8 +812,8 @@
       "manufacturer": "BOSS",
       "name": "NS-2",
       "confidence": "confirmed",
-      "sourceUrl": "https://static.roland.com/assets/media/pdf/NS-2_e01_W.pdf",
-      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1. Also has a 9V DC OUT jack for daisy-chaining power onward. Not recorded: the schema has no power-OUTPUT type, and calling it power would make the app read it as a supply input.",
+      "sourceUrl": "owner-inspection",
+      "notes": "BOSS compact. CORRECTED 2026-08-01 from the owner's own unit: SEND is on the LEFT, not the right. The original entry put input, send AND return all on the right by applying the compact-series rule 'OUTPUTs left, INPUTs right' to the jack NAMES rather than their function - but SEND is an output (signal leaves for the loop) and RETURN is an input (it comes back), so by that entry's own rule send belonged on the left. The Roland manual (https://static.roland.com/assets/media/pdf/NS-2_e01_W.pdf) remains the source for the connector LIST; the edges are the owner's. This matters more than most: the NS-2 is the hub pedal on both real boards, so its send and return are where the whole loop attaches.",
       "jacks": [
         {
           "jackType": "output",
@@ -829,7 +829,7 @@
         },
         {
           "jackType": "send",
-          "side": "right",
+          "side": "left",
           "positionPercent": 38,
           "label": "SEND"
         },

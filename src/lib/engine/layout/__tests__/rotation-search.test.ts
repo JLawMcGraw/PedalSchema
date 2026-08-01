@@ -13,7 +13,16 @@ import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { makeBoard, makePedalSet, type PedalSet } from '../../__tests__/support/fixtures';
 import { calculateOptimalLayoutJoint, calculateGreedyPlacement } from '../index';
 import { calculateRoutingCost } from '../routing-cost';
-import type { RoutingConfig } from '@/types';
+import { mayRotateTo, isLargePedal } from '../rotation-eligibility';
+import type { Pedal, PlacedPedal, RoutingConfig } from '@/types';
+
+/**
+ * The angles the optimizer is allowed to choose. Ground truth has to be
+ * computed over THESE, not over all four - a half turn leaves the pedal upside
+ * down and is refused whatever it scores, so including it would assert the
+ * search should do something it is forbidden to do.
+ */
+const ALLOWED = [0, 90, 180, 270].filter((r) => mayRotateTo(r));
 
 const routingConfig: RoutingConfig = {
   useLoopPedals: true, use4CableMethod: false, useEffectsLoop: false, pedalConfigs: [],
@@ -44,6 +53,68 @@ function withCompactTopJackPedal(set: PedalSet): PedalSet {
   };
 }
 
+
+/**
+ * A board where a QUARTER turn genuinely pays, which the twelve-pedal set is
+ * not: there the only rotation that ever improved anything was the half turn,
+ * and half turns are refused (they leave the pedal upside down). A test whose
+ * only temptation is a forbidden angle proves nothing - it would pass whether
+ * or not the rule under test existed.
+ *
+ * This is the shape that does pay, and it is the real one: a top-jack pedal
+ * added mid-chain to a small board. Turning it swaps a 6.5 x 5.1in footprint
+ * to 5.1 x 6.5in, which fits the rows differently and shortens the run
+ * dramatically - 134.17 at rest against 51.61 turned.
+ */
+function withTopJackPedal(
+  size: { widthInches: number; depthInches: number },
+  chainPosition = 3
+): { placed: PlacedPedal[]; pedalsById: Record<string, Pedal>; id: string } {
+  const base = makePedalSet('trio');
+  const extra = {
+    id: 'topjack', name: 'TopJack', manufacturer: 'Strymon', category: 'reverb',
+    heightInches: 1.6, voltage: 9, currentMa: 300, preferredLocation: 'front_of_amp',
+    ...size,
+    jacks: [
+      { id: 'tj0', pedalId: 'topjack', jackType: 'output', side: 'top', positionPercent: 20, label: 'OUT' },
+      { id: 'tj1', pedalId: 'topjack', jackType: 'input', side: 'top', positionPercent: 80, label: 'IN' },
+    ],
+  } as unknown as Pedal;
+  return {
+    pedalsById: { ...base.pedalsById, topjack: extra },
+    placed: [...base.placedPedals, {
+      id: 'p-topjack', pedalId: 'topjack', pedal: extra, xInches: 1, yInches: 1,
+      rotationDegrees: 0, chainPosition, isActive: true, useLoop: false,
+      location: 'front_of_amp',
+    } as unknown as PlacedPedal],
+    id: 'p-topjack',
+  };
+}
+
+/** Score that fixture with the added pedal at a given angle. */
+function scoreFixtureAt(
+  f: ReturnType<typeof withTopJackPedal>,
+  board: ReturnType<typeof makeBoard>,
+  rotation: number
+): number {
+  const pedals = f.placed.map((p) => (p.id === f.id ? { ...p, rotationDegrees: rotation } : p));
+  const placements = calculateGreedyPlacement(pedals, f.pedalsById, board, routingConfig);
+  return calculateRoutingCost(
+    placements, pedals, f.pedalsById, board, undefined, false, false, routingConfig
+  ).totalScore;
+}
+
+/** Assert a PERMITTED rotation beats leaving it alone - or the test is empty. */
+function expectRealTemptation(
+  f: ReturnType<typeof withTopJackPedal>,
+  board: ReturnType<typeof makeBoard>
+): void {
+  const rest = scoreFixtureAt(f, board, 0);
+  const best = Math.min(...ALLOWED.filter((r) => r !== 0).map((r) => scoreFixtureAt(f, board, r)));
+  expect(best, 'no permitted rotation improves this board, so the case is vacuous')
+    .toBeLessThan(rest - 1e-6);
+}
+
 describe('rotation search', () => {
   beforeAll(() => { vi.spyOn(console, 'warn').mockImplementation(() => {}); });
   afterAll(() => { vi.restoreAllMocks(); });
@@ -53,9 +124,9 @@ describe('rotation search', () => {
     const set = withCompactTopJackPedal(makePedalSet('twelve'));
     const eq = set.placedPedals.find((p) => p.pedalId === 'eq')!;
 
-    // Ground truth: evaluate all four orientations directly
+    // Ground truth: evaluate every PERMITTED orientation directly
     const scores = new Map<number, number>();
-    for (const rotation of [0, 90, 180, 270]) {
+    for (const rotation of ALLOWED) {
       scores.set(rotation, scoreAtRotation(set, board, eq.id, rotation));
     }
     const bestScore = Math.min(...scores.values());
@@ -83,76 +154,59 @@ describe('rotation search', () => {
     }
   });
 
-  it('turns a LARGE top-jack pedal - size does not veto, the search decides fit', () => {
-    // EQ-200 at its real 3.98 x 5.43in. The old width veto refused this, which
-    // meant refusing the whole catalogue: every top-jack pedal is wide, because
-    // that is why it has room for jacks on top. Whether it still fits turned is
-    // answered by hasPlacementCollision, not by a threshold.
-    const board = makeBoard('wide');
-    const set = makePedalSet('twelve');
-    const eq = set.placedPedals.find((p) => p.pedalId === 'eq')!;
+  it('turns a genuinely LARGE top-jack pedal - size is a default, not a veto', () => {
+    // 6.5 x 5.1in, the Strymon footprint, which IS large by isLargePedal. The
+    // engine must still consider it: the size test is the DEFAULT for the
+    // per-board lock, applied when a pedal is added, never a rule in here.
+    // (Written first with EQ-200, which stopped being "large" when the
+    // threshold moved to 4.5in - the test name had outlived its fixture.)
+    const board = makeBoard('jr');
+    const f = withTopJackPedal({ widthInches: 6.5, depthInches: 5.1 });
+    expect(isLargePedal(f.pedalsById.topjack)).toBe(true);
+    expectRealTemptation(f, board);
 
-    // The temptation has to be real or this test proves nothing
-    const scores = [0, 90, 180, 270].map((r) => scoreAtRotation(set, board, eq.id, r));
-    expect(Math.min(...scores)).toBeLessThan(scores[0] - 1e-6);
-
-    const result = calculateOptimalLayoutJoint(set.placedPedals, set.pedalsById, board, routingConfig);
-    expect(result.rotations?.find((r) => r.id === eq.id)).toBeDefined();
+    const result = calculateOptimalLayoutJoint(f.placed, f.pedalsById, board, routingConfig);
+    expect(result.rotations?.find((r) => r.id === f.id)).toBeDefined();
   });
 
   it('refuses a pedal the owner locked, even though turning it would score better', () => {
-    // Same board and same temptation as the test above, one field different.
-    const board = makeBoard('wide');
-    const set = makePedalSet('twelve');
-    const eq = set.placedPedals.find((p) => p.pedalId === 'eq')!;
+    // Same board and the same real temptation as above, one field different.
+    const board = makeBoard('jr');
+    const f = withTopJackPedal({ widthInches: 6.5, depthInches: 5.1 });
+    expectRealTemptation(f, board);
 
-    const scores = [0, 90, 180, 270].map((r) => scoreAtRotation(set, board, eq.id, r));
-    expect(Math.min(...scores)).toBeLessThan(scores[0] - 1e-6);
-
-    const locked = set.placedPedals.map((p) =>
-      p.id === eq.id ? { ...p, rotationLocked: true } : p);
-    const result = calculateOptimalLayoutJoint(locked, set.pedalsById, board, routingConfig);
-    expect(result.rotations?.find((r) => r.id === eq.id)).toBeUndefined();
+    const locked = f.placed.map((p) => (p.id === f.id ? { ...p, rotationLocked: true } : p));
+    const result = calculateOptimalLayoutJoint(locked, f.pedalsById, board, routingConfig);
+    expect(result.rotations?.find((r) => r.id === f.id)).toBeUndefined();
   });
 
   it('refuses a treadle outright - no lock needed, and no unlock available', () => {
-    // A treadle cannot be rocked on its side. That is not a preference, so it
-    // is not stored as one: rotationLocked false must NOT make it eligible.
-    //
-    // The pedal here is the EQ-200 of the test above with its CATEGORY changed
-    // and nothing else - same enclosure, same jacks, same board - so the only
-    // thing that can explain a different outcome is foot-sweptness. (A deeper,
-    // treadle-shaped enclosure would have confounded it: at 7.56in deep no
-    // rotation improved the score at all, and the refusal would have been
-    // vacuous. Verified, not assumed.)
-    const board = makeBoard('wide');
-    const set = makePedalSet('twelve');
-    const treadle = { ...set.pedalsById.eq, category: 'volume' as const };
-    const treadleSet = { ...set, pedalsById: { ...set.pedalsById, eq: treadle } };
-    const eq = set.placedPedals.find((p) => p.pedalId === 'eq')!;
+    // The pedal above with its CATEGORY changed and nothing else: same
+    // enclosure, same jacks, same board, same temptation. So foot-sweptness is
+    // the only thing that can explain the different outcome.
+    const board = makeBoard('jr');
+    const f = withTopJackPedal({ widthInches: 6.5, depthInches: 5.1 });
+    expectRealTemptation(f, board);
 
-    // The temptation must be real, or the refusal below proves nothing
-    const scores = [0, 90, 180, 270].map((r) => scoreAtRotation(treadleSet, board, eq.id, r));
-    expect(Math.min(...scores)).toBeLessThan(scores[0] - 1e-6);
-
-    const unlocked = set.placedPedals.map((p) =>
-      p.id === eq.id ? { ...p, rotationLocked: false } : p);
-    const result = calculateOptimalLayoutJoint(unlocked, treadleSet.pedalsById, board, routingConfig);
-    expect(result.rotations?.find((r) => r.id === eq.id)).toBeUndefined();
+    const treadle = { ...f.pedalsById.topjack, category: 'volume' as const };
+    const treadleSet = { ...f.pedalsById, topjack: treadle };
+    const unlocked = f.placed.map((p) => (p.id === f.id ? { ...p, rotationLocked: false } : p));
+    const result = calculateOptimalLayoutJoint(unlocked, treadleSet, board, routingConfig);
+    expect(result.rotations?.find((r) => r.id === f.id)).toBeUndefined();
   });
 
   it('leaves every pedal alone when rotation is switched off', () => {
-    const board = makeBoard('wide');
-    const set = withCompactTopJackPedal(makePedalSet('twelve'));
-    const eq = set.placedPedals.find((p) => p.pedalId === 'eq')!;
+    const board = makeBoard('jr');
+    const f = withTopJackPedal({ widthInches: 6.5, depthInches: 5.1 });
+    expectRealTemptation(f, board);
 
-    // Same board that DOES get rotated when the toggle is on
-    const on = calculateOptimalLayoutJoint(set.placedPedals, set.pedalsById, board, {
+    // The same board that DOES get turned with the toggle on
+    const on = calculateOptimalLayoutJoint(f.placed, f.pedalsById, board, {
       ...routingConfig, allowRotation: true,
     });
-    expect(on.rotations?.find((r) => r.id === eq.id)).toBeDefined();
+    expect(on.rotations?.find((r) => r.id === f.id)).toBeDefined();
 
-    const off = calculateOptimalLayoutJoint(set.placedPedals, set.pedalsById, board, {
+    const off = calculateOptimalLayoutJoint(f.placed, f.pedalsById, board, {
       ...routingConfig, allowRotation: false,
     });
     expect(off.rotations ?? []).toEqual([]);

@@ -33,6 +33,7 @@
  */
 
 import type { Pedal, PlacedPedal } from '@/types';
+import { rotationSteps } from '../geometry/rotation';
 
 /**
  * Above either of these a pedal is "large", which is the DEFAULT for the
@@ -125,4 +126,40 @@ export function canOptimizerRotate(
   if (!pedal) return false;
   if (placed?.rotationLocked) return false;
   return hasTopOrBottomSignalJack(pedal) && !isFootSwept(pedal);
+}
+
+/**
+ * May the optimizer turn a pedal to THIS angle?
+ *
+ * A property of the angle, not the pedal: HALF TURNS ARE REFUSED, because a
+ * pedal rotated 180 degrees is upside down. Its labels read inverted and its
+ * footswitch sits at the far edge, so you step over the pedal to reach it.
+ * That is a usability fact the routing score cannot see - the score measures
+ * cable length, and on some boards the half turn is the SHORTEST option, so it
+ * wins on points while being the one arrangement nobody would build.
+ *
+ * Reported as a bug the first time it fired: a Way Huge Smalls came out upside
+ * down with its jacks pointing at the player.
+ *
+ * A NOTE ON THE ARGUMENT, because the first version of this rule used a worse
+ * one. It originally refused any rotation that put a signal jack on the FRONT
+ * edge, reasoning that cables there run across the front of the board where
+ * your feet are. That is only true for a pedal in the FRONT row: for one at
+ * the back, a front-facing jack feeds the corridor BETWEEN rows, which is
+ * exactly where cables belong. The rule happened to catch the right case for
+ * the wrong reason. Upside-down is the part that is true wherever the pedal
+ * sits.
+ *
+ * Quarter turns are allowed. A pedal on its side is a thing people really do
+ * build, particularly one with top-mounted jacks; a pedal on its head is not.
+ *
+ * COST OF THIS RULE, measured so it is not a surprise later: on the twelve-
+ * pedal fixture the half turn was the ONLY rotation that improved anything
+ * (404 against 413 at rest, with the quarter turns at 1335 and 1123), so
+ * banning it makes the optimizer leave that board alone entirely. On the real
+ * 7-pedal board quarter turns still earn 4-7%. Rotation fires less often now,
+ * and that is the intended trade.
+ */
+export function mayRotateTo(rotationDegrees: number): boolean {
+  return rotationSteps(rotationDegrees) !== 2;
 }

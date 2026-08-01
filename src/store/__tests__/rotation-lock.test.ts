@@ -100,4 +100,54 @@ describe('rotation lock', () => {
     store().redo();
     expect(added('bigsky').rotationLocked).toBe(false);
   });
+
+  it('locking FACES THE PEDAL FORWARD, it does not just stop future turns', () => {
+    /*
+     * Reported as a bug: turn on "Keep facing forward" for a pedal Optimize had
+     * turned, and nothing happened - and re-running Optimize did not help
+     * either, because a locked pedal is excluded from the rotation search and
+     * therefore keeps whatever angle it already has, permanently. The control
+     * named the state it was meant to produce and then did not produce it.
+     */
+    store().addPedal(bigPedal(), { x: 1, y: 1 });
+    const id = added('bigsky').id;
+
+    store().rotatePedal(id);
+    expect(added('bigsky').rotationDegrees).toBe(90);
+
+    store().setRotationLocked(id, true);
+    expect(added('bigsky').rotationDegrees).toBe(0);
+    expect(added('bigsky').rotationLocked).toBe(true);
+  });
+
+  it('undo brings the angle back, so a deliberate turn is not lost', () => {
+    // Uses the 200-series, which arrives UNLOCKED - so the undo restores both
+    // the angle and the unlocked state, and neither assertion can pass by
+    // accident. (Written first with the BigSky, which is locked on arrival by
+    // the size default: the lock assertion then failed for the right reason.)
+    store().addPedal(midPedal(), { x: 1, y: 1 });
+    const id = added('eq200').id;
+    expect(added('eq200').rotationLocked).toBe(false);
+
+    store().rotatePedal(id);
+    store().setRotationLocked(id, true);
+    expect(added('eq200').rotationDegrees).toBe(0);
+
+    store().undo();
+    expect(added('eq200').rotationDegrees).toBe(90);
+    expect(added('eq200').rotationLocked).toBe(false);
+  });
+
+  it('unlocking leaves the pedal where it is', () => {
+    // Unlocking is permission for the NEXT Optimize, not an instruction to
+    // move anything now.
+    store().addPedal(bigPedal(), { x: 1, y: 1 });
+    const id = added('bigsky').id;
+    store().setRotationLocked(id, true);
+    store().rotatePedal(id);
+    expect(added('bigsky').rotationDegrees).toBe(90);
+
+    store().setRotationLocked(id, false);
+    expect(added('bigsky').rotationDegrees).toBe(90);
+  });
 });

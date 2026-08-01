@@ -4,7 +4,7 @@ import { calculateRoutingCost, type RoutingCostResult } from './routing-cost';
 import { identifySwappableGroups } from '../signal-chain';
 import { COLLISION_SPACING } from '../collision';
 import { rotateSide, rotatedFootprint } from '../geometry/rotation';
-import { canOptimizerRotate } from './rotation-eligibility';
+import { canOptimizerRotate, mayRotateTo } from './rotation-eligibility';
 
 /**
  * Front-to-back clearance between pedals in ADJACENT ROWS, as opposed to the
@@ -1189,6 +1189,9 @@ export function calculateOptimalLayoutJoint(
     const current = bestRotations.get(id) ?? 0;
     for (const rotation of [0, 90, 180, 270]) {
       if (rotation === current) continue;
+      // A half turn leaves the pedal upside down - refused outright, whatever
+      // it scores. See mayRotateTo.
+      if (!mayRotateTo(rotation)) continue;
       if (evaluations >= MAX_EVALUATIONS) break;
       const candidate = new Map(bestRotations);
       candidate.set(id, rotation);

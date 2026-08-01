@@ -439,11 +439,27 @@ export const useConfigurationStore = create<ConfigurationState>()(
           const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
           if (pedal) {
             pedal.rotationLocked = locked;
+            /*
+             * Locking FACES THE PEDAL FORWARD, it does not merely stop the
+             * optimizer turning it later.
+             *
+             * The toggle is labelled "Keep facing forward", and it used to
+             * leave an already-turned pedal exactly where it was. Worse, the
+             * obvious recovery did nothing either: a locked pedal is excluded
+             * from the rotation search, so re-running Optimize could not put
+             * it back - it kept whatever angle it already had, forever. The
+             * control named the state it was supposed to produce and then did
+             * not produce it.
+             *
+             * Undo restores the angle, so a deliberate manual rotation is not
+             * lost, just reversible.
+             */
+            if (locked) pedal.rotationDegrees = 0;
             state.isDirty = true;
           }
         });
-        // No re-layout either way: locking does not un-turn a pedal already
-        // turned, and unlocking only means the NEXT Optimize may consider it.
+        // Unlocking changes nothing on its own - it only means the NEXT
+        // Optimize is allowed to consider this pedal again.
       },
 
       updatePedalLocation: (placedPedalId, location) => {
