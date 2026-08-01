@@ -1,0 +1,1739 @@
+{
+  "_readme": [
+    "Researched jack layouts, one entry per pedal, imported by import-pedal-jacks.js.",
+    "",
+    "SIDES ARE BOARD-RELATIVE, viewed from above with the player at the front:",
+    "  top    = the rear edge, furthest from the player (BOSS calls this the 'rear panel')",
+    "  bottom = the front edge, nearest the player",
+    "  left / right = the long sides. A guitar plugs into the RIGHT of a standard",
+    "                 BOSS compact, and signal leaves to the LEFT, which is why boards",
+    "                 are wired right to left.",
+    "",
+    "THE MIRRORING TRAP: a manual that draws the REAR PANEL face-on shows it as seen",
+    "from behind the pedal, so its left and right are flipped relative to the top-down",
+    "view used here. Where a source only offers that view and nothing else disambiguates,",
+    "the entry is confidence 'unknown' rather than a guess.",
+    "",
+    "positionPercent is approximate, read off the panel diagram. It places the cable",
+    "endpoint along an edge: 0 = rear/left end, 100 = front/right end. Exactness is not",
+    "required and must not hold up an otherwise good entry.",
+    "",
+    "confidence 'confirmed' = every recorded jack's edge was read off sourceUrl.",
+    "confidence 'unknown'   = researched and NOT confirmable; jacks MUST be empty, and",
+    "                         routing falls back to its default assumption."
+  ],
+  "pedals": [
+    {
+      "manufacturer": "BOSS",
+      "name": "AW-3",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/AW-3_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1. Two DEDICATED inputs, GUITAR IN and BASS IN, rather than one INPUT - which an assumed layout would have got wrong.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "GUITAR IN"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "BASS IN"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 54,
+          "label": "EXP/CTL"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "BD-2W",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/BD-2W_eng02_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "BF-3",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/BF-3_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1. Two DEDICATED inputs, GUITAR IN and BASS IN.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT A (MONO)"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "GUITAR IN"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "BASS IN"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "BP-1W",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/BP-1W_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "CE-2W",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/CE-2W_eng02_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT A (MONO)"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "CE-5",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/CE-5_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT A/B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "CH-1",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/CH-1_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT A/B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "CP-1X",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/CP-1X_e02_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "CS-3",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/CS-3_OM.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "DC-2W",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/DC-2W_eng02_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT A (MONO)"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT A (MONO)"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "INPUT B"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "DD-7",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/DD-7_e01_W.pdf",
+      "notes": "Owner's Manual cover panel diagram, drawn top-down: two OUTPUT jacks with arrows to the LEFT edge, two INPUT jacks with arrows to the RIGHT edge, and TEMPO/EXP on the RIGHT edge forward of the inputs. The lower jack of each pair is the (MONO) one. Connector list confirmed against the product page: INPUT-A(MONO)/INPUT-B, OUTPUT-A(MONO)/OUTPUT-B, TEMPO/EXP, DC IN.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "OUTPUT A (MONO)"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "INPUT A (MONO)"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 55,
+          "label": "TEMPO/EXP"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "DM-2W",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/DM-2W_ejgfispd02_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1. The RATE jack takes an expression pedal; recorded as expression since the schema has no closer type.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "DIRECT OUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "RATE"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "DS-1",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/DS-1_OM.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "DS-1W",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/DS-1W_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "EQ-200",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/EQ-200_eng01_W.pdf",
+      "notes": "Owner's Manual p.4-5 'Panel Descriptions': the Rear Panel carries 'A INPUT (A/MONO, B) jacks', 'B OUTPUT (A/MONO, B) jacks', 'C CTL 1, 2/EXP jack' and 'D DC IN jack'. The Side Panel carries 'E MIDI jacks' and 'F USB port' - the manual does not say WHICH side, so MIDI and USB are deliberately not recorded. Left-to-right order along the rear edge is inferred from signal convention (input on the guitar side), not from the source; the EDGE is what the source confirms.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 15,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 28,
+          "label": "OUTPUT A (MONO)"
+        },
+        {
+          "jackType": "expression",
+          "side": "top",
+          "positionPercent": 45,
+          "label": "CTL 1, 2/EXP"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 62,
+          "label": "INPUT B"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 75,
+          "label": "INPUT A (MONO)"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 90,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "FZ-1W",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/FZ-1W_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "GE-7",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/GE-7_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "GEB-7",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/GEB-7_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "HM-2W",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/HM-2W_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "IR-2",
+      "confidence": "unknown",
+      "sourceUrl": "https://www.boss.info/us/products/ir-2/",
+      "notes": "Connector list is certain from the product page: INPUT, OUTPUT A (MONO), OUTPUT B, SEND, RETURN, CH SEL, PHONES, USB Type-C, DC IN. But that is nine connectors on a standard compact body, so they cannot all follow the usual two-jacks-a-side layout, and the manual gives no panel-by-panel text. Recorded unknown rather than assumed - it is on a live board and a wrong guess would misroute real cables.",
+      "jacks": []
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "IR-200",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/IR-200_eng01_W.pdf",
+      "notes": "Jacks on the REAR panel. Manual states the Rear Panel carries MIDI, INPUT, SEND/RETURN, OUTPUT and DC IN; the Side Panel carries AUX IN and PHONES. AUX IN, PHONES, MIDI and USB are not recorded - not signal path, and the side is unstated.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 10,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 23,
+          "label": "OUTPUT A/MONO"
+        },
+        {
+          "jackType": "return",
+          "side": "top",
+          "positionPercent": 36,
+          "label": "RETURN"
+        },
+        {
+          "jackType": "send",
+          "side": "top",
+          "positionPercent": 49,
+          "label": "SEND"
+        },
+        {
+          "jackType": "expression",
+          "side": "top",
+          "positionPercent": 62,
+          "label": "CTL 1, 2/EXP"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 75,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 88,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "MD-200",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/MD-200_eng01_W.pdf",
+      "notes": "Jacks on the REAR panel. Manual states \"Rear Panel (Connecting Your Equipment)\" for the signal jacks and \"Side Panel\" for MIDI and USB, which are not recorded because the side is unstated.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 10,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 26,
+          "label": "OUTPUT A/MONO"
+        },
+        {
+          "jackType": "expression",
+          "side": "top",
+          "positionPercent": 42,
+          "label": "CTL 1, 2/EXP"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 58,
+          "label": "INPUT B"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 74,
+          "label": "INPUT A/MONO"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 90,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "MD-500",
+      "confidence": "unknown",
+      "sourceUrl": "https://www.boss.info/us/products/md-500/",
+      "notes": "Connector list certain (INPUT A/MONO+B, OUTPUT A/MONO+B, CTL 1,2/EXP, MIDI IN/OUT, USB, DC IN) but the manual has no panel-location text and this is a larger 500-series enclosure, so the compact convention does not apply. Not established.",
+      "jacks": []
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "MO-2",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/MO-2_ejgfispd01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT-A (MONO)"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "OUTPUT-B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "MT-2W",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/MT-2W_eng02_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "NS-2",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/NS-2_e01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1. Also has a 9V DC OUT jack for daisy-chaining power onward. Not recorded: the schema has no power-OUTPUT type, and calling it power would make the app read it as a supply input.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "send",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "SEND"
+        },
+        {
+          "jackType": "return",
+          "side": "right",
+          "positionPercent": 54,
+          "label": "RETURN"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "OC-5",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/OC-5_eng01_W.pdf",
+      "notes": "Owner's Manual 'Panel Descriptions', top-down diagram: 'OUTPUT' and 'DIRECT OUT' both arrow to the LEFT edge (OUTPUT above DIRECT OUT), 'INPUT' arrows to the RIGHT edge. The connection illustration agrees - both left-hand jacks run to the guitar amp, the right-hand jack to the guitar. Connector list from the product page: INPUT, OUTPUT, DIRECT OUT, DC IN.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "DIRECT OUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 30,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "PH-3",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/PH-3_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1. Diagram read directly: OUTPUT left; INPUT right with EXP/CTL on the right below it. One of the three manuals establishing the compact convention.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "EXP/CTL"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "PS-6",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/PS-6_OM.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT A (MONO)"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "EXP"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "PW-3",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/PW-3_eng02_W.pdf",
+      "notes": "Jacks are on the REAR face, not the long sides - unusual for a wah, and the reason this pedal was initially recorded as unknown. Owner's Manual 'Panel Descriptions' shows that face head-on: INPUT (4) at one end, the GUITAR/BASS switch (5), DC IN (6), OUTPUT (7) at the other. That view looks AT the rear panel, so its left and right are mirrored relative to the top-down view used here; mirrored, INPUT lands on the right and OUTPUT on the left. The manual's connection illustration independently agrees - the electric guitar feeds the right-hand side and the amp is fed from the left. Two views agreeing is what moved this from unknown to confirmed.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 25,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 45,
+          "label": "DC IN"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 75,
+          "label": "INPUT"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "PX-1",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/PX-1_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT A (MONO)"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT A (MONO)"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "INPUT B"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 54,
+          "label": "CTL1,2/EXP"
+        },
+        {
+          "jackType": "midi_in",
+          "side": "right",
+          "positionPercent": 70,
+          "label": "MIDI IN"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "RC-1",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/RC-1_ejgfispd02_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1. STOP/UNDO is a footswitch jack, recorded as expression - the schema has no footswitch type.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT A (MONO)"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT A (MONO)"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "INPUT B"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 54,
+          "label": "STOP/UNDO"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "RT-2",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/RT-2_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT A (MONO)"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT A (MONO)"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "INPUT B"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 54,
+          "label": "CTL/EXP"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "RV-200",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/RV-200_eng01_W.pdf",
+      "notes": "Jacks on the REAR panel. Same 200-series layout as the EQ-200 and MD-200. MIDI and USB on the side, not recorded.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 10,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 26,
+          "label": "OUTPUT A/MONO"
+        },
+        {
+          "jackType": "expression",
+          "side": "top",
+          "positionPercent": 42,
+          "label": "CTL 1, 2/EXP"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 58,
+          "label": "INPUT B"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 74,
+          "label": "INPUT A/MONO"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 90,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "RV-6",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/RV-6_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT-A (MONO)"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "OUTPUT-B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT-A (MONO)"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "INPUT-B"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 54,
+          "label": "EXP"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "SD-1",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/SD-1_eng02_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "SD-1W",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/SD-1W_eng02_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "SDE-3",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/SDE-3_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT A (MONO)"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT A (MONO)"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "INPUT B"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 54,
+          "label": "CTL/EXP"
+        },
+        {
+          "jackType": "midi_in",
+          "side": "right",
+          "positionPercent": 70,
+          "label": "MIDI IN"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "SL-2",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/SL-2_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT A (MONO)"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "OUTPUT B"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT A (MONO)"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "INPUT B"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 54,
+          "label": "CTL/EXP"
+        },
+        {
+          "jackType": "midi_in",
+          "side": "right",
+          "positionPercent": 70,
+          "label": "MIDI IN"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "SY-1",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/SY-1_eng02_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "send",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "SEND"
+        },
+        {
+          "jackType": "return",
+          "side": "right",
+          "positionPercent": 54,
+          "label": "RETURN"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 70,
+          "label": "EXP/CTL"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "SY-200",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/SY-200_eng02_W.pdf",
+      "notes": "Jacks on the REAR panel. Manual states \"Rear Panel\" for the signal jacks and \"Side Panel\" for MIDI and USB, which are not recorded.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 10,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "return",
+          "side": "top",
+          "positionPercent": 26,
+          "label": "RETURN"
+        },
+        {
+          "jackType": "send",
+          "side": "top",
+          "positionPercent": 42,
+          "label": "SEND"
+        },
+        {
+          "jackType": "expression",
+          "side": "top",
+          "positionPercent": 58,
+          "label": "CTL 2, 3/EXP"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 74,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 90,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "SY-300",
+      "confidence": "unknown",
+      "sourceUrl": "https://www.boss.info/us/products/sy-300/",
+      "notes": "Large floor unit with MAIN OUTPUT L/R, SUB OUTPUT L/R, THRU, RETURN, MIDI and more. No panel-location text; the compact convention does not apply. Not established.",
+      "jacks": []
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "TR-2",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/TR-2_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "TU-3",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/TU-3_OM.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1. Also has a DC OUT jack for daisy-chaining power onward, not recorded - the schema has no power-output type.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "BYPASS"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "TU-3W",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/TU-3W_eng02_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1. Also has a DC OUT jack, not recorded, as for the TU-3.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 38,
+          "label": "BYPASS"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "VB-2W",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/VB-2W_eng02_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1. The DEPTH jack takes an expression pedal.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "DEPTH"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "XS-1",
+      "confidence": "confirmed",
+      "sourceUrl": "https://static.roland.com/assets/media/pdf/XS-1_eng01_W.pdf",
+      "notes": "BOSS compact enclosure. Connector list quoted from this pedal's own product-page Specifications. Edges follow the compact-series panel layout - OUTPUTs on the LEFT, INPUTs on the RIGHT, control/expression jack on the right below the input, DC IN on the rear - which was read directly off the panel diagrams in the DD-7, OC-5 and PH-3 manuals and is corroborated by the original seed data for CS-3, DS-1, NS-2, TU-3, RC-1, RV-6 and SD-1.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 22,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 22,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "expression",
+          "side": "right",
+          "positionPercent": 38,
+          "label": "CTL/EXP"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "DC IN"
+        }
+      ]
+    },
+    {
+      "manufacturer": "BOSS",
+      "name": "XS-100",
+      "confidence": "unknown",
+      "sourceUrl": "https://www.boss.info/us/products/xs-100/",
+      "notes": "INPUT, THRU, OUTPUT jacks, CTL1,2/EXP2, MIDI IN/OUT, USB-C, DC IN on a larger enclosure. No panel-location text. Not established.",
+      "jacks": []
+    },
+    {
+      "manufacturer": "Strymon",
+      "name": "BigSky",
+      "confidence": "confirmed",
+      "sourceUrl": "https://www.strymon.net/manuals/BigSky_UserManual_RevD.pdf",
+      "notes": "User Manual \"Rear Panel\" section lists POWER, MIDI, INPUTS (LEFT/RIGHT), OUTPUTS (LEFT/RIGHT) and EXP together - every jack is on the rear edge, which is what makes this one of the few pedals rotation could ever help. Use LEFT for mono, per the manual.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 8,
+          "label": "LEFT OUT"
+        },
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 20,
+          "label": "RIGHT OUT"
+        },
+        {
+          "jackType": "expression",
+          "side": "top",
+          "positionPercent": 32,
+          "label": "EXP"
+        },
+        {
+          "jackType": "midi_in",
+          "side": "top",
+          "positionPercent": 44,
+          "label": "MIDI IN"
+        },
+        {
+          "jackType": "midi_out",
+          "side": "top",
+          "positionPercent": 56,
+          "label": "MIDI OUT"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 68,
+          "label": "RIGHT IN"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 80,
+          "label": "LEFT IN"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 92,
+          "label": "POWER"
+        }
+      ]
+    },
+    {
+      "manufacturer": "Strymon",
+      "name": "Timeline",
+      "confidence": "confirmed",
+      "sourceUrl": "https://www.strymon.net/manuals/TimeLine_UserManual_REVF.pdf",
+      "notes": "User Manual \"Rear Panel\" section lists POWER, MIDI, INPUTS (LEFT/RIGHT), OUTPUTS (LEFT/RIGHT) and EXP together - every jack is on the rear edge, which is what makes this one of the few pedals rotation could ever help. RIGHT IN doubles as the feedback-loop return and RIGHT OUT as its send, per the same section.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 8,
+          "label": "LEFT OUT"
+        },
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 20,
+          "label": "RIGHT OUT"
+        },
+        {
+          "jackType": "expression",
+          "side": "top",
+          "positionPercent": 32,
+          "label": "EXP"
+        },
+        {
+          "jackType": "midi_in",
+          "side": "top",
+          "positionPercent": 44,
+          "label": "MIDI IN"
+        },
+        {
+          "jackType": "midi_out",
+          "side": "top",
+          "positionPercent": 56,
+          "label": "MIDI OUT"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 68,
+          "label": "RIGHT IN"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 80,
+          "label": "LEFT IN"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 92,
+          "label": "POWER"
+        }
+      ]
+    }
+  ]
+}

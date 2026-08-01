@@ -47,6 +47,10 @@ next-env.d.ts
 # (pedal.schema.json is the schema they validate against, not output.)
 scraper/*.json
 !scraper/pedal.schema.json
+# pedal_jacks.json is NOT a dump - it is hand-researched jack layouts with a
+# source URL per pedal, reviewed as data. Regenerating it means doing the
+# research again, so it is tracked like source.
+!scraper/pedal_jacks.json
 
 supabase/backups/
 .dev.db
