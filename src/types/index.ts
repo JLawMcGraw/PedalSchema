@@ -169,6 +169,13 @@ export interface PlacedPedal {
   locationOverride?: boolean;
   /** When true, user manually pinned this pedal's chain position - rules won't reorder it */
   chainPositionLocked?: boolean;
+  /**
+   * When true, Optimize must leave this pedal facing forward, even where
+   * turning it would route better. Per BOARD, not per catalogue pedal: whether
+   * you mind a big reverb sitting sideways depends on the board it is on.
+   * Defaults on for large pedals when added; manual rotation ignores it.
+   */
+  rotationLocked?: boolean;
   isActive: boolean;
   /** For pedals with send/return (like NS-2), whether to use the loop routing */
   useLoop: boolean;
@@ -276,8 +283,9 @@ export interface RoutingConfig {
   /**
    * May Optimize turn pedals to shorten cable runs? Defaults to true when
    * absent. Only pedals that pass canOptimizerRotate() are ever considered -
-   * nothing large, nothing you play with your foot - and a rotation is kept
-   * only when it strictly improves the layout. Manual rotation ignores this.
+   * nothing you play with your foot, nothing the owner has locked - and a
+   * rotation is kept only when it strictly improves the layout. Manual
+   * rotation ignores this.
    */
   allowRotation?: boolean;
   // Per-pedal routing configurations

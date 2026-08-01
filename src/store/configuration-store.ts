@@ -6,6 +6,7 @@ import { signalChainEngine } from '@/lib/engine/signal-chain';
 import { runOptimize } from '@/lib/engine/layout/run-optimize';
 import { summarizeOptimization, type OptimizationSummary } from '@/lib/engine/layout/routing-cost';
 import { rotatedFootprint } from '@/lib/engine/geometry/rotation';
+import { isLargePedal } from '@/lib/engine/layout/rotation-eligibility';
 
 /**
  * Undo/redo snapshot of everything a board-editing action can change.
@@ -100,6 +101,7 @@ interface ConfigurationState {
   rotatePedal: (placedPedalId: string) => void;
   updatePedalChainPosition: (placedPedalId: string, newPosition: number) => void;
   setChainPositionLocked: (placedPedalId: string, locked: boolean) => void;
+  setRotationLocked: (placedPedalId: string, locked: boolean) => void;
   updatePedalLocation: (placedPedalId: string, location: ChainLocation) => void;
   setUseLoop: (placedPedalId: string, useLoop: boolean) => void;
 
@@ -313,6 +315,10 @@ export const useConfigurationStore = create<ConfigurationState>()(
             rotationDegrees: 0,
             chainPosition: state.placedPedals.length + 1,
             location: pedal.preferredLocation || 'front_of_amp',
+            // Big pedals arrive protected from Optimize turning them. A guess
+            // at what you would want, offered as a default you can override
+            // per pedal - not a rule, which is what the old width veto was.
+            rotationLocked: isLargePedal(pedal),
             isActive: true,
             useLoop: false, // Default to not using loop (user must enable)
             createdAt: new Date().toISOString(),
@@ -425,6 +431,19 @@ export const useConfigurationStore = create<ConfigurationState>()(
         if (!locked) {
           get().normalizeChain();
         }
+      },
+
+      setRotationLocked: (placedPedalId, locked) => {
+        recordHistory();
+        set((state) => {
+          const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
+          if (pedal) {
+            pedal.rotationLocked = locked;
+            state.isDirty = true;
+          }
+        });
+        // No re-layout either way: locking does not un-turn a pedal already
+        // turned, and unlocking only means the NEXT Optimize may consider it.
       },
 
       updatePedalLocation: (placedPedalId, location) => {

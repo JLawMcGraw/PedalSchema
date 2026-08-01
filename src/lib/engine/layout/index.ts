@@ -876,12 +876,12 @@ export function calculateOptimalLayoutJoint(
   };
 
   // Pedals the optimizer may turn unasked: a jack-facing change to gain from,
-  // small enough to still step on, and not a treadle. See rotation-eligibility.
+  // not a treadle, and not locked by the owner. See rotation-eligibility.
   // Absent config means allowed - the guard is what makes it safe, not the flag.
   const allowRotation = routingConfig?.allowRotation ?? true;
   const rotatableIds = allowRotation
     ? placedPedals
-        .filter((p) => canOptimizerRotate(pedalsById[p.pedalId] || p.pedal))
+        .filter((p) => canOptimizerRotate(pedalsById[p.pedalId] || p.pedal, p))
         .map((p) => p.id)
     : [];
 

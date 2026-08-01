@@ -16,6 +16,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { getCategoryColor, getCategoryLabel } from '@/lib/constants/pedal-categories';
+import { hasTopOrBottomSignalJack, isFootSwept } from '@/lib/engine/layout/rotation-eligibility';
 import type { ChainLocation } from '@/types';
 
 export function PropertiesPanel() {
@@ -27,12 +28,13 @@ export function PropertiesPanel() {
     pedalsById,
     removePedal,
     rotatePedal,
+    setRotationLocked,
     updatePedalLocation,
     setUseLoop,
     amp,
     useEffectsLoop,
   } = useConfigurationStore(
-    useShallow((s) => ({ placedPedals: s.placedPedals, pedalsById: s.pedalsById, removePedal: s.removePedal, rotatePedal: s.rotatePedal, updatePedalLocation: s.updatePedalLocation, setUseLoop: s.setUseLoop, amp: s.amp, useEffectsLoop: s.useEffectsLoop }))
+    useShallow((s) => ({ placedPedals: s.placedPedals, pedalsById: s.pedalsById, removePedal: s.removePedal, rotatePedal: s.rotatePedal, setRotationLocked: s.setRotationLocked, updatePedalLocation: s.updatePedalLocation, setUseLoop: s.setUseLoop, amp: s.amp, useEffectsLoop: s.useEffectsLoop }))
   );
   const { collisions } = useDerivedConfiguration((d) => ({ collisions: d.collisions }));
 
@@ -55,6 +57,12 @@ export function PropertiesPanel() {
   }
 
   const hasCollision = collisions.some((c) => c.pedalIds.includes(selectedPlaced.id));
+
+  // What the orientation controls should say. Foot-swept pedals are refused by
+  // the optimizer outright, so offering a lock for them would imply that
+  // unlocking does something.
+  const footSwept = isFootSwept(selectedPedal);
+  const canFaceDifferently = hasTopOrBottomSignalJack(selectedPedal);
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
@@ -164,16 +172,51 @@ export function PropertiesPanel() {
             </div>
           )}
 
+          {/* Orientation */}
+          <div className="border rounded-lg overflow-hidden">
+            <div className="px-3 py-2 bg-muted/50 border-b">
+              <span className="text-xs font-medium">Orientation</span>
+            </div>
+            <div className="p-3 space-y-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full h-8 text-xs"
+                onClick={() => rotatePedal(selectedPlaced.id)}
+              >
+                Rotate 90°
+              </Button>
+              {/*
+                Turning it by hand is always allowed - the lock only governs
+                what Optimize may do unasked, so it sits below the button and
+                never disables it.
+              */}
+              {!footSwept && (
+                <div className="flex items-center justify-between pt-1">
+                  <Label htmlFor="rotation-locked" className="text-xs cursor-pointer">
+                    Keep facing forward
+                  </Label>
+                  <Switch
+                    id="rotation-locked"
+                    checked={selectedPlaced.rotationLocked ?? false}
+                    onCheckedChange={(checked) => setRotationLocked(selectedPlaced.id, checked)}
+                  />
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {footSwept
+                  ? 'A treadle is played by rocking it, so Optimize never turns it.'
+                  : selectedPlaced.rotationLocked
+                    ? 'Optimize will not turn this pedal.'
+                    : canFaceDifferently
+                      ? 'Optimize may turn this pedal when it shortens the cable run.'
+                      : 'Its signal jacks are on the sides, so turning it would only lengthen the cables. Optimize leaves it alone.'}
+              </p>
+            </div>
+          </div>
+
           {/* Actions */}
           <div className="space-y-2 pt-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full h-8 text-xs"
-              onClick={() => rotatePedal(selectedPlaced.id)}
-            >
-              Rotate 90°
-            </Button>
             <Button
               variant="destructive"
               size="sm"

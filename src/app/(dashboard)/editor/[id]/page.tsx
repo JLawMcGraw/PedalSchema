@@ -137,6 +137,7 @@ export default async function EditorPage({ params }: PageProps) {
       chainPosition: cp.chain_position as number,
       location: cp.location as PlacedPedal['location'],
       chainPositionLocked: (cp.chain_position_locked as boolean) ?? false,
+      rotationLocked: (cp.rotation_locked as boolean) ?? false,
       isActive: cp.is_active as boolean,
       useLoop: (cp.use_loop as boolean) ?? false, // Default to false for backwards compat
       createdAt: cp.created_at as string,

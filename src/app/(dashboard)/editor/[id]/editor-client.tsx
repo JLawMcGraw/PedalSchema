@@ -145,6 +145,7 @@ export function EditorClient({
               chain_position: p.chainPosition,
               location: p.location,
               chain_position_locked: p.chainPositionLocked ?? false,
+              rotation_locked: p.rotationLocked ?? false,
               is_active: p.isActive,
               use_loop: p.useLoop,
             })),

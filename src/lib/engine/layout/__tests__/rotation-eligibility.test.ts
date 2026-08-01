@@ -35,12 +35,13 @@ const PW_3 = pedal({ name: 'PW-3', category: 'filter', widthInches: 3.15, depthI
 const FV_500 = pedal({ name: 'FV-500', category: 'volume', widthInches: 3.5, depthInches: 5.0, jacks: TOP_JACKS });
 
 describe('isLargePedal', () => {
-  it('passes the standard compacts the catalogue is mostly made of', () => {
+  // No longer a veto - this is the DEFAULT for the per-board rotation lock.
+  it('leaves the standard compacts the catalogue is mostly made of unlocked', () => {
     expect(isLargePedal(BOSS_COMPACT)).toBe(false);
     expect(isLargePedal(BOSS_COMPACT_5_10)).toBe(false);
   });
 
-  it('excludes EQ-200 on width and PW-3 on depth', () => {
+  it('locks EQ-200 on width and PW-3 on depth by default', () => {
     expect(isLargePedal(EQ_200)).toBe(true); // 3.98in wide
     expect(isLargePedal(PW_3)).toBe(true); // 7.56in deep
   });
@@ -87,14 +88,29 @@ describe('canOptimizerRotate', () => {
     expect(canOptimizerRotate(BOSS_COMPACT)).toBe(false);
   });
 
-  it('refuses the large and the foot-swept, top jacks notwithstanding', () => {
-    expect(canOptimizerRotate(EQ_200)).toBe(false);
+  it('allows a LARGE top-jack pedal - size is a default, not a veto', () => {
+    // The regression the width veto caused: EQ-200 is exactly the pedal
+    // rotation exists to help, and the old rule refused it. Whether it FITS
+    // turned is the search's business, not this module's.
+    expect(canOptimizerRotate(EQ_200)).toBe(true);
+  });
+
+  it('still refuses the foot-swept, top jacks notwithstanding', () => {
+    // A rotated treadle cannot be rocked. Broken, not awkward - no toggle.
     expect(canOptimizerRotate(PW_3)).toBe(false);
     expect(canOptimizerRotate(FV_500)).toBe(false);
   });
 
+  it('refuses a pedal the owner has locked on this board', () => {
+    expect(canOptimizerRotate(EQ_200, { rotationLocked: true })).toBe(false);
+    // ...and the same pedal model unlocked is still allowed, so the lock is
+    // what did the refusing and not something about EQ-200 itself.
+    expect(canOptimizerRotate(EQ_200, { rotationLocked: false })).toBe(true);
+    expect(canOptimizerRotate(EQ_200, {})).toBe(true);
+  });
+
   it('refuses a pedal with no jack data at all', () => {
-    // Most of the catalogue. Rotation is only as alive as the jack data.
+    // Part of the catalogue. Rotation is only as alive as the jack data.
     expect(canOptimizerRotate(pedal({ jacks: [] }))).toBe(false);
     expect(canOptimizerRotate(pedal({ jacks: undefined }))).toBe(false);
     expect(canOptimizerRotate(undefined)).toBe(false);

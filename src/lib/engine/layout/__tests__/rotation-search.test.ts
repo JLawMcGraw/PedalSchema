@@ -83,9 +83,11 @@ describe('rotation search', () => {
     }
   });
 
-  it('refuses to turn a large pedal even though turning it would score better', () => {
-    // EQ-200 at its real 3.98 x 5.43in: top jacks, so the search WANTS it, but
-    // too big to reach the footswitch once it is on its side.
+  it('turns a LARGE top-jack pedal - size does not veto, the search decides fit', () => {
+    // EQ-200 at its real 3.98 x 5.43in. The old width veto refused this, which
+    // meant refusing the whole catalogue: every top-jack pedal is wide, because
+    // that is why it has room for jacks on top. Whether it still fits turned is
+    // answered by hasPlacementCollision, not by a threshold.
     const board = makeBoard('wide');
     const set = makePedalSet('twelve');
     const eq = set.placedPedals.find((p) => p.pedalId === 'eq')!;
@@ -95,6 +97,47 @@ describe('rotation search', () => {
     expect(Math.min(...scores)).toBeLessThan(scores[0] - 1e-6);
 
     const result = calculateOptimalLayoutJoint(set.placedPedals, set.pedalsById, board, routingConfig);
+    expect(result.rotations?.find((r) => r.id === eq.id)).toBeDefined();
+  });
+
+  it('refuses a pedal the owner locked, even though turning it would score better', () => {
+    // Same board and same temptation as the test above, one field different.
+    const board = makeBoard('wide');
+    const set = makePedalSet('twelve');
+    const eq = set.placedPedals.find((p) => p.pedalId === 'eq')!;
+
+    const scores = [0, 90, 180, 270].map((r) => scoreAtRotation(set, board, eq.id, r));
+    expect(Math.min(...scores)).toBeLessThan(scores[0] - 1e-6);
+
+    const locked = set.placedPedals.map((p) =>
+      p.id === eq.id ? { ...p, rotationLocked: true } : p);
+    const result = calculateOptimalLayoutJoint(locked, set.pedalsById, board, routingConfig);
+    expect(result.rotations?.find((r) => r.id === eq.id)).toBeUndefined();
+  });
+
+  it('refuses a treadle outright - no lock needed, and no unlock available', () => {
+    // A treadle cannot be rocked on its side. That is not a preference, so it
+    // is not stored as one: rotationLocked false must NOT make it eligible.
+    //
+    // The pedal here is the EQ-200 of the test above with its CATEGORY changed
+    // and nothing else - same enclosure, same jacks, same board - so the only
+    // thing that can explain a different outcome is foot-sweptness. (A deeper,
+    // treadle-shaped enclosure would have confounded it: at 7.56in deep no
+    // rotation improved the score at all, and the refusal would have been
+    // vacuous. Verified, not assumed.)
+    const board = makeBoard('wide');
+    const set = makePedalSet('twelve');
+    const treadle = { ...set.pedalsById.eq, category: 'volume' as const };
+    const treadleSet = { ...set, pedalsById: { ...set.pedalsById, eq: treadle } };
+    const eq = set.placedPedals.find((p) => p.pedalId === 'eq')!;
+
+    // The temptation must be real, or the refusal below proves nothing
+    const scores = [0, 90, 180, 270].map((r) => scoreAtRotation(treadleSet, board, eq.id, r));
+    expect(Math.min(...scores)).toBeLessThan(scores[0] - 1e-6);
+
+    const unlocked = set.placedPedals.map((p) =>
+      p.id === eq.id ? { ...p, rotationLocked: false } : p);
+    const result = calculateOptimalLayoutJoint(unlocked, treadleSet.pedalsById, board, routingConfig);
     expect(result.rotations?.find((r) => r.id === eq.id)).toBeUndefined();
   });
 
