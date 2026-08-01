@@ -208,6 +208,7 @@ if (typeof window !== 'undefined') {
     __getPedalSchemaState: () => SourceSlice;
     __getPedalSchemaDerived: () => DerivedBoardState;
     __getPedalSchemaSnapshot: () => PedalSchemaSnapshot;
+    __pedalSchemaOptimize: () => Promise<void>;
   };
   w.__getPedalSchemaState = () => {
     const s = useConfigurationStore.getState();
@@ -224,6 +225,11 @@ if (typeof window !== 'undefined') {
     };
   };
   w.__getPedalSchemaDerived = () => deriveBoardState(useConfigurationStore.getState());
+
+  // Optimize is asynchronous now (it runs in a worker), so a verification
+  // script cannot tell when it finished by waiting a fixed time. Hand back the
+  // promise so a measurement can bracket exactly the run and nothing else.
+  w.__pedalSchemaOptimize = () => useConfigurationStore.getState().optimizeLayout();
 
   w.__getPedalSchemaSnapshot = () => {
     const s = useConfigurationStore.getState();

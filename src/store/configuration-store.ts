@@ -3,7 +3,7 @@ import { subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import type { Board, Pedal, Amp, PlacedPedal, Position, ChainLocation, ChainContext, RoutingConfig, PedalRoutingConfig } from '@/types';
 import { signalChainEngine } from '@/lib/engine/signal-chain';
-import { calculateOptimalLayoutJoint } from '@/lib/engine/layout';
+import { runOptimize } from '@/lib/engine/layout/run-optimize';
 import { summarizeOptimization, type OptimizationSummary } from '@/lib/engine/layout/routing-cost';
 import { rotatedFootprint } from '@/lib/engine/geometry/rotation';
 
@@ -60,6 +60,8 @@ interface ConfigurationState {
   // Dirty state
   isDirty: boolean;
   isSaving: boolean;
+  /** True while an optimize run is in flight (it now runs in a worker). */
+  isOptimizing: boolean;
   /**
    * Why the last save failed, or null if it did not. The board stays dirty
    * either way, but "dirty" alone cannot tell the user whether they simply
@@ -114,7 +116,7 @@ interface ConfigurationState {
   togglePedalInLoop: (loopPedalId: string, targetPedalId: string) => void;
 
   // Layout optimization
-  optimizeLayout: () => void;
+  optimizeLayout: () => Promise<void>;
   dismissOptimizationSummary: () => void;
 
   // Undo/redo
@@ -193,6 +195,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       lastOptimization: null,
       isDirty: false,
       isSaving: false,
+      isOptimizing: false,
       saveError: null,
 
       initConfiguration: (config) => {
@@ -529,20 +532,44 @@ export const useConfigurationStore = create<ConfigurationState>()(
         });
       },
 
-      optimizeLayout: () => {
-        const { board, placedPedals, pedalsById, routingConfig, useEffectsLoop, use4CableMethod } = get();
+      optimizeLayout: async () => {
+        const { board, placedPedals, pedalsById, routingConfig, useEffectsLoop, use4CableMethod, isOptimizing } = get();
 
         if (!board || placedPedals.length === 0) return;
+        // A second click while one run is in flight would race two results onto
+        // the same board, and the loser would still push an undo entry.
+        if (isOptimizing) return;
 
+        // Undo must capture the board as it was BEFORE the run, and must be
+        // recorded on this thread while that is still what the board looks like.
         recordHistory();
+        set({ isOptimizing: true });
 
-        // Calculate optimal positions AND chain order using joint optimization
-        const result = calculateOptimalLayoutJoint(
-          placedPedals,
-          pedalsById,
-          board,
-          { ...routingConfig, useEffectsLoop, use4CableMethod }
-        );
+        // What the board looked like when the run started. If any of it changes
+        // while the worker is busy, the answer describes a board that no longer
+        // exists and applying it would move the wrong pedals.
+        const requestedFor = placedPedals.map((p) => p.id).join(',');
+
+        let result;
+        try {
+          result = await runOptimize({
+            placedPedals,
+            pedalsById,
+            board,
+            routingConfig: { ...routingConfig, useEffectsLoop, use4CableMethod },
+          });
+        } catch (error) {
+          console.error('[optimizeLayout] failed:', error);
+          set({ isOptimizing: false });
+          return;
+        }
+        set({ isOptimizing: false });
+
+        const current = get().placedPedals;
+        if (current.map((p) => p.id).join(',') !== requestedFor) {
+          console.warn('[optimizeLayout] board changed while optimizing - result discarded');
+          return;
+        }
 
         // Validate chain order integrity before applying
         const validateChainOrder = (chainOrder: string[], pedals: PlacedPedal[]): boolean => {

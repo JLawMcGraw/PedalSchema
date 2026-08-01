@@ -33,11 +33,12 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
     useEditorStore(
     useShallow((s) => ({ zoom: s.zoom, zoomIn: s.zoomIn, zoomOut: s.zoomOut, resetZoom: s.resetZoom, gridVisible: s.gridVisible, toggleGrid: s.toggleGrid, cablesVisible: s.cablesVisible, toggleCables: s.toggleCables }))
   );
-  const { name, isDirty, isSaving, saveError, placedPedals, optimizeLayout, undo, redo, canUndo, canRedo } = useConfigurationStore(
+  const { name, isDirty, isSaving, isOptimizing, saveError, placedPedals, optimizeLayout, undo, redo, canUndo, canRedo } = useConfigurationStore(
     useShallow((s) => ({
       name: s.name,
       isDirty: s.isDirty,
       isSaving: s.isSaving,
+      isOptimizing: s.isOptimizing,
       saveError: s.saveError,
       placedPedals: s.placedPedals,
       optimizeLayout: s.optimizeLayout,
@@ -171,11 +172,13 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
                 variant="outline"
                 size="sm"
                 onClick={optimizeLayout}
-                disabled={placedPedals.length === 0}
+                disabled={placedPedals.length === 0 || isOptimizing}
                 className="gap-1.5"
               >
-                <Wand2 className="h-4 w-4" />
-                <span className="hidden sm:inline">Optimize Layout</span>
+                <Wand2 className={`h-4 w-4 ${isOptimizing ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">
+                  {isOptimizing ? 'Optimizing...' : 'Optimize Layout'}
+                </span>
               </Button>
             </TooltipTrigger>
             <TooltipContent>
