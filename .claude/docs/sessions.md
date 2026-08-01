@@ -105,6 +105,47 @@ the phase 6 session below, which retracts it.**
 
 ---
 
+## Two more from the owner: Optimize dead, PastFX orientation
+
+### Optimize did nothing - TWO answers to "where are the rows"
+The PLACER derives rows from pedal DEPTH, rails only snapping a derived row
+onto a mounting bar (the "rails are not rows" fix). The routing cost's
+row-alignment penalty never got that fix and treated EVERY RAIL as a row, with
+the old hardcoded 55%/5% two-row fallback. So **the optimizer rejected its own
+placer's output**: on a Classic Jr (rails 0, 3.1, 6.2, 9.3) the placer puts a
+row at y=7.3 and the scorer charged 1.1in of misalignment for not being on rail
+6.2. A candidate with a SHORTER cable run (48.4 vs 55.7in) lost on row
+alignment (110 vs 88). Real board: 0 of 9 pedals moved before, 3 of 9 after.
+Row derivation is now `deriveRowBands` in `layout/rows.ts`, used by both - the
+same one-source-of-truth shape as `jacksToRender`.
+
+### The optimizer WORKER had been dead the whole time
+Every run failed with `ReferenceError: window is not defined at
+calculateGreedyPlacement` and fell back to inline, so nothing looked broken
+while the entire point of the worker was lost. Cause: **`typeof window !==
+'undefined'` is not a safe guard in a Worker.** Bundlers replace `typeof
+window` with a literal for browser builds, and a Worker IS a client bundle
+without a `window`, so the guard folds to true and the next line throws. Use
+`globalThis` (`engine/debug-flag.ts`), which no bundler rewrites.
+
+It stayed invisible because the worker posted `error.message` only - the stack
+on the main thread pointed at the onmessage handler that rebuilt the Error. It
+now sends its stack, which is what made it findable in one step.
+
+### My offline harness was not reproducing the app
+`dump-configs-offline.js` read `rails` off the `boards` table, where it does
+not exist - rails live in `board_rails`. **Every offline replay ran on a
+railless board.** Before/after comparisons made with it were self-consistent,
+so that work stands, but it is why a rails-dependent bug survived a day of
+fingerprinting. Fixed to join board_rails.
+
+### PastFX Chorus Deluxe is LANDSCAPE
+120mm wide, 94mm deep - not the portrait 1590BB the first entry assumed (and
+flagged as unconfirmed, since pastfx.com blocks fetching). A CE-1 clone is a
+wide box. Also stopped `add-owner-pedals.js` clobbering jack provenance on
+update: it set `jacks_confidence: 'unknown'` unconditionally, so re-running it
+for a DIMENSION fix demoted a researched layout.
+
 ## Bugs reported by the owner (same session)
 
 Four, all real, all from using the app rather than reading it.
