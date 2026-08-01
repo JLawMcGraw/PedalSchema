@@ -87,6 +87,96 @@ function constrainX(x: number, boardBounds: BoardBounds | null, margin: number =
 }
 
 /**
+ * How far outside the board a perimeter route runs.
+ *
+ * Wider than BOARD_OVERHANG because this is a cable lying beside or under the
+ * board, not a jack stub poking past the edge - it needs to read as "this one
+ * does not lie on the board" rather than as a near-miss.
+ *
+ * Must stay inside the canvas padding (PADDING_INCHES = 2in = 80px in
+ * editor-canvas.tsx), or the route is drawn outside the viewBox and the user
+ * sees a cable that simply vanishes at the board edge.
+ */
+const PERIMETER_OFFSET = 24;
+
+/**
+ * Route around the OUTSIDE of the board.
+ *
+ * A full board has no room left between its rows. The real 20-pedal Classic
+ * Pro packs three rows of ~5.1in pedals into 16in, which leaves 0.2in
+ * corridors - and a patch cable is about 0.24in thick, so it physically does
+ * not fit between them. Every on-board strategy is right to refuse.
+ *
+ * That is not the same as the cable being impossible. The run people actually
+ * make there goes around the edge of the board, or under it - which is what
+ * this builds. It matters because the alternative is `fallback-invalid`, whose
+ * straight line cut diagonally through five pedal bodies: a drawing of a cable
+ * that could not exist, where the truth is a cable that exists but leaves the
+ * board plane.
+ *
+ * Walks the ring outside the board in both directions and takes the shorter
+ * clear one, entering and leaving by whichever edge each endpoint is nearest.
+ */
+function routeAroundBoard(
+  s: Point,
+  t: Point,
+  boardBounds: BoardBounds | null,
+  isClear: (core: Point[]) => boolean
+): Point[] | null {
+  if (!boardBounds) return null;
+  const { minX, maxX, minY, maxY } = boardBounds;
+  const oL = minX - PERIMETER_OFFSET;
+  const oR = maxX + PERIMETER_OFFSET;
+  const oT = minY - PERIMETER_OFFSET;
+  const oB = maxY + PERIMETER_OFFSET;
+
+  /** Nearest edge, and the point straight out from it. */
+  const exit = (p: Point): { side: number; point: Point } => {
+    const d = [p.x - minX, minY === maxY ? Infinity : p.y - minY, maxX - p.x, maxY - p.y];
+    const side = d.indexOf(Math.min(...d)); // 0 left, 1 top, 2 right, 3 bottom
+    const point = [
+      { x: oL, y: p.y }, { x: p.x, y: oT }, { x: oR, y: p.y }, { x: p.x, y: oB },
+    ][side];
+    return { side, point };
+  };
+
+  const corners = [
+    { x: oL, y: oT }, // between left(0) and top(1)
+    { x: oR, y: oT }, // between top(1) and right(2)
+    { x: oR, y: oB }, // between right(2) and bottom(3)
+    { x: oL, y: oB }, // between bottom(3) and left(0)
+  ];
+
+  const from = exit(s);
+  const to = exit(t);
+
+  const candidates: Point[][] = [];
+  for (const dir of [1, -1]) {
+    const ring: Point[] = [from.point];
+    // Step side by side around the ring, collecting the corner between each
+    // pair, until the entry side is reached.
+    let side = from.side;
+    for (let step = 0; step < 4 && side !== to.side; step++) {
+      // Going forward (dir=1) the corner AFTER side `side` is corners[side];
+      // going backward it is the corner before it.
+      ring.push(corners[dir === 1 ? side : (side + 3) % 4]);
+      side = (side + dir + 4) % 4;
+    }
+    ring.push(to.point);
+    candidates.push(ring);
+  }
+
+  const length = (pts: Point[]): number =>
+    pts.slice(1).reduce((sum, p, i) => sum + dist(pts[i], p), 0);
+
+  return (
+    candidates
+      .filter((core) => isClear([s, ...core, t]))
+      .sort((a, b) => length(a) - length(b))[0] ?? null
+  );
+}
+
+/**
  * Which rung of the cascade in routeCablePath produced a path.
  *
  * The cascade is ordered cheapest-sufficient-first, so this doubles as a
@@ -105,6 +195,7 @@ export type RoutingStrategy =
   | 'below'            // under the bottom of every pedal
   | 'safe-lane'        // a lane just outside the obstacle rows
   | 'astar'            // grid pathfinding
+  | 'perimeter'        // around the outside of the board - see routeAroundBoard
   | 'fallback-invalid'; // nothing worked; renderer draws this red
 
 /**
@@ -302,6 +393,19 @@ function routeCablePath(
   if (astarPath.length > 0) {
     const astar = candidateOk(astarPath, 'astar');
     if (astar) return astar;
+  }
+
+  // Strategy 8: around the outside of the board. Last resort before giving up,
+  // because a cable lying beside the board is a real cable but not the one
+  // anybody wants - every on-board route above is preferable. See
+  // routeAroundBoard for why a full board leaves no on-board option at all.
+  const around = routeAroundBoard(s, t, boardBounds, (full) =>
+    isPathClear(full, boxes, { fromBoxIdx, toBoxIdx })
+  );
+  if (around) {
+    // Deliberately NOT run through candidateOk: this path is off-board by
+    // construction, which is the one thing candidateOk forbids.
+    return { path: assemble(around), strategy: 'perimeter' };
   }
 
   // Fallback: return invalid direct path (will be marked red by renderer)

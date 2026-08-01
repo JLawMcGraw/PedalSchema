@@ -428,3 +428,122 @@ describe('lane separation (parallel cables stay distinguishable)', () => {
     }
   });
 });
+
+/**
+ * The real 20-pedal Pedaltrain Classic Pro, at the exact positions the layout
+ * engine produces for it with the amp effects loop on.
+ *
+ * Real hardware at real dimensions, because a synthetic version of this board
+ * is not the same board: a first attempt packed each row right-to-left from
+ * the right edge, which left a free column at the far left that the real
+ * layout does not have - and the cable happily routed up it, proving nothing.
+ *
+ * What makes this board special is that it is FULL. Three rows of ~5.1in
+ * pedals on a 16in board leave 0.2in corridors, and a patch cable is about
+ * 0.24in thick, so no cable fits between the rows. The one cable that has to
+ * cross - from the far LEFT of the front row back to the far RIGHT of the
+ * middle row, because each row restarts at the right - used to come out as
+ * `fallback-invalid`: a straight diagonal through five pedal bodies.
+ */
+function makeOverfullBoard() {
+  const board: Board = {
+    ...makeBoard(),
+    id: 'board-full', widthInches: 32, depthInches: 16,
+    rails: [],
+  };
+  // [name, x, y, width, depth] - engine output for this board, in inches
+  const spec: Array<[string, number, number, number, number]> = [
+    ['PW-3',   28.850, 8.450, 3.150, 7.550],
+    ['CP-1X',  25.475, 10.900, 2.875, 5.075],
+    ['CS-3a',  22.075, 10.900, 2.875, 5.075],
+    ['CS-3b',  18.700, 10.900, 2.875, 5.075],
+    ['OC-5',   15.350, 10.900, 2.875, 5.075],
+    ['PS-6',   11.975, 10.900, 2.875, 5.075],
+    ['DS-1',    8.575, 10.900, 2.900, 5.100],
+    ['DS-1W',   5.200, 10.900, 2.875, 5.075],
+    ['HM-2W',   1.825, 10.900, 2.875, 5.075],
+    ['MT-2W',  25.375, 5.625, 2.875, 5.075],
+    ['FZ-1W',  22.000, 5.625, 2.875, 5.075],
+    ['NS-2',   18.600, 5.625, 2.900, 5.100],
+    ['EQ-200', 23.625, 0.000, 3.975, 5.425],
+    ['GE-7',   20.250, 0.000, 2.875, 5.075],
+    ['GEB-7',  16.875, 0.000, 2.875, 5.075],
+    ['DC-2W',  13.500, 0.000, 2.875, 5.075],
+    ['PH-3',   10.150, 0.000, 2.875, 5.075],
+    ['DD-7',    6.750, 0.000, 2.900, 5.100],
+    ['DM-2W',   3.375, 0.000, 2.875, 5.075],
+    ['IR-2',    0.000, 0.000, 2.875, 5.075],
+  ];
+  const pedalsById: Record<string, Pedal> = {};
+  const placed: PlacedPedal[] = [];
+  spec.forEach(([name, x, y, w, d], i) => {
+    const pedal = {
+      ...makePedal(`pedal-${name}`), name, widthInches: w, depthInches: d,
+    } as Pedal;
+    pedalsById[pedal.id] = pedal;
+    placed.push(makePlaced(name, pedal.id, x, y, i + 1));
+  });
+  return { board, pedalsById, placed };
+}
+
+describe('a full board routes the row-return cable around the outside', () => {
+  it('has no on-board corridor wide enough to route through', () => {
+    // The premise, asserted rather than assumed: if a corridor DID fit, the
+    // perimeter route below would be proving nothing.
+    const frontRowY = 10.9;
+    const middleRowBottom = 5.625 + 5.075;
+    const corridorPx = (frontRowY - middleRowBottom) * SCALE;
+    expect(corridorPx).toBeLessThan(OBSTACLE_MARGIN * 2);
+    // ...and the board is full front to back, so there is no spare band either
+    expect((frontRowY + 5.075) * SCALE).toBeGreaterThan((16 - 0.05) * SCALE);
+  });
+
+  it('routes far-left-of-a-row to far-right-of-the-next without crossing a pedal', () => {
+    const setup = makeOverfullBoard();
+    const obstacles = generateObstacles(setup.placed, setup.pedalsById, setup.board, SCALE);
+
+    // HM-2W ends the front row at the far left; MT-2W begins the middle row at
+    // the far right. This is the wrap, and it is the cable that used to fail.
+    const front = setup.placed.find((p) => p.id === 'HM-2W')!;
+    const middle = setup.placed.find((p) => p.id === 'MT-2W')!;
+
+    const from = getPedalJackPx(front, setup.pedalsById[front.pedalId], 'output', SCALE);
+    const to = getPedalJackPx(middle, setup.pedalsById[middle.pedalId], 'input', SCALE);
+
+    const result = routeCableWithObstacles(from, to, obstacles, front.id, middle.id);
+    const pathStr = result.path.map((p) => `(${p.x.toFixed(0)},${p.y.toFixed(0)})`).join(' → ');
+
+    expect(result.strategy, `expected a perimeter route, got: ${pathStr}`).toBe('perimeter');
+    expect(result.valid, `perimeter route reported invalid: ${pathStr}`).toBe(true);
+
+    // Independent of the validator: no sample point inside any pedal body
+    assertPathNeverEntersPedals(
+      result.path, obstacles.boxes,
+      obstacles.pedalIdToBox.get(front.id) ?? -1,
+      obstacles.pedalIdToBox.get(middle.id) ?? -1,
+      'perimeter route'
+    );
+
+    // It must actually LEAVE the board - that is the whole point of it, and a
+    // path that stayed inside would mean some on-board strategy had served it
+    const leaves = result.path.some(
+      (p) => p.x < 0 || p.y < 0 || p.x > 32 * SCALE || p.y > 16 * SCALE
+    );
+    expect(leaves, `perimeter route never left the board: ${pathStr}`).toBe(true);
+  });
+
+  it('is a LAST resort - an ordinary hop still routes on the board', () => {
+    // Perimeter sits below every on-board rung, so a cable that has a normal
+    // route must never be sent around the outside.
+    const setup = makeTwoRowSetup();
+    const p1 = setup.placed[0];
+    const p2 = setup.placed[1];
+    const from = getPedalJackPx(p1, setup.pedalsById[p1.pedalId], 'output', SCALE);
+    const to = getPedalJackPx(p2, setup.pedalsById[p2.pedalId], 'input', SCALE);
+    const obstacles = generateObstacles(setup.placed, setup.pedalsById, setup.board, SCALE);
+
+    const result = routeCableWithObstacles(from, to, obstacles, p1.id, p2.id);
+    expect(result.strategy).not.toBe('perimeter');
+    expect(result.valid).toBe(true);
+  });
+});
