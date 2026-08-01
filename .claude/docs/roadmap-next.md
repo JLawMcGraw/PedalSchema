@@ -8,10 +8,22 @@ it, so none of this has to be re-derived to decide whether it is worth doing.
 
 ---
 
-## P0 — Thirteen pedals are routed on invented jack data
+## P0 — Thirteen pedals are routed on invented jack data — DONE 2026-08-01
 
-*(Updated 2026-08-01: was 13 of 17 outstanding; the owner's four are now
-confirmed by inspection, leaving these 13.)*
+**Resolved by deletion, not research, once the data explained itself.** All 26
+signal rows were `input:right @50` / `output:left @50` - byte-for-byte what
+`findJack()` synthesises for a pedal with NO jack data. They were the fallback
+written into the database as fact, where it outranked the fallback it came
+from. Proven routing-neutral (118 lines of placements and cable paths across
+both boards and both loop settings, byte-identical) then deleted in migration
+20260801000004. Contract violations 13 -> 0.
+
+The canvas now shares the router's fallback via `jacksToRender()` and draws an
+ASSUMED jack hollow, so a guess does not look like a fact there either - which
+also fixed a pre-existing bug where a pedal with no jack data drew no jacks at
+all while its cables attached happily to the edges.
+
+Real layouts still arrive one at a time, by research or owner inspection.
 
 `node .claude/scripts/verify-pedal-jacks.js` reports **13 contract
 violations**: pedals carrying three jack rows each with no `jacks_source_url`.
@@ -74,6 +86,26 @@ will not show up in testing by accident - it needs its own test.
 
 Worth building in one step: total draw, per-output assignment against a supply
 model, and a warning when a single output is over its rating.
+
+---
+
+## P1.5 — The cost model and the drawn routing use different routers
+
+Found while verifying P0. On the 20-pedal board at its stored settings, the
+COST model scored one cable as `fallback-invalid` (a 100-point
+`routingFailures` penalty) while `deriveBoardState` - what the user actually
+sees - routed every cable successfully. `calculateRoutingCost` calls
+`routeCableWithObstacles` directly; the derived state goes through the lane
+router, which succeeded where the direct one failed.
+
+That means the optimizer scores layouts against a MORE PESSIMISTIC routing
+model than the one that draws the board, so it can be steered away from
+layouts that are actually fine, by a failure that never appears on screen.
+
+Phase 6 happened to align them for this cable (the perimeter route removed the
+penalty: routingFailures 100 -> 0, cableLength 107.68 -> 134.18). That is luck,
+not a fix. Worth making the two agree deliberately - one router, or an explicit
+reason why scoring should be stricter than drawing.
 
 ---
 

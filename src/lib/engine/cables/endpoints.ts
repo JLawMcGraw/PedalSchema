@@ -105,6 +105,34 @@ export function findJack(pedal: Pedal, jackType: 'input' | 'output' | 'send' | '
 }
 
 /**
+ * The jacks to DRAW for a pedal, and whether each one is real or assumed.
+ *
+ * The canvas used to render `pedal.jacks` directly, which meant a pedal with
+ * no researched jack data drew no jacks at all - while its cables attached
+ * perfectly happily to the right and left edges, because findJack() above
+ * synthesises them. The picture and the wiring disagreed, and the picture was
+ * the one that looked broken.
+ *
+ * So both now come from the same place. A pedal with no data gets the same
+ * input/output pair the router will use, flagged `assumed` so the canvas can
+ * draw it as a guess rather than as knowledge - which is the whole reason the
+ * jack provenance columns exist.
+ *
+ * Note what is NOT synthesised: power, send/return, expression. Nothing routes
+ * to them, and inventing a DC jack position is exactly the kind of confident
+ * fiction this is meant to replace.
+ */
+export function jacksToRender(
+  pedal: Pick<Pedal, 'id' | 'jacks'>
+): Array<PedalJack & { assumed?: boolean }> {
+  if (pedal.jacks?.length) return pedal.jacks;
+  return [
+    { ...findJack(pedal as Pedal, 'input'), assumed: true },
+    { ...findJack(pedal as Pedal, 'output'), assumed: true },
+  ];
+}
+
+/**
  * Calculate the position of a jack on a placed pedal, in INCHES.
  * Handles pedal rotation (jack sides rotate with the pedal).
  */

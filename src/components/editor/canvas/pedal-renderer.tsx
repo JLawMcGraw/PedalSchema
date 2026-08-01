@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { PlacedPedal, Pedal } from '@/types';
 import { getCategoryColor } from '@/lib/constants/pedal-categories';
 import { rotateSide, rotatedFootprint } from '@/lib/engine/geometry/rotation';
+import { jacksToRender } from '@/lib/engine/cables/endpoints';
 
 interface PedalRendererProps {
   placedPedal: PlacedPedal;
@@ -138,8 +139,8 @@ export function PedalRenderer({
         <rect x={x} y={y} width={width} height={height} fill="rgba(0,0,0,0.5)" rx={4} />
       )}
 
-      {/* Jack indicators */}
-      {pedal.jacks?.map((jack, index) => {
+      {/* Jack indicators. Assumed jacks are drawn hollow - see jacksToRender. */}
+      {jacksToRender(pedal).map((jack, index) => {
         let jx: number, jy: number;
         const jackRadius = 4;
 
@@ -185,15 +186,19 @@ export function PedalRenderer({
             ? '#8b5cf6'
             : '#6b7280';
 
+        // An assumed jack is drawn hollow, so a guess never looks like a
+        // researched fact. Same position and colour, so it still reads as the
+        // input or output it stands in for.
         return (
           <circle
             key={index}
             cx={jx}
             cy={jy}
             r={jackRadius}
-            fill={jackColor}
-            stroke="white"
-            strokeWidth={1}
+            fill={jack.assumed ? 'none' : jackColor}
+            stroke={jack.assumed ? jackColor : 'white'}
+            strokeWidth={jack.assumed ? 1.5 : 1}
+            strokeDasharray={jack.assumed ? '2 1.5' : undefined}
           />
         );
       })}
