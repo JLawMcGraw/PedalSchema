@@ -403,49 +403,61 @@ describe('one deep pedal does not collapse the board', () => {
       expect(p.x + d.widthInches).toBeLessThanOrEqual(b.widthInches + 0.01);
       expect(p.y + d.depthInches).toBeLessThanOrEqual(b.depthInches + 0.01);
     }
-    // NOT asserted here: zero overlaps. Dense boards still reach the
-    // overlapping fallback documented below. What this test pins is the row
-    // geometry - three bands instead of two, and nothing off the board.
+    // Overlaps are asserted separately, by the sweep below.
   });
+  /**
+   * The dense-board overlap, fixed by ORDERING (roadmap phase 5).
+   *
+   * p19 is 7.56in deep - deeper than any row band (bands come out ~5.43/5.08),
+   * so it cannot sit IN one and must straddle two, which needs a column with
+   * nothing above or below it. Placed in chain order it arrived LAST, found
+   * row1 already spanning x 2.17 to 32.0, and the fallback clamped it onto p9
+   * at (28.85, 0.00) - overlapping by 2.87 x 1.92in.
+   *
+   * Making the fallback return null would not have fixed that; it would have
+   * turned a wrong answer into no answer. Straddlers now claim their column
+   * before the run packs the rows.
+   */
+  const DENSE_BOARD = {
+    id: 'b', name: 'Classic Pro', widthInches: 32, depthInches: 16,
+    railWidthInches: 0.6, isSystem: true,
+  } as Board;
+
+  /** Overlapping pairs, as readable strings, for a given placement. */
+  function overlapsIn(
+    placements: ReturnType<typeof calculateGreedyPlacement>,
+    placed: PlacedPedal[],
+    byId: Record<string, Pedal>
+  ): string[] {
+    const boxes = placements.map((p) => {
+      const d = byId[placed.find((q) => q.id === p.id)!.pedalId];
+      return { id: p.id, x: p.x, y: p.y, w: d.widthInches, h: d.depthInches };
+    });
+    const found: string[] = [];
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i];
+        const c = boxes[j];
+        const ox = Math.min(a.x + a.w, c.x + c.w) - Math.max(a.x, c.x);
+        const oy = Math.min(a.y + a.h, c.y + c.h) - Math.max(a.y, c.y);
+        if (ox > 0.01 && oy > 0.01) {
+          found.push(`${a.id} overlaps ${c.id} by ${ox.toFixed(2)}x${oy.toFixed(2)}in`);
+        }
+      }
+    }
+    return found;
+  }
 
   /**
-   * KNOWN LIMITATION, not yet fixed. When chain-ordered placement runs out of
-   * room, calculateGreedyPlacement falls back to a path that places a pedal
-   * WITHOUT a collision check ("[GREEDY] Fallback placement - no valid spot"),
-   * stacking it on a neighbour. The collision guard in the optimizer rejects
-   * such candidates, so nothing broken reaches the board - but the user is
-   * told "could not fit" on arrangements that are geometrically fine
-   * (~68in of run needed across 96in of row).
+   * Nineteen compacts plus one 7.56in straddler, with the straddler at chain
+   * index `deepAt`. Deliberately the recorded repro's dimensions.
    */
-  it.skip('never returns a placement that overlaps, even on a dense board', () => {
-    // STILL FAILING, but the cause is now known, and it is NOT what the note
-    // here used to claim ("make the fallback collision-aware").
-    //
-    // Traced with DEBUG_PLACEMENT. Rows come out at y = 10.92 / 5.63 / 0.00.
-    // p19 is 7.56in deep - deeper than ANY band - so it can only sit
-    // straddling two of them, which needs a column with nothing above or below
-    // it. It is chain-LAST, so by the time it is placed row1 already spans
-    // x 2.17 to 32.0 and no such column is left. The fallback then clamps it
-    // on top of p9 at (28.85, 0.00), overlapping by 2.87 x 1.92in - exactly
-    // the recorded repro.
-    //
-    // Making the fallback return null instead would not fix this; it would
-    // only turn a wrong answer into no answer. The fix is ORDERING: a pedal
-    // deeper than the deepest row band has to be placed BEFORE the rows fill,
-    // at the end of the board its chain position calls for. Note the real
-    // 20-pedal board does NOT hit this, because there the 7.56in PW-3 is
-    // chain-FIRST and gets its column before anything else needs one.
-    //
-    // Un-skip when straddling pedals are placed ahead of the packed run.
-    const b = {
-      id: 'b', name: 'Classic Pro', widthInches: 32, depthInches: 16,
-      railWidthInches: 0.6, isSystem: true,
-    } as Board;
-    const spec = [
-      ...Array.from({ length: 18 }, () => [2.87, 5.08]),
+  function denseSet(deepAt: number) {
+    const spec: Array<[number, number]> = [
+      ...Array.from({ length: 18 }, () => [2.87, 5.08] as [number, number]),
       [3.98, 5.43],
-      [3.15, 7.56],
-    ] as Array<[number, number]>;
+    ];
+    spec.splice(deepAt, 0, [3.15, 7.56]);
     const byId: Record<string, Pedal> = {};
     const placed = spec.map(([w, d], i) => {
       const id = `p${i}`;
@@ -456,25 +468,81 @@ describe('one deep pedal does not collapse the board', () => {
         rotationDegrees: 0, chainPosition: i + 1, isInLoop: false,
       } as unknown as PlacedPedal;
     });
+    return { placed, byId, deepId: `p${deepAt}` };
+  }
 
-    const placements = calculateGreedyPlacement(placed, byId, b, undefined);
-    const boxes = placements.map((p) => {
-      const d = byId[placed.find((q) => q.id === p.id)!.pedalId];
-      return { id: p.id, x: p.x, y: p.y, w: d.widthInches, h: d.depthInches };
-    });
+  it('never returns a placement that overlaps, even on a dense board', () => {
+    const { placed, byId } = denseSet(19); // the recorded repro: chain-LAST
+    const placements = calculateGreedyPlacement(placed, byId, DENSE_BOARD, undefined);
+    expect(overlapsIn(placements, placed, byId)).toEqual([]);
+  });
 
-    const overlaps: string[] = [];
-    for (let i = 0; i < boxes.length; i++) {
-      for (let j = i + 1; j < boxes.length; j++) {
-        const a = boxes[i];
-        const c = boxes[j];
-        const ox = Math.min(a.x + a.w, c.x + c.w) - Math.max(a.x, c.x);
-        const oy = Math.min(a.y + a.h, c.y + c.h) - Math.max(a.y, c.y);
-        if (ox > 0.01 && oy > 0.01) {
-          overlaps.push(`${a.id} overlaps ${c.id} by ${ox.toFixed(2)}x${oy.toFixed(2)}in`);
+  /**
+   * The bug was never about the LAST position - it was that a straddler took
+   * whatever column was left over. The board only ever escaped when the deep
+   * pedal happened to be chain-FIRST. So sweep every position: one of these
+   * passing proves nothing, all twenty passing is the actual claim.
+   */
+  it('places the straddler cleanly from ANY chain position', () => {
+    const failures: string[] = [];
+    for (let deepAt = 0; deepAt < 20; deepAt++) {
+      const { placed, byId, deepId } = denseSet(deepAt);
+      const placements = calculateGreedyPlacement(placed, byId, DENSE_BOARD, undefined);
+
+      const bad = overlapsIn(placements, placed, byId);
+      if (bad.length) failures.push(`deepAt=${deepAt}: ${bad.join('; ')}`);
+
+      // ...and it must be ON the board, not merely un-overlapped
+      for (const p of placements) {
+        const d = byId[placed.find((q) => q.id === p.id)!.pedalId];
+        if (p.x < -0.01 || p.y < -0.01 ||
+            p.x + d.widthInches > DENSE_BOARD.widthInches + 0.01 ||
+            p.y + d.depthInches > DENSE_BOARD.depthInches + 0.01) {
+          failures.push(`deepAt=${deepAt}: ${p.id} off board at (${p.x.toFixed(2)}, ${p.y.toFixed(2)})`);
         }
       }
+
+      // Every pedal placed, exactly once
+      if (placements.length !== 20) failures.push(`deepAt=${deepAt}: placed ${placements.length}/20`);
+      if (!placements.find((p) => p.id === deepId)) failures.push(`deepAt=${deepAt}: straddler missing`);
     }
-    expect(overlaps).toEqual([]);
+    expect(failures).toEqual([]);
+  });
+
+  /**
+   * The straddler lands at the END OF THE BOARD its chain position calls for.
+   *
+   * These two cases are the ones that exist in the wild: the real 20-pedal
+   * board's 7.56in PW-3 is chain-FIRST, and the recorded repro had it
+   * chain-LAST. The run reads right-to-left, guitar side to amp side, so
+   * first belongs at the right and last at the left. Getting this wrong is
+   * what a naive "put it anywhere it fits" fix would do, and the cable would
+   * cross the whole board to reach it.
+   *
+   * Deliberately NOT asserted: that the straddler's position moves smoothly
+   * across the board as its chain index sweeps 0..19. It does not, and it is
+   * not promised to - straddler-first placement is a RETRY that only runs when
+   * the plain packing degrades (see calculateGreedyPlacement), so a mid-chain
+   * straddler on a board that packs fine keeps whatever the ordinary packer
+   * chose. An earlier version of this test asserted that smoothness and was
+   * measuring the retry's coverage rather than any property of the layout.
+   */
+  it('anchors the straddler to the end of the board its chain position calls for', () => {
+    const mid = DENSE_BOARD.widthInches / 2;
+
+    const first = denseSet(0);
+    const firstPlacements = calculateGreedyPlacement(first.placed, first.byId, DENSE_BOARD, undefined);
+    const firstX = firstPlacements.find((p) => p.id === first.deepId)!.x;
+    expect(firstX).toBeGreaterThan(mid);
+
+    const last = denseSet(19);
+    const lastPlacements = calculateGreedyPlacement(last.placed, last.byId, DENSE_BOARD, undefined);
+    const lastX = lastPlacements.find((p) => p.id === last.deepId)!.x;
+    expect(lastX).toBeLessThan(mid);
+
+    // The chain-last case is the recorded repro, so pin it exactly: it must
+    // sit past its predecessor, at the amp end, not stacked mid-board.
+    const prevX = lastPlacements.find((p) => p.id === 'p18')!.x;
+    expect(lastX).toBeLessThan(prevX);
   });
 });

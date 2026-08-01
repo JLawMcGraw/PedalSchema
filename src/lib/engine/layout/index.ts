@@ -269,6 +269,12 @@ export function calculateGreedyPlacement(
   }
 
   const rowYPositions = rows.map((r) => r.y);
+  /**
+   * The deepest band any row offers. A pedal deeper than this cannot sit IN a
+   * row at all - it must STRADDLE two, which needs a column with nothing above
+   * or below it. See the straddler handling in placePackedChain.
+   */
+  const maxBandHeight = rows.reduce((max, r) => Math.max(max, r.height), 0);
 
   const placements: PedalPlacement[] = [];
   const placedBoxes: PlacedBox[] = [];
@@ -281,6 +287,9 @@ export function calculateGreedyPlacement(
   // Set by placePackedChain when it has to fall back to order-relaxed or
   // anywhere-on-board placement - the signal to retry with less corridor
   let placementDegraded = false;
+  // When true, pedals too deep for any row band claim their column before the
+  // packed run. A RETRY ordering, not the default - see the loop at the end.
+  let straddleFirstPass = false;
 
   /**
    * Place a chain of pedals right-to-left as one packed run:
@@ -333,109 +342,246 @@ export function calculateGreedyPlacement(
     };
     const effWidth = (placed: PlacedPedal): number => dims(placed).width + 2 * padOf(placed);
 
-    const packedStartX = (startIdx: number, rowY: number): number => {
+    // `seq` is the run being packed, which is NOT always the whole chain: the
+    // straddler dry run below packs a subset, and indices must follow it.
+    const packedStartX = (seq: PlacedPedal[], startIdx: number, rowY: number): number => {
       let total = 0;
       let depthNeeded = 0;
-      for (let j = startIdx; j < chain.length; j++) {
-        total += effWidth(chain[j]) + (j > startIdx ? COLLISION_SPACING : 0);
-        depthNeeded = Math.max(depthNeeded, dims(chain[j]).depth);
+      for (let j = startIdx; j < seq.length; j++) {
+        total += effWidth(seq[j]) + (j > startIdx ? COLLISION_SPACING : 0);
+        depthNeeded = Math.max(depthNeeded, dims(seq[j]).depth);
       }
-      const firstWidth = effWidth(chain[startIdx]);
+      const firstWidth = effWidth(seq[startIdx]);
       const stripX = findStripStart(total, depthNeeded, rowY, placedBoxes, board, packMinX);
       if (stripX !== null) return stripX + total - firstWidth;
       return Math.min(board.widthInches - firstWidth, packMinX + total - firstWidth);
     };
 
-    let rowPos = 0;
-    let cursorX = packedStartX(0, rowYPositions[rowOrder[0]] ?? board.depthInches * 0.5);
+    /**
+     * One right-to-left packing pass over `seq`, rows tried in rowOrder.
+     *
+     * Extracted so it can be run TWICE: once as a dry run to discover where
+     * the chain's pedals actually land, then for real. Row capacity depends on
+     * real geometry - strip finding, cluster boxes, corridor padding - so a
+     * closed-form model of "which row does index i land in" drifts from the
+     * truth exactly when it matters. Measuring beats modelling.
+     *
+     * Pedals in `preSpots` already hold a column; the pass steps over them and
+     * carries the cursor past, so the rest of the run continues to their left.
+     */
+    const runPass = (seq: PlacedPedal[], preSpots: Set<string>): void => {
+      let rowPos = 0;
+      let cursorX = packedStartX(seq, 0, rowYPositions[rowOrder[0]] ?? board.depthInches * 0.5);
 
-    for (let idx = 0; idx < chain.length; idx++) {
-      const placed = chain[idx];
-      const { depth } = dims(placed);
-      const pad = padOf(placed);
-      const width = effWidth(placed); // padded footprint for hubs/cluster edges
+      for (let idx = 0; idx < seq.length; idx++) {
+        const placed = seq[idx];
+        // Already holds its column. Carry the cursor past it so the rest of
+        // the run continues to its left and chain order still reads
+        // right-to-left.
+        if (preSpots.has(placed.id)) {
+          cursorX = placements.find((p) => p.id === placed.id)!.x - COLLISION_SPACING;
+          continue;
+        }
+        const { depth } = dims(placed);
+        const pad = padOf(placed);
+        const width = effWidth(placed); // padded footprint for hubs/cluster edges
 
-      const rowY = rowYPositions[rowOrder[rowPos]] ?? board.depthInches * 0.5;
-      if (DEBUG_PLACEMENT) {
-        console.log(
-          `[ROW] chain${placed.chainPosition} w=${width.toFixed(2)} d=${depth.toFixed(2)} ` +
-          `try row${rowPos}(y=${rowY.toFixed(2)}) cursorX=${cursorX.toFixed(2)}`
-        );
-      }
-      let spot = findValidPositionInRowStartingFrom(
-        width, depth, placedBoxes, board, rowY,
-        packMinX, board.widthInches,
-        idx === 0 ? cursorX : cursorX - width,
-        'right-to-left',
-        false
-      );
-
-      if (!spot && rowPos < rowOrder.length - 1) {
-        if (DEBUG_PLACEMENT) console.log(`      row${rowPos} FULL -> advancing`);
-        rowPos++;
-        const nextRowY = rowYPositions[rowOrder[rowPos]] ?? board.depthInches * 0.5;
-        cursorX = packedStartX(idx, nextRowY);
-        spot = findValidPositionInRowStartingFrom(
-          width, depth, placedBoxes, board, nextRowY,
+        const rowY = rowYPositions[rowOrder[rowPos]] ?? board.depthInches * 0.5;
+        if (DEBUG_PLACEMENT) {
+          console.log(
+            `[ROW] chain${placed.chainPosition} w=${width.toFixed(2)} d=${depth.toFixed(2)} ` +
+            `try row${rowPos}(y=${rowY.toFixed(2)}) cursorX=${cursorX.toFixed(2)}`
+          );
+        }
+        let spot = findValidPositionInRowStartingFrom(
+          width, depth, placedBoxes, board, rowY,
           packMinX, board.widthInches,
-          cursorX,
+          idx === 0 ? cursorX : cursorX - width,
           'right-to-left',
-          true // packed spot may be held by a cluster - slide right of it
+          false
         );
-        // packedStartX aims at where the WHOLE remaining run would start. When
-        // the run is wider than the board that lands near the right edge, and
-        // if something straddles there (a deep pedal occupying two row bands)
-        // the slide-right retry has nowhere to go and the row gets abandoned -
-        // the chain then skips a row entirely and comes back for it later,
-        // which is what made a 3-row board read out of order. Rescan the row
-        // from its right edge before giving up on it.
-        if (!spot) {
-          cursorX = board.widthInches - width;
+
+        if (!spot && rowPos < rowOrder.length - 1) {
+          if (DEBUG_PLACEMENT) console.log(`      row${rowPos} FULL -> advancing`);
+          rowPos++;
+          const nextRowY = rowYPositions[rowOrder[rowPos]] ?? board.depthInches * 0.5;
+          cursorX = packedStartX(seq, idx, nextRowY);
           spot = findValidPositionInRowStartingFrom(
             width, depth, placedBoxes, board, nextRowY,
             packMinX, board.widthInches,
             cursorX,
             'right-to-left',
-            true
+            true // packed spot may be held by a cluster - slide right of it
+          );
+          // packedStartX aims at where the WHOLE remaining run would start. When
+          // the run is wider than the board that lands near the right edge, and
+          // if something straddles there (a deep pedal occupying two row bands)
+          // the slide-right retry has nowhere to go and the row gets abandoned -
+          // the chain then skips a row entirely and comes back for it later,
+          // which is what made a 3-row board read out of order. Rescan the row
+          // from its right edge before giving up on it.
+          if (!spot) {
+            cursorX = board.widthInches - width;
+            spot = findValidPositionInRowStartingFrom(
+              width, depth, placedBoxes, board, nextRowY,
+              packMinX, board.widthInches,
+              cursorX,
+              'right-to-left',
+              true
+            );
+          }
+        }
+
+        if (!spot) {
+          placementDegraded = true;
+          if (DEBUG_PLACEMENT) console.log(`      advance FAILED too -> order-relax scan`);
+          console.warn(`[GREEDY] Order relaxed for ${placed.id} - no space without breaking chain order`);
+          for (let tryPos = rowPos; tryPos < rowOrder.length && !spot; tryPos++) {
+            const tryRowY = rowYPositions[rowOrder[tryPos]] ?? board.depthInches * 0.5;
+            spot = findValidPositionInRowStartingFrom(
+              width, depth, placedBoxes, board, tryRowY,
+              packMinX, board.widthInches,
+              packedStartX(seq, idx, tryRowY),
+              'right-to-left',
+              true
+            );
+          }
+        }
+
+        if (!spot) {
+          placementDegraded = true;
+          console.warn(`[GREEDY] Fallback placement for ${placed.id} - no valid spot`);
+          spot = findValidPositionInZone(
+            width, depth, placedBoxes, board, rowYPositions,
+            0, board.widthInches,
+            'right-to-left'
           );
         }
-      }
 
-      if (!spot) {
-        placementDegraded = true;
-        if (DEBUG_PLACEMENT) console.log(`      advance FAILED too -> order-relax scan`);
-        console.warn(`[GREEDY] Order relaxed for ${placed.id} - no space without breaking chain order`);
-        for (let tryPos = rowPos; tryPos < rowOrder.length && !spot; tryPos++) {
-          const tryRowY = rowYPositions[rowOrder[tryPos]] ?? board.depthInches * 0.5;
-          spot = findValidPositionInRowStartingFrom(
-            width, depth, placedBoxes, board, tryRowY,
-            packMinX, board.widthInches,
-            packedStartX(idx, tryRowY),
-            'right-to-left',
-            true
-          );
+        if (DEBUG_PLACEMENT) {
+          console.log(`   -> chain${placed.chainPosition} PLACED at (${(spot.x + pad).toFixed(2)}, ${spot.y.toFixed(2)}) row${rowPos}`);
         }
+        // The recorded position excludes the pad; the collision box keeps it
+        // so neighbors leave the corridor free
+        placements.push({ id: placed.id, x: spot.x + pad, y: spot.y });
+        placedBoxes.push({ x: spot.x, y: spot.y, width, height: depth });
+        cursorX = spot.x - COLLISION_SPACING;
       }
 
-      if (!spot) {
-        placementDegraded = true;
-        console.warn(`[GREEDY] Fallback placement for ${placed.id} - no valid spot`);
-        spot = findValidPositionInZone(
-          width, depth, placedBoxes, board, rowYPositions,
-          0, board.widthInches,
-          'right-to-left'
+    };
+
+    /**
+     * STRADDLERS GO FIRST.
+     *
+     * A pedal deeper than the deepest row band cannot sit IN a band at all -
+     * it has to straddle two, which needs a column with nothing above or below
+     * it. Placed in chain order it arrives at a row that is already full, the
+     * order-relax scan finds nothing, and the fallback stacks it on a
+     * neighbour: the recorded 20-pedal repro put a 7.56in pedal on top of its
+     * neighbour, overlapping by 2.87 x 1.92in.
+     *
+     * The fallback is not what is wrong - making it return null would turn a
+     * wrong answer into no answer. The ordering is. So claim the column up
+     * front and let the packed run flow around it. A board whose deep pedal
+     * happens to be chain-FIRST already worked precisely because it took its
+     * column before anything competed for one; this gives every chain position
+     * that.
+     *
+     * WHERE to claim is the whole difficulty, and it is why this dry-runs the
+     * chain first. Two closed-form models were tried and both broke:
+     *   - a single-row model gives every pedal past the first row's capacity a
+     *     negative x, so they all clamp to 0 - right for the chain-LAST pedal,
+     *     wrong for every other late one;
+     *   - a row-wrapping model fixes the middle but inverts the last few,
+     *     because a straddler steals a slot from the row it overhangs INTO,
+     *     which shifts where the run wraps - the thing the model was
+     *     predicting.
+     * So place it beside the chain neighbour whose real position we measured.
+     */
+    const straddlerIds = new Set(
+      chain.filter((p) => dims(p).depth > maxBandHeight + 1e-6).map((p) => p.id)
+    );
+    const preplaced = new Set<string>();
+
+    if (straddleFirstPass && straddlerIds.size > 0 && straddlerIds.size < chain.length) {
+      // --- Dry run: where does the chain land with the straddlers absent? ---
+      const placeMark = placements.length;
+      const boxMark = placedBoxes.length;
+      const degradedBefore = placementDegraded;
+      const warn = console.warn;
+      console.warn = () => {}; // a dry run must not narrate
+      try {
+        runPass(chain.filter((p) => !straddlerIds.has(p.id)), new Set());
+      } finally {
+        console.warn = warn;
+      }
+      const dry = new Map(placements.slice(placeMark).map((p) => [p.id, { x: p.x, y: p.y }]));
+      placements.length = placeMark;
+      placedBoxes.length = boxMark;
+      placementDegraded = degradedBefore;
+
+      // --- Claim each straddler's column beside its measured neighbour ------
+      for (let idx = 0; idx < chain.length; idx++) {
+        const placed = chain[idx];
+        if (!straddlerIds.has(placed.id)) continue;
+        const { depth } = dims(placed);
+        const pad = padOf(placed);
+        const width = effWidth(placed);
+
+        // Nearest earlier chain neighbour that the dry run positioned. Its x
+        // is where the run had got to; the straddler belongs just left of it.
+        let anchor: { x: number; y: number } | undefined;
+        for (let j = idx - 1; j >= 0 && !anchor; j--) anchor = dry.get(chain[j].id);
+        const anchorX = anchor
+          ? anchor.x - COLLISION_SPACING - width
+          : packedStartX(chain, 0, rowYPositions[rowOrder[0]] ?? board.depthInches * 0.5);
+
+        /*
+         * Align it to a board EDGE - never centre it on a band.
+         *
+         * Centring looks tidier and is much worse: a 9.06in pedal centred on a
+         * 16in board spans y 3.5 to 12.6, leaving a 3.5in sliver above and a
+         * 3.4in sliver below, both too shallow for anything. Two such pedals
+         * chopped every row into unusable segments and drove two compacts onto
+         * exactly the same spot. Edge-aligned, the overhang eats into ONE
+         * neighbouring band and the rest of the board stays whole.
+         *
+         * Which edge follows the band the chain wants: front half of the board
+         * means front-aligned - where the real board's 7.56in PW-3 sits, and
+         * where a pedal you step on belongs - back half means back-aligned.
+         */
+        const bandY = anchor
+          ? rowYPositions.reduce((best, y) => (Math.abs(y - anchor!.y) < Math.abs(best - anchor!.y) ? y : best), rowYPositions[0])
+          : (rowYPositions[rowOrder[0]] ?? board.depthInches * 0.5);
+        const bandH = rows.find((r) => Math.abs(r.y - bandY) < 1e-6)?.height ?? maxBandHeight;
+        const straddleY = bandY + bandH / 2 > board.depthInches / 2
+          ? Math.max(0, board.depthInches - depth)
+          : 0;
+
+        const spot = findValidPositionInRowStartingFrom(
+          width, depth, placedBoxes, board, straddleY,
+          packMinX, board.widthInches,
+          anchorX,
+          'right-to-left',
+          true
         );
-      }
+        // No spot even on a near-empty board means the board genuinely cannot
+        // host it. Leave it to the main pass, which degrades and reports.
+        if (!spot) continue;
 
-      if (DEBUG_PLACEMENT) {
-        console.log(`   -> chain${placed.chainPosition} PLACED at (${(spot.x + pad).toFixed(2)}, ${spot.y.toFixed(2)}) row${rowPos}`);
+        if (DEBUG_PLACEMENT) {
+          console.log(
+            `[STRADDLE] chain${placed.chainPosition} d=${depth.toFixed(2)} > band ${maxBandHeight.toFixed(2)} ` +
+            `-> claimed (${(spot.x + pad).toFixed(2)}, ${spot.y.toFixed(2)}) anchored at x=${anchorX.toFixed(2)}`
+          );
+        }
+        placements.push({ id: placed.id, x: spot.x + pad, y: spot.y });
+        placedBoxes.push({ x: spot.x, y: spot.y, width, height: depth });
+        preplaced.add(placed.id);
       }
-      // The recorded position excludes the pad; the collision box keeps it
-      // so neighbors leave the corridor free
-      placements.push({ id: placed.id, x: spot.x + pad, y: spot.y });
-      placedBoxes.push({ x: spot.x, y: spot.y, width, height: depth });
-      cursorX = spot.x - COLLISION_SPACING;
     }
+
+    runPass(chain, preplaced);
   };
 
   /** Rows ordered by pedal-center proximity to an anchor Y */
@@ -538,16 +684,52 @@ export function calculateGreedyPlacement(
   }
   };
 
-  for (let tier = 0; tier < CLEARANCE_TIERS.length; tier++) {
+  /**
+   * Straddler-first is a RETRY, not the default order, and that distinction is
+   * the whole design.
+   *
+   * Claiming a deep pedal's column up front rescues the case it was built for
+   * (a straddler late in the chain, arriving at rows that are already full).
+   * But on a board that was packing fine it FRAGMENTS the rows: measured over
+   * 1777 random dense boards, making it unconditional fixed 165 and broke 146
+   * - a wash bought with churn. The worst were multi-straddler boards, where
+   * two claimed mid-board columns chopped every row into unusable segments and
+   * two compacts ended up exactly on top of each other.
+   *
+   * So try the plain order first and keep it whenever it does not degrade,
+   * which leaves every already-working board bit-for-bit unchanged. Only a run
+   * that had to relax chain order or reach for the no-collision-check fallback
+   * pays for the retry.
+   */
+  const hasStraddler = placedPedals.some((p) => dims(p).depth > maxBandHeight + 1e-6);
+  const orderings = hasStraddler ? [false, true] : [false];
+
+  let settled = false;
+  for (let tier = 0; tier < CLEARANCE_TIERS.length && !settled; tier++) {
     CLUSTER_CABLE_CLEARANCE = CLEARANCE_TIERS[tier];
+    for (const straddlersFirst of orderings) {
+      straddleFirstPass = straddlersFirst;
+      placementDegraded = false;
+      placements.length = 0;
+      placedBoxes.length = 0;
+      attemptPlacement();
+      if (!placementDegraded) { settled = true; break; }
+    }
+    if (!settled && tier < CLEARANCE_TIERS.length - 1 && DEBUG_PLACEMENT) {
+      console.log(`[GREEDY] Placement degraded at clearance ${CLUSTER_CABLE_CLEARANCE}, retrying tighter`);
+    }
+  }
+
+  // Nothing worked at any clearance or ordering. Return the plain run at the
+  // tightest clearance - exactly what this returned before straddler-first
+  // existed, so a board that was already unsatisfiable is not ALSO changed.
+  if (!settled) {
+    CLUSTER_CABLE_CLEARANCE = CLEARANCE_TIERS[CLEARANCE_TIERS.length - 1];
+    straddleFirstPass = false;
     placementDegraded = false;
     placements.length = 0;
     placedBoxes.length = 0;
     attemptPlacement();
-    if (!placementDegraded) break;
-    if (tier < CLEARANCE_TIERS.length - 1 && DEBUG_PLACEMENT) {
-      console.log(`[GREEDY] Placement degraded at clearance ${CLUSTER_CABLE_CLEARANCE}, retrying tighter`);
-    }
   }
 
   return placements;
