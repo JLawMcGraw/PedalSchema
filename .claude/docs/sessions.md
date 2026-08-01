@@ -105,6 +105,41 @@ the phase 6 session below, which retracts it.**
 
 ---
 
+## Owner's pedals added (same session, after the roadmap)
+
+Catalogue 63 -> 67: PastFX Chorus Ensemble Deluxe, Strymon Flint V2, Way Huge
+Smalls Aqua-Puss (WM71) and Conspiracy Theory (WM20). Dimensions sourced, with
+the URL recorded in `notes` - the table has provenance columns for images and
+jacks but none for measurements.
+
+**Two things worth carrying forward:**
+
+1. **Ask the owner.** The jack layouts could not be sourced from documents -
+   PastFX blocks automated fetching (HTTP 425) and the Way Huge / Strymon
+   manuals are image-only with subsetted fonts. The owner answered all four in
+   one message. The provenance contract only anticipated documents, so
+   `jacks_source_url` now also accepts a token, `owner-inspection` (migration
+   20260801000003). Direct inspection is BETTER than a manual: no revision
+   mismatch, and immune to the mirroring trap. 17 outstanding -> 13.
+
+2. **A claim in the rotation rework was wrong, and the new pedals disprove it.**
+   "Makers put jacks on top precisely when a pedal is wide enough to have room
+   there, so 'has top jacks' and 'wider than a compact' are nearly the same
+   statement." The Way Huge Smalls are 2.4in wide - narrower than a BOSS
+   compact - with both signal jacks on top, and would have passed even the old
+   3.5in veto. The zero-rotatable-pedals figure was an artefact of a BOSS-heavy
+   catalogue, not a law about pedals. Corrected in the code comment and memory.
+   Removing the veto was still right, on the foot-access argument alone - the
+   one that was always doing the work.
+
+Rotation candidates 8 -> 11, eligible 7 -> 10, only the two 6.5in Strymons
+locked by default. Current draw rounds UP, never down (a 110-130mA range
+recorded as 130; 18.5mA into an integer column as 19) - a power budget that
+rounds the flattering way calls an inadequate supply adequate.
+
+Next steps are in `.claude/docs/roadmap-next.md`, ordered by what it costs to
+be wrong, each item quoted with the measurement behind it.
+
 ## Phase 6 + the dense-board "residual" (same session)
 
 ### Phase 6: the unroutable cable - FIXED
