@@ -36,11 +36,19 @@ const camelPedal = (p) => ({
     .select('id,name,use_effects_loop,use_4_cable_method,modulation_in_loop,board_id');
   die('configurations', cErr);
 
-  const { data: boards, error: bErr } = await sb.from('boards').select('*');
+  // Rails live in board_rails, NOT on boards. Reading `b.rails` gave undefined,
+  // so every offline replay ran on a RAILLESS board - which derives rows at
+  // slightly different y and scores row alignment quite differently. Comparisons
+  // taken with this harness were self-consistent, but they were not the app.
+  const { data: boards, error: bErr } = await sb.from('boards').select('*, board_rails(*)');
   die('boards', bErr);
   const boardById = Object.fromEntries(boards.map((b) => [b.id, {
     id: b.id, name: b.name, widthInches: b.width_inches, depthInches: b.depth_inches,
-    rails: b.rails, manufacturer: b.manufacturer,
+    manufacturer: b.manufacturer,
+    rails: (b.board_rails || [])
+      .map((r) => ({ id: r.id, boardId: r.board_id,
+        positionFromBackInches: r.position_from_back_inches, sortOrder: r.sort_order }))
+      .sort((a, b2) => a.sortOrder - b2.sortOrder),
   }]));
 
   const { data: pedals, error: pErr } = await sb.from('pedals').select('*, pedal_jacks(*)');

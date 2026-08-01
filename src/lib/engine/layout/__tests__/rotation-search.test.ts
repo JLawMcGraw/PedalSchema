@@ -63,14 +63,19 @@ function withCompactTopJackPedal(set: PedalSet): PedalSet {
  *
  * This is the shape that does pay, and it is the real one: a top-jack pedal
  * added mid-chain to a small board. Turning it swaps a 6.5 x 5.1in footprint
- * to 5.1 x 6.5in, which fits the rows differently and shortens the run
- * dramatically - 134.17 at rest against 51.61 turned.
+ * to 5.1 x 6.5in, which fits the rows differently and shortens the run -
+ * 112.87 at rest against 87.75 turned.
+ *
+ * The numbers here moved once already, when the row-alignment penalty was
+ * fixed to use the placer's own rows. expectRealTemptation() caught that: the
+ * cases went vacuous rather than silently passing, which is the whole reason
+ * it exists.
  */
 function withTopJackPedal(
   size: { widthInches: number; depthInches: number },
-  chainPosition = 3
+  chainPosition = 5
 ): { placed: PlacedPedal[]; pedalsById: Record<string, Pedal>; id: string } {
-  const base = makePedalSet('trio');
+  const base = makePedalSet('seven');
   const extra = {
     id: 'topjack', name: 'TopJack', manufacturer: 'Strymon', category: 'reverb',
     heightInches: 1.6, voltage: 9, currentMa: 300, preferredLocation: 'front_of_amp',

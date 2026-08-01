@@ -24,10 +24,16 @@ self.onmessage = (event: MessageEvent<OptimizeRequest>) => {
   } catch (error) {
     // A worker that dies silently leaves the button spinning forever, so a
     // failure has to come back as a message like any other result.
+    // Include the STACK. A worker failure arrives on the main thread as a
+    // bare string, and "window is not defined" with no origin is not
+    // actionable - the visible stack points at the onmessage handler that
+    // rebuilt the Error, which is never where the fault is.
     const response: OptimizeResponse = {
       requestId,
       ok: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: error instanceof Error
+        ? `${error.message}\n${error.stack ?? '(no stack)'}`
+        : String(error),
     };
     self.postMessage(response);
   }

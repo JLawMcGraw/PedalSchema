@@ -21,6 +21,7 @@ import {
   dist,
 } from '../pathfinding';
 import { generateObstacles } from '../obstacles';
+import { deriveRowBands } from './rows';
 import { routeCableWithObstacles } from '../cables/routing-strategies';
 import {
   deriveSignalTopology,
@@ -238,7 +239,7 @@ export function calculateRoutingCost(
   const crossingPenalty = crossings.length * CROSSING_PENALTY_INCHES;
   const spacingPenalty = calculateSpacingPenalty(boxes);
   const signalFlowPenalty = calculateSignalFlowPenalty(topology, placedById, pedalsById);
-  const rowAlignmentPenalty = calculateRowAlignmentPenalty(placements, board);
+  const rowAlignmentPenalty = calculateRowAlignmentPenalty(placements, placedPedals, pedalsById, board);
 
   // One list, in COST_DIMENSIONS order. totalScore is its sum - deriving both
   // from here is what stops a shown rationale from describing a different
@@ -342,19 +343,26 @@ function calculateSignalFlowPenalty(
 }
 
 /**
- * Calculate penalty for pedals not aligned to standard row positions.
+ * Penalty for pedals that are not sitting on a row.
+ *
+ * Rows come from deriveRowBands - the SAME function the placer uses. This used
+ * to treat every rail as a row instead, which is the "rails are not rows"
+ * mistake the placer was fixed for years ago, and it meant the optimizer
+ * scored its own placer's output as misaligned: on a Classic Jr (rails at 0,
+ * 3.1, 6.2, 9.3) the placer puts a row at y=7.3, and this charged it 1.1in for
+ * not being on rail 6.2. A candidate with a shorter cable run lost on row
+ * alignment and Optimize did nothing at all.
  */
 function calculateRowAlignmentPenalty(
   placements: PedalPlacement[],
+  placedPedals: PlacedPedal[],
+  pedalsById: Record<string, Pedal>,
   board: Board
 ): number {
+  const rowYPositions = deriveRowBands(placedPedals, pedalsById, board).map((r) => r.y);
+  if (rowYPositions.length === 0) return 0;
+
   let penalty = 0;
-
-  const rails = [...(board.rails || [])].sort((a, b) => b.positionFromBackInches - a.positionFromBackInches);
-  const rowYPositions = rails.length > 0
-    ? rails.map(r => r.positionFromBackInches)
-    : [board.depthInches * 0.55, board.depthInches * 0.05];
-
   for (const placement of placements) {
     let minDistance = Infinity;
     for (const rowY of rowYPositions) {
@@ -364,7 +372,6 @@ function calculateRowAlignmentPenalty(
       penalty += ROW_MISALIGNMENT_PENALTY_INCHES * minDistance;
     }
   }
-
   return penalty;
 }
 

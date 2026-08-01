@@ -37,10 +37,13 @@ const PEDALS = [
     name: 'Chorus Ensemble Deluxe',
     manufacturer: 'PastFX',
     category: 'modulation',
-    // 1590BB enclosure, 120 x 94 x 50 mm. The long axis of a 1590BB runs
-    // front-to-back on a board, so 120mm is DEPTH and 94mm is WIDTH.
-    width_inches: inches(94),
-    depth_inches: inches(120),
+    // 1590BB enclosure, 120 x 94 x 50 mm, mounted LANDSCAPE: 120mm across the
+    // board, 94mm front-to-back. Corrected by the owner from their own unit -
+    // the first entry assumed the usual portrait 1590BB (long axis front to
+    // back) and said so, because no photo confirmed it. A CE-1 clone is a wide
+    // box, which is exactly the case the assumption got wrong.
+    width_inches: inches(120),
+    depth_inches: inches(94),
     height_inches: inches(50),
     voltage: 9,
     // Published as a 110-130mA range; the high end is recorded because a
@@ -52,9 +55,10 @@ const PEDALS = [
       'CE-1 clone (MN3002 BBD), mono + stereo outputs. Dimensions: 1590BB ' +
       'enclosure, 120 x 94 x 50mm, per https://www.pastfx.com/index.php/effects/' +
       'chorus-ensembles/chorus-ensemble-deluxe. Current draw published as a ' +
-      '110-130mA range; the 130 high end is recorded. Enclosure ORIENTATION ' +
-      '(120mm as depth, 94mm as width) follows standard 1590BB pedal layout ' +
-      'and has not been confirmed against a photo of this pedal.',
+      '110-130mA range; the 130 high end is recorded. Enclosure orientation ' +
+      'is LANDSCAPE (120mm wide, 94mm deep), confirmed by the owner against ' +
+      'their own unit - a first pass assumed the usual portrait 1590BB and ' +
+      'flagged it as unconfirmed.',
   },
   {
     name: 'Flint',
@@ -125,11 +129,17 @@ const PEDALS = [
       .maybeSingle();
     if (findErr) { console.error('lookup failed:', findErr.message); process.exit(1); }
 
+    // Jack PROVENANCE is not this script's business. It sets 'unknown' on a
+    // fresh insert - accurate, since a new entry has no jack rows - but must
+    // never touch it on update, or re-running to correct a DIMENSION silently
+    // demotes a layout that has since been researched. It did exactly that
+    // once: a size fix reset the PastFX to 'unknown' while its owner-confirmed
+    // jack rows were still in place, leaving the two contradicting each other.
     const row = {
       ...p,
       is_system: true,
-      jacks_confidence: 'unknown',
       updated_at: new Date().toISOString(),
+      ...(existing ? {} : { jacks_confidence: 'unknown' }),
     };
 
     const label = `${p.manufacturer} ${p.name}`.padEnd(34);
