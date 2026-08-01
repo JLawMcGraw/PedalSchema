@@ -100,16 +100,76 @@ the amp end (the two cases that exist in the wild).
   which is what exposed the 165/146 churn a net figure had hidden.
 
 ### Residual, deliberately not fixed
-231 of 1777 random dense boards still overlap, mostly compact-on-compact. That
-is a separate pre-existing weakness in the dense-board fallback, not straddler
-ordering. Worth its own session; the repro harness is
-`.claude/scripts/dump-configs-offline.js` plus a throwaway vitest sweep.
+231 of 1777 random dense boards still overlap. **This figure was wrong - see
+the phase 6 session below, which retracts it.**
+
+---
+
+## Phase 6 + the dense-board "residual" (same session)
+
+### Phase 6: the unroutable cable - FIXED
+`HM-2W -> MT-2W` on the 20-pedal board, only with the amp effects loop on. It
+is the row-WRAP cable: every row runs right-to-left, so the hop from the far
+left of one row to the far right of the next crosses the whole board. It came
+out `fallback-invalid`, drawn as a diagonal through five pedal bodies.
+
+**The router was right to refuse.** Three rows of ~5.1in pedals on a 16in
+board leave 0.2in corridors, and a patch cable is ~0.24in thick:
+
+    rows (px): 0..217 | 225..428 | 436..639   on a 640px board
+    corridors: 8px and 8px
+    OBSTACLE_MARGIN is 8px per side -> a route needs >16px
+    the `channel` strategy needs gap > 16px; A*'s blocked cells meet exactly
+
+So it is not a routing bug, it is a FULL BOARD - and the run people actually
+make there goes around the edge or under. New `perimeter` strategy
+(`routeAroundBoard`) walks the ring outside the board both ways and takes the
+shorter clear one. It sits LAST in the cascade, so an ordinary cable never
+takes it. PERIMETER_OFFSET (24px) must stay inside the canvas padding (80px)
+or the route is drawn outside the viewBox.
+
+Verified across all 24 flag combinations on both real boards: 0 invalid, 0
+cable-through-body, `perimeter` used exactly once. Path also checked by hand,
+segment by segment, against all 20 pedal boxes.
+
+### The "231 dense boards overlap" residual - RETRACTED
+It was mostly my measurement, not a defect:
+1. The generator allowed 72% area fill. Rectangles do not pack to 72% with
+   mixed depths. An independent shelf packer - sorting by decreasing depth,
+   ignoring chain order entirely - also failed on **214 of the 231**. The
+   other 17 fit only if you discard signal order, which is not on offer.
+2. It measured `calculateGreedyPlacement`, which really can emit overlaps (its
+   last resort clamps a pedal on-board). But that is not the app's answer:
+   across all 231, `calculateOptimalLayoutJoint` set `noLegalCandidate` and
+   returned the caller's positions UNTOUCHED. The overlap I measured was my
+   harness stacking every pedal at (0,0).
+
+New permanent test `layout/__tests__/placement-property.test.ts`: over 700
+random boards, restricted to ones a reference packer proves are fittable, a
+legal layout in is always a legal layout out - 0 overlapping, 0 off-board.
+
+### Mutation-tested the collision guards instead of assuming coverage
+    early-return guard disabled -> 5 tests fail (2 before this session)
+    evaluate guard disabled     -> 1 test fails
+    baseline guard disabled     -> NOTHING failed
+
+The gap led to the better finding: **that guard cannot fire.** Overlapping
+pedals make their cables unroutable and the cost punishes that far beyond what
+tight packing saves - a 0.02in overlap still scores ~4x worse than a spaced
+layout. Unreachable, not unlucky. That is a property of the COST function, so
+the guard stays; the new test pins the precondition and fails the day the
+guard becomes load-bearing. Its comment now says this instead of "no input has
+yet been found".
 
 ### Next Tasks
-- [ ] Phase 6: the one unroutable pedal-to-pedal cable on the 20-pedal board
-- [ ] Dense-board overlap residual (231/1777) - the non-straddler class
 - [ ] 13 non-BOSS pedals still carry unattributed jack rows (makers do not
       publish placement). Rotation stays dark for them until sourced.
+- [ ] Lane violations on the 20-pedal board with the loop on: two v-runs 1-2px
+      apart sharing 150px+. Cosmetic (cables readable but visually merged),
+      found during phase 6, not chased.
+- [ ] `calculateGreedyPlacement` returns overlapping positions rather than
+      signalling failure. Harmless today because every caller re-checks, but
+      the contract is muddy.
 
 ---
 
