@@ -48,18 +48,19 @@ const VALID_TYPES = new Set([
  *    "DS-1WDistortion". Getting this wrong writes one pedal's jack layout onto
  *    another's.
  *
- * The tell is what follows the model number: a tagline starts a word
- * (uppercase then lowercase, "Octave"), while a model suffix does not
- * ("W", "WDistortion"), and a longer model number continues with a digit
- * ("IR-2" vs "IR-200Amp & IR Cabinet").
+ * The tell is what follows the model number. Only two things continue a MODEL:
+ * a digit ("IR-2" vs "IR-200Amp & IR Cabinet") and the Waza "W". Anything else
+ * is the start of a tagline - and it is not always Capitalised-then-lowercase,
+ * because "CH-1SUPER Chorus" exists. Testing for a tagline shape rather than
+ * excluding the two model shapes is what dropped the CH-1 on the first pass.
  */
 function isSamePedal(entryName, rowName) {
   if (rowName === entryName) return true;
   if (!rowName.startsWith(entryName)) return false;
   const rest = rowName.slice(entryName.length);
   if (/^[0-9]/.test(rest)) return false; // longer model number
-  if (/^W(?![a-z])/.test(rest)) return false; // Waza Craft variant
-  return /^[A-Z][a-z]/.test(rest) || /^[^A-Za-z0-9]/.test(rest); // tagline
+  if (/^W(?![a-z])/.test(rest)) return false; // Waza Craft variant - a different pedal
+  return true; // tagline
 }
 
 /** Reject anything the schema or the contract would not accept, before touching the DB. */
