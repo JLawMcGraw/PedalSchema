@@ -58,9 +58,56 @@ improved the score, so "it refused to rotate" proved nothing. The
 assert-the-temptation-is-real line failed and exposed it. Rewritten to use the
 EQ-200 with only its CATEGORY changed, so foot-sweptness is the single variable.
 
+## Phase 5 - straddling pedals (same session, after the rotation work)
+
+The dense-board overlap is fixed. `it.skip` is gone; 220 tests pass, nothing
+skipped.
+
+**The fix**: a pedal deeper than the deepest row band claims its column BEFORE
+the packed run, so it is not left hunting for a free column after the rows
+fill. `maxBandHeight` moved up to row scope; `placePackedChain`'s loop is
+extracted as `runPass(seq, preSpots)` so it can be run twice.
+
+**Straddler-first is a RETRY, gated on `placementDegraded` - do not promote it
+to the default.** Measured over 1777 random dense boards: unconditional was
+165 fixed / 146 BROKEN, because claiming a column up front fragments rows that
+were packing fine (worst case: two straddlers chopped every row into unusable
+segments and drove two compacts onto the same spot). Gated, the same sweep is
+9 fixed / 0 broken and every already-working board is bit-for-bit unchanged.
+
+**Two things measurement corrected, both of which looked right on paper:**
+1. WHERE to claim needs the chain DRY RUN, not a formula. A single-row model
+   clamps every late pedal to x=0; a row-wrapping model inverts the last few,
+   because a straddler steals a slot from the row it overhangs into - the very
+   thing the model was predicting. Dry-run the chain without straddlers and
+   anchor to where the real neighbour landed.
+2. Straddlers align to a board EDGE, never centre on a band. A 9.06in pedal
+   centred on a 16in board leaves 3.5in above and 3.4in below, both too
+   shallow for anything.
+
+**A test that asserted more than the design promises.** "The straddler advances
+along the run as its chain position advances" passed while straddler-first was
+unconditional, then failed once it became a retry - it was measuring the
+retry's coverage, not a layout property. Replaced with the claim that is both
+true and worth pinning: chain-FIRST anchors to the guitar end, chain-LAST to
+the amp end (the two cases that exist in the wild).
+
+### Verification
+- 220 tests, config matrix 66/66, tsc clean, eslint clean, build clean.
+- Both real boards byte-identical (fingerprint diff empty).
+- No overlap at any of the 20 chain positions the straddler can occupy.
+- Random-board sweep before/after compared by TRIAL ID, not just by count -
+  which is what exposed the 165/146 churn a net figure had hidden.
+
+### Residual, deliberately not fixed
+231 of 1777 random dense boards still overlap, mostly compact-on-compact. That
+is a separate pre-existing weakness in the dense-board fallback, not straddler
+ordering. Worth its own session; the repro harness is
+`.claude/scripts/dump-configs-offline.js` plus a throwaway vitest sweep.
+
 ### Next Tasks
-- [ ] Phase 5: place straddling pedals before the packed run
 - [ ] Phase 6: the one unroutable pedal-to-pedal cable on the 20-pedal board
+- [ ] Dense-board overlap residual (231/1777) - the non-straddler class
 - [ ] 13 non-BOSS pedals still carry unattributed jack rows (makers do not
       publish placement). Rotation stays dark for them until sourced.
 
