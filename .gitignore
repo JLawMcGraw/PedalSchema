@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the template, which is placeholder-only and is the thing a fresh
+# clone needs in order to know WHICH variables to set. `.env*` above was
+# swallowing it, so it had never been committed.
+!.env.local.example
 
 # vercel
 .vercel
