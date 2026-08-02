@@ -18,7 +18,7 @@ import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import { PlusCircle, List } from 'lucide-react';
 import { describeSaveError, failIf } from '@/lib/save-error';
-import type { Board, Amp, Pedal, PlacedPedal, RoutingConfig } from '@/types';
+import type { Board, Amp, Pedal, PlacedPedal, RoutingConfig, PowerSupply } from '@/types';
 
 interface EditorClientProps {
   configId: string;
@@ -35,6 +35,8 @@ interface EditorClientProps {
   availableAmps: Amp[];
   /** Stored pedal-loop wiring; undefined for configurations saved before it was persisted. */
   routingConfig?: Partial<RoutingConfig>;
+  powerSupplies?: PowerSupply[];
+  powerSupply?: PowerSupply | null;
 }
 
 export function EditorClient({
@@ -51,6 +53,8 @@ export function EditorClient({
   availablePedals,
   availableAmps,
   routingConfig: initialRoutingConfig,
+  powerSupplies: initialPowerSupplies,
+  powerSupply: initialPowerSupply,
 }: EditorClientProps) {
   const initConfiguration = useConfigurationStore((s) => s.initConfiguration);
   const isDirty = useConfigurationStore((s) => s.isDirty);
@@ -86,6 +90,14 @@ export function EditorClient({
       pedalsById: initialPedalsById,
       routingConfig: initialRoutingConfig,
     });
+    // Supplies are catalogue data plus one selection, not board state, so they
+    // are seeded alongside initConfiguration rather than inside it - nothing
+    // here belongs in an undo snapshot.
+    const store = useConfigurationStore.getState();
+    store.setPowerSupplies(initialPowerSupplies ?? []);
+    if (initialPowerSupply !== undefined) {
+      useConfigurationStore.setState({ powerSupply: initialPowerSupply });
+    }
   }, [
     configId,
     configName,
@@ -129,7 +141,7 @@ export function EditorClient({
   const handleSave = useCallback(async () => {
     const {
       id, name, description, placedPedals, amp,
-      useEffectsLoop, use4CableMethod, modulationInLoop, routingConfig,
+      useEffectsLoop, use4CableMethod, modulationInLoop, routingConfig, powerSupply,
       setSaving, markClean, setSaveError,
     } = useConfigurationStore.getState();
 
@@ -161,6 +173,9 @@ export function EditorClient({
               ? { allowRotation: routingConfig.allowRotation }
               : {}),
           },
+          // Which supply this board is planned against. Null is a real value
+          // here - it means demand-only reporting, not "unchanged".
+          power_supply_id: powerSupply?.id ?? null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);
@@ -195,6 +210,7 @@ export function EditorClient({
               location: p.location,
               chain_position_locked: p.chainPositionLocked ?? false,
               rotation_locked: p.rotationLocked ?? false,
+              power_output_id: p.powerOutputId ?? null,
               is_active: p.isActive,
               use_loop: p.useLoop,
             })),

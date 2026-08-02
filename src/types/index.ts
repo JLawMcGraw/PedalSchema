@@ -135,6 +135,49 @@ export interface Amp {
   notes: string | null;
 }
 
+/**
+ * One physical output on a power supply.
+ *
+ * `ratedMa` is NOT nullable, unlike `Pedal.currentMa`. That asymmetry is
+ * deliberate: "we do not know what this pedal draws" is a real and important
+ * state that the power engine reports rather than hides, but an output whose
+ * rating is unknown cannot be compared against anything, so the honest record
+ * is no supply at all rather than a supply of zero.
+ */
+export interface PowerOutput {
+  id: string;
+  supplyId: string;
+  /** What the supply's own panel calls it, so the UI can say "Output 3". */
+  label: string;
+  /** The default mode's voltage and rating. */
+  voltage: number;
+  ratedMa: number;
+  /**
+   * Other modes this output can be switched to. Voltage and rating are stored
+   * TOGETHER because they are inseparable: a switchable output derates as
+   * voltage rises (Zuma outputs 8-9 give 500mA at 9V but 250mA at 18V), and a
+   * bare voltage list would have this reporting twice the real headroom.
+   */
+  alternateModes: Array<{ voltage: number; ratedMa: number }>;
+  sortOrder: number;
+}
+
+export interface PowerSupply {
+  id: string;
+  name: string;
+  manufacturer: string;
+  /**
+   * Isolated outputs have their own transformer winding. A daisy chain does
+   * not, which is why noise complaints track it - recorded because it changes
+   * the advice, not just the arithmetic.
+   */
+  isIsolated: boolean;
+  isSystem: boolean;
+  createdBy: string | null;
+  notes: string | null;
+  outputs: PowerOutput[];
+}
+
 export interface Configuration {
   id: string;
   userId: string;
@@ -176,6 +219,14 @@ export interface PlacedPedal {
    * Defaults on for large pedals when added; manual rotation ignores it.
    */
   rotationLocked?: boolean;
+  /**
+   * Which supply output this pedal is plugged into, on THIS board.
+   *
+   * null means unassigned, and that is a state the UI must show rather than
+   * quietly treat as powered - an unassigned pedal is the most likely reason a
+   * board that "adds up" still will not run.
+   */
+  powerOutputId?: string | null;
   isActive: boolean;
   /** For pedals with send/return (like NS-2), whether to use the loop routing */
   useLoop: boolean;

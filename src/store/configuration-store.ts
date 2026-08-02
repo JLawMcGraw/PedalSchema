@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import type { Board, Pedal, Amp, PlacedPedal, Position, ChainLocation, ChainContext, RoutingConfig, PedalRoutingConfig } from '@/types';
+import type { Board, Pedal, Amp, PlacedPedal, Position, ChainLocation, ChainContext, RoutingConfig, PedalRoutingConfig, PowerSupply } from '@/types';
 import { signalChainEngine } from '@/lib/engine/signal-chain';
 import { runOptimize } from '@/lib/engine/layout/run-optimize';
 import { summarizeOptimization, type OptimizationSummary } from '@/lib/engine/layout/routing-cost';
@@ -46,6 +46,14 @@ interface ConfigurationState {
 
   // Routing configuration
   routingConfig: RoutingConfig;
+
+  /**
+   * The supply this board is planned against, and the catalogue to choose
+   * from. Null supply = demand-only reporting, which is how every board
+   * behaved before supplies existed and is still the default.
+   */
+  powerSupply: PowerSupply | null;
+  powerSupplies: PowerSupply[];
 
   // Undo/redo history (board edits only; name/description excluded)
   history: { past: HistorySnapshot[]; future: HistorySnapshot[] };
@@ -94,6 +102,11 @@ interface ConfigurationState {
 
   setBoard: (board: Board) => void;
   setAmp: (amp: Amp | null) => void;
+  setPowerSupplies: (supplies: PowerSupply[]) => void;
+  /** Choose the supply this board is planned against. null clears it. */
+  setPowerSupply: (supply: PowerSupply | null) => void;
+  /** Plug a pedal into an output. null unassigns it. */
+  assignPedalToOutput: (placedPedalId: string, outputId: string | null) => void;
   setName: (name: string) => void;
   setDescription: (description: string) => void;
   setUseEffectsLoop: (use: boolean) => void;
@@ -194,6 +207,8 @@ export const useConfigurationStore = create<ConfigurationState>()(
       modulationInLoop: false,
       placedPedals: [],
       pedalsById: {},
+      powerSupply: null,
+      powerSupplies: [],
       routingConfig: {
         useLoopPedals: true,
         use4CableMethod: false,
@@ -241,6 +256,32 @@ export const useConfigurationStore = create<ConfigurationState>()(
         recordHistory();
         set((state) => {
           state.board = board;
+          state.isDirty = true;
+        });
+      },
+
+      setPowerSupplies: (supplies) => set({ powerSupplies: supplies }),
+
+      /**
+       * Choosing a different supply does NOT clear existing assignments.
+       * derivePowerPlan already treats an output id the new supply does not
+       * have as unassigned, so the old wiring survives switching back and
+       * forth - and clearing here would silently destroy work on a misclick.
+       */
+      setPowerSupply: (supply) => {
+        recordHistory();
+        set((state) => {
+          state.powerSupply = supply;
+          state.isDirty = true;
+        });
+      },
+
+      assignPedalToOutput: (placedPedalId, outputId) => {
+        recordHistory();
+        set((state) => {
+          const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
+          if (!pedal) return;
+          pedal.powerOutputId = outputId;
           state.isDirty = true;
         });
       },

@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { EditorClient } from './editor-client';
-import type { Board, Pedal, Amp, PlacedPedal , RoutingConfig } from '@/types';
+import type { Board, Pedal, Amp, PlacedPedal , RoutingConfig, PowerSupply } from '@/types';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -35,6 +35,39 @@ export default async function EditorPage({ params }: PageProps) {
   if (error || !config) {
     notFound();
   }
+
+  // Power supplies, with their outputs. System rows plus the user's own -
+  // RLS decides which, so this query does not have to.
+  const { data: supplyRows } = await supabase
+    .from('power_supplies')
+    .select('*, outputs:power_supply_outputs(*)')
+    .order('manufacturer');
+
+  const powerSupplies: PowerSupply[] = (supplyRows || []).map(
+    (r: Record<string, unknown>) => ({
+      id: r.id as string,
+      name: r.name as string,
+      manufacturer: r.manufacturer as string,
+      isIsolated: r.is_isolated as boolean,
+      isSystem: r.is_system as boolean,
+      createdBy: (r.created_by as string | null) ?? null,
+      notes: (r.notes as string | null) ?? null,
+      outputs: ((r.outputs as Record<string, unknown>[]) || [])
+        .map((o) => ({
+          id: o.id as string,
+          supplyId: o.supply_id as string,
+          label: o.label as string,
+          voltage: o.voltage as number,
+          ratedMa: o.rated_ma as number,
+          alternateModes: (o.alternate_modes as Array<{ voltage: number; ratedMa: number }>) ?? [],
+          sortOrder: o.sort_order as number,
+        }))
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    })
+  );
+
+  const powerSupply =
+    powerSupplies.find((s2) => s2.id === (config.power_supply_id as string | null)) ?? null;
 
   // Fetch all available pedals for the library
   const { data: allPedals } = await supabase
@@ -138,6 +171,7 @@ export default async function EditorPage({ params }: PageProps) {
       location: cp.location as PlacedPedal['location'],
       chainPositionLocked: (cp.chain_position_locked as boolean) ?? false,
       rotationLocked: (cp.rotation_locked as boolean) ?? false,
+      powerOutputId: (cp.power_output_id as string | null) ?? null,
       isActive: cp.is_active as boolean,
       useLoop: (cp.use_loop as boolean) ?? false, // Default to false for backwards compat
       createdAt: cp.created_at as string,
@@ -184,6 +218,8 @@ export default async function EditorPage({ params }: PageProps) {
       pedalsById={pedalsById}
       availablePedals={availablePedals}
       availableAmps={availableAmps}
+      powerSupplies={powerSupplies}
+      powerSupply={powerSupply}
     />
   );
 }
