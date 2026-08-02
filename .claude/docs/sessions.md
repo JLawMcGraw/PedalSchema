@@ -105,6 +105,23 @@ the phase 6 session below, which retracts it.**
 
 ---
 
+### The Props tab was off the end of the panel
+Adding the Power tab made five; the strip needs 316px and the right panel is
+256px at lg / 288px at xl, so Props sat outside it at every viewport measured.
+`overflow-x-auto` made it scrollable in principle - a scrollbar nobody can see
+on a tab strip is a missing tab.
+
+Wrapping needs two TabsTrigger defaults overridden, neither obvious:
+`h-[calc(100%-1px)]` defines tab height against the LIST height, which is
+circular once the list wraps (first attempt: 69px tabs spilling out of a 71px
+container), and `flex-1` stretches a lone second-row tab to the full width.
+`h-auto flex-none` fixes both; px-3 -> px-2 keeps all five on ONE row at 1280+
+and wraps to two at 1024.
+
+`verify-panel-tabs.js` asserts each tab's box is inside the tablist's box
+horizontally AND vertically at four widths - the vertical half is what catches
+the height trap, which a horizontal-only check would have passed.
+
 ## The loop-hub placement fix (five attempts, measured each time)
 
 DONE. Optimize now produces `TU-3 <- Chorus <- NS-2 <- Conspiracy <- TS9` on the
