@@ -62,6 +62,59 @@ real-board fingerprint to see whether any routing actually changes.
 
 ---
 
+## P0b — Place a loop hub's members beside it (ATTEMPTED, reverted)
+
+The visible symptom: with the NS-2's send/return loop configured, Optimize
+does nothing at all. The chain LIST is right (the hub is ordered before its
+members, fixed 2026-08-01), but the physical layout keeps the drives inline
+between the chorus and the gate.
+
+**Why it does nothing.** `primaryChain` is placed first and its OVERFLOW takes
+the space beside the hub, so the hub cluster gets whatever is left - on the
+real 9-pedal board, the far end of the back row, with the send/return cables
+crossing everything between. That candidate scores 215.40 against the board's
+own 187.88, so the optimizer correctly declines to apply it.
+
+**The target is known and measured.** Hand-packing the chain-list order as one
+run - loop members inline immediately after their hub, which is what a person
+builds and what 4-cable mode already does - gives:
+
+    y=7.3: TU-3 <- Chorus <- NS-2 <- TS9 <- Conspiracy
+    y=0:   BF-3 <- Aqua-Puss <- Flint <- RC-1
+    cable 61.9in (was 77.9), crossings 1, TOTAL 179.87 against 187.88
+
+That BEATS the untouched board, so the optimizer would apply it.
+
+**Four attempts, each measured, none shippable:**
+
+1. Dry-run the primary chain, place clusters against the hub's dry position,
+   then place the chain around them. Crossings 16 -> 2, but the cluster took
+   the hub's own row and pushed the hub onto the next one.
+2. Same, excluding the hub's row from the cluster's candidates. Front row
+   correct at last, but the chain's overflow scrambled around the reserved
+   space: score 621.74.
+3. Make `primaryChain` return the members inline for pedal-loop mode, exactly
+   as 4cm already does, and drop hubClusters. Right model, and the real board
+   improved - but the packer WRAPS A ROW between the hub and its members, so a
+   drive lands 8.19in from its hub (10.61in on the twelve-pedal fixture).
+   18 config-matrix scenarios fail.
+4. Add an atomic-group rule so a wrap cannot fall between a hub and its
+   members. Did not clear the failures.
+
+**What is actually blocking it**, both needed:
+  - the wrap must not fall inside the hub group, and attempt 4's fit test is
+    not catching the case that matters - find out why before rewriting it;
+  - twelve of the eighteen failures are LANE separation ("v-runs 2px apart,
+    144px shared"), which is P4 below. Inline placement puts the return cable
+    alongside the hub's output, so the two run parallel - the inline model
+    needs the lane router to be able to separate them.
+
+Do NOT ship attempt 3 alone because the real board improves: it trades one
+board's layout for correctness regressions on eighteen scenarios, which is the
+same trade phase 5 measured and refused.
+
+---
+
 ## P1 — A board-level power budget — DONE 2026-08-01 (first half)
 
 There is no power total anywhere. `currentMa` is shown per pedal in the
