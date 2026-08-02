@@ -122,11 +122,23 @@ const AMP_SOURCES = {
     image: 'https://cdn.shopify.com/s/files/1/0659/3966/9171/files/2.MVM.BB_1_Front.png',
   },
   // Vox builds its galleries in JS and publishes no og:image; these are the
-  // only product-specific frames on the AC30/AC15 Custom pages. The AC30's is
-  // small (375x302) but it is Vox's own photo of the right amp.
+  // only product-specific frames on the AC30/AC15 Custom pages.
+  //
+  // The live AC30 frame is 375x302 - the weakest of the mirrored set, soft
+  // above card size. Vox publishes nothing larger on the current page, but its
+  // OLD site did: the 2014 capture of voxamps.com/ac30c2 carries a 1000x400
+  // product-slider frame whose amp subject is about 500x380, a third larger
+  // linearly than the live one. Same amp, same manufacturer photography, and
+  // provenanceFor resolves an archived URL's inner licence correctly.
+  //
+  // The trade is a red gradient background where the live frame has a clean
+  // one, so this is only worth keeping while the knockout handles it - which
+  // is what verify-photo-knockout.js and verify-gear-images.js are for. Revert
+  // to the line below if either ever disagrees.
+  //   image: 'https://voxamps.com/wp-content/uploads/2019/01/AC30C2_2_resized.png'
   'Vox AC30': {
-    page: 'https://voxamps.com/product/ac30-custom/',
-    image: 'https://voxamps.com/wp-content/uploads/2019/01/AC30C2_2_resized.png',
+    page: 'https://web.archive.org/web/20140623143200/http://www.voxamps.com/ac30c2',
+    image: 'https://web.archive.org/web/20140623143200im_/http://www.voxamps.com/uploads/Product_Slider/Custom_AC30C2_Front.jpg',
   },
   'Vox AC15': {
     page: 'https://voxamps.com/product/the-vox-ac15-custom/',
@@ -148,7 +160,16 @@ const AMP_SOURCES = {
  */
 const UNSOURCED = {
   'Marshall JCM2000 DSL':
-    'discontinued; no marshall.com page and no Wayback capture. DSL100HR is a different amp.',
+    'discontinued; no marshall.com page and no Wayback capture. DSL100HR is a different amp. ' +
+    'Wikimedia Commons checked 2026-08-02 and is exhausted, not merely unsearched: the only ' +
+    'JCM2000-series files are two amateur in-situ photos of a DSL401 combo, both CC BY 2.0 ' +
+    '(so the licence would have been fine - not the BY-SA trap). Rejected on the photo, not the ' +
+    'terms. "Marshall DSL401 - My trusty amp.jpg" has the amp at an angle, a microphone stood in ' +
+    'front of the grille, CD spindles on top and a pedalboard across its feet; the other pairs it ' +
+    'with a guitar. Neither can be knocked out to a clean silhouette. Everything else Commons ' +
+    'returns for "Marshall JCM" is a JCM800 or JCM900 - different amps. What would settle this is ' +
+    'a studio product shot, so a Reverb/retailer listing or an owner photo taken for the purpose ' +
+    'is the remaining route, NOT another Commons search.',
 };
 
 const BOARD_SOURCES = {
