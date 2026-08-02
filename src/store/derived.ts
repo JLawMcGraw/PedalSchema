@@ -23,13 +23,14 @@ import type {
   Pedal,
   PlacedPedal,
   RoutingConfig,
+  PowerSupply,
 } from '@/types';
 import { useShallow } from 'zustand/react/shallow';
 import { detectCollisions } from '@/lib/engine/collision';
 import { signalChainEngine } from '@/lib/engine/signal-chain';
 import { calculateCables } from '@/lib/engine/cables';
 import { routeAllCables, type RoutedCable } from '@/lib/engine/cables/route-cables';
-import { derivePowerSummary, type PowerSummary } from '@/lib/engine/power';
+import { derivePowerSummary, derivePowerPlan, describePowerPlan, type PowerSummary, type SupplyPlan } from '@/lib/engine/power';
 import { useConfigurationStore } from './configuration-store';
 
 /** Editor canvas scale - pixels per inch at zoom 1 */
@@ -52,6 +53,12 @@ export interface DerivedBoardState {
    * could not account for - see src/lib/engine/power.
    */
   power: PowerSummary;
+  /**
+   * How this board lays over the chosen supply's outputs, or null when no
+   * supply is chosen - which is the normal state and means demand-only
+   * reporting, exactly as it worked before supplies existed.
+   */
+  powerPlan: SupplyPlan | null;
 }
 
 /** The source slice everything is derived from */
@@ -65,6 +72,8 @@ export interface SourceSlice {
   placedPedals: PlacedPedal[];
   pedalsById: Record<string, Pedal>;
   routingConfig: RoutingConfig;
+  /** The supply this board is planned against, if any. */
+  powerSupply?: PowerSupply | null;
 }
 
 const EMPTY: DerivedBoardState = {
@@ -74,6 +83,7 @@ const EMPTY: DerivedBoardState = {
   warnings: [],
   suggestions: [],
   power: { knownTotalMa: 0, unknown: [], pedalCount: 0, highDraw: [], byVoltage: [] },
+  powerPlan: null,
 };
 
 // Last-call memoization on input identities
@@ -91,6 +101,7 @@ export function deriveBoardState(s: SourceSlice): DerivedBoardState {
     s.placedPedals,
     s.pedalsById,
     s.routingConfig,
+    s.powerSupply,
   ];
 
   if (lastInputs && inputs.length === lastInputs.length && inputs.every((v, i) => v === lastInputs![i])) {
@@ -151,6 +162,9 @@ export function deriveBoardState(s: SourceSlice): DerivedBoardState {
     result = {
       cables, routedCables, collisions, warnings, suggestions,
       power: derivePowerSummary(s.placedPedals, s.pedalsById),
+      powerPlan: s.powerSupply
+        ? derivePowerPlan(s.placedPedals, s.pedalsById, s.powerSupply)
+        : null,
     };
   }
 
@@ -219,6 +233,11 @@ if (typeof window !== 'undefined') {
     __getPedalSchemaState: () => SourceSlice;
     __getPedalSchemaDerived: () => DerivedBoardState;
     __getPedalSchemaSnapshot: () => PedalSchemaSnapshot;
+    __pedalSchemaSetSupply: (nameFragment: string) => { name: string; outputs: number } | null;
+    __pedalSchemaAssignOne: (placedPedalId: string, outputId: string | null) => void;
+    __pedalSchemaAssignAll: (outputIndex: number) => Record<string, unknown>;
+    __pedalSchemaAssignSpread: () => Record<string, unknown>;
+    __pedalSchemaProbeUnknownOnOutput: () => Record<string, unknown>;
     __pedalSchemaOptimize: () => Promise<void>;
     __pedalSchemaSetLoop: (hubId: string, memberIds: string[]) => void;
   };
@@ -234,6 +253,9 @@ if (typeof window !== 'undefined') {
       placedPedals: s.placedPedals,
       pedalsById: s.pedalsById,
       routingConfig: s.routingConfig,
+      // Part of SourceSlice since supplies landed. Omitting it made the twin
+      // disagree with what deriveBoardState actually reads.
+      powerSupply: s.powerSupply,
     };
   };
   w.__getPedalSchemaDerived = () => deriveBoardState(useConfigurationStore.getState());
@@ -247,6 +269,82 @@ if (typeof window !== 'undefined') {
   // script can exercise persistence without driving that panel's markup.
   w.__pedalSchemaSetLoop = (hubId: string, memberIds: string[]) =>
     useConfigurationStore.getState().setPedalRoutingMode(hubId, 'loop', memberIds);
+
+  /**
+   * Supply-side probes. The Power tab's supply half cannot be driven from a
+   * verification script through markup alone - it needs a supply chosen and
+   * pedals assigned - and the ONE case that matters most (a pedal with no
+   * recorded draw sitting on an output) is unreachable by clicking, because
+   * the only catalogue pedal without a draw is on nobody's board.
+   */
+  w.__pedalSchemaSetSupply = (nameFragment: string) => {
+    const st = useConfigurationStore.getState();
+    const supply = st.powerSupplies.find((s2) =>
+      s2.name.toLowerCase().includes(nameFragment.toLowerCase())
+    );
+    if (!supply) return null;
+    st.setPowerSupply(supply);
+    return { name: supply.name, outputs: supply.outputs.length };
+  };
+
+  const planOf = (outputIndex = 0) => {
+    const st = useConfigurationStore.getState();
+    const d = deriveBoardState(st);
+    const load = d.powerPlan?.outputs[outputIndex];
+    return {
+      headline: d.powerPlan ? describePowerPlan(d.powerPlan) : '(no supply)',
+      overCapacityCount: d.powerPlan?.overCapacityCount ?? 0,
+      knownDrawMa: load?.knownDrawMa ?? 0,
+      effectiveRatedMa: load?.effectiveRatedMa ?? 0,
+      headroomMa: load?.headroomMa ?? null,
+      unknownCount: load?.unknownCount ?? 0,
+    };
+  };
+
+  /** Assign ONE pedal, by id, through the real store action. */
+  w.__pedalSchemaAssignOne = (placedPedalId: string, outputId: string | null) => {
+    useConfigurationStore.getState().assignPedalToOutput(placedPedalId, outputId);
+  };
+
+  w.__pedalSchemaAssignAll = (outputIndex: number) => {
+    const st = useConfigurationStore.getState();
+    const output = st.powerSupply?.outputs[outputIndex];
+    if (output) {
+      for (const p of st.placedPedals) {
+        useConfigurationStore.getState().assignPedalToOutput(p.id, output.id);
+      }
+    }
+    return planOf(outputIndex);
+  };
+
+  w.__pedalSchemaAssignSpread = () => {
+    const st = useConfigurationStore.getState();
+    const outs = st.powerSupply?.outputs ?? [];
+    st.placedPedals.forEach((p, i) => {
+      const o = outs[i % outs.length];
+      if (o) useConfigurationStore.getState().assignPedalToOutput(p.id, o.id);
+    });
+    return planOf(0);
+  };
+
+  /**
+   * Put a pedal with NO recorded draw onto an otherwise comfortable output.
+   * Not saved - the catalogue pedal is swapped in memory only.
+   */
+  w.__pedalSchemaProbeUnknownOnOutput = () => {
+    const st = useConfigurationStore.getState();
+    const outs = st.powerSupply?.outputs ?? [];
+    const target = outs[0];
+    const victim = st.placedPedals[0];
+    if (!target || !victim) return planOf(0);
+
+    useConfigurationStore.setState((state) => {
+      const pedal = state.pedalsById[victim.pedalId];
+      if (pedal) state.pedalsById = { ...state.pedalsById, [victim.pedalId]: { ...pedal, currentMa: null } };
+    });
+    useConfigurationStore.getState().assignPedalToOutput(victim.id, target.id);
+    return planOf(0);
+  };
 
   w.__getPedalSchemaSnapshot = () => {
     const s = useConfigurationStore.getState();
