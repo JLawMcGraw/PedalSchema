@@ -28,14 +28,17 @@ function placed(id: string, pedalId: string, powerOutputId: string | null): Plac
 }
 
 function supply(
-  outputs: Array<{ id: string; ma: number; v?: number; alt?: Array<{ voltage: number; ratedMa: number }> }>
+  outputs: Array<{
+    id: string; ma: number; v?: number;
+    alt?: Array<{ voltage: number; ratedMa: number }>; ac?: boolean;
+  }>
 ): PowerSupply {
   return {
     id: 's1', name: 'Test Brick', manufacturer: 'T',
     isIsolated: true, isSystem: true, createdBy: null, notes: null,
     outputs: outputs.map((o, i) => ({
       id: o.id, supplyId: 's1', label: `Output ${i + 1}`,
-      voltage: o.v ?? 9, ratedMa: o.ma, alternateModes: o.alt ?? [], sortOrder: i,
+      voltage: o.v ?? 9, ratedMa: o.ma, alternateModes: o.alt ?? [], isAc: o.ac ?? false, sortOrder: i,
     })),
   };
 }
@@ -154,6 +157,24 @@ describe('power plan', () => {
     expect(out.effectiveRatedMa).toBe(250);      // not 500
     expect(out.overCapacity).toBe(true);         // 300 > 250
     expect(out.headroomMa).toBe(-50);
+  });
+
+  /**
+   * CS12 output 12 is 9Vac 800mA, for old Line 6 and Digitech pedals. The
+   * numbers line up perfectly with a 9V DC pedal and the pairing is still
+   * wrong, so this must not pass on voltage alone.
+   */
+  it('an AC output never powers a DC pedal, however well the numbers match', () => {
+    const byId = { a: pedal('a', 40, 9) };
+    const plan = derivePowerPlan(
+      [placed('p1', 'a', 'o1')],
+      byId,
+      supply([{ id: 'o1', ma: 800, v: 9, ac: true }])
+    );
+
+    expect(plan.outputs[0].overCapacity).toBe(false);   // 40 of 800mA
+    expect(plan.outputs[0].voltageMismatch).toHaveLength(1);
+    expect(describePowerPlan(plan)).toMatch(/wrong voltage/);
   });
 
   it('a big total against a big supply is still broken if one output is over', () => {

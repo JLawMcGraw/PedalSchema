@@ -248,7 +248,10 @@ export function derivePowerPlan(
       for (const p of pedals) {
         if (p.currentMa == null) unknownCount++;
         else knownDrawMa += p.currentMa;
-        if (!canSupply.includes(p.voltage)) voltageMismatch.push(p);
+        // An AC output matches NOTHING in this catalogue: every pedal here is
+        // DC. Checked before the voltage comparison, because 9Vac against a 9V
+        // pedal would otherwise pass on the number alone.
+        if (output.isAc || !canSupply.includes(p.voltage)) voltageMismatch.push(p);
       }
 
       // Rate against the voltage actually being asked for, not the default.

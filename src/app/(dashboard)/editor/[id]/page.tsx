@@ -60,6 +60,7 @@ export default async function EditorPage({ params }: PageProps) {
           voltage: o.voltage as number,
           ratedMa: o.rated_ma as number,
           alternateModes: (o.alternate_modes as Array<{ voltage: number; ratedMa: number }>) ?? [],
+          isAc: (o.is_ac as boolean) ?? false,
           sortOrder: o.sort_order as number,
         }))
         .sort((a, b) => a.sortOrder - b.sortOrder),

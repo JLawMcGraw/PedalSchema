@@ -77,6 +77,79 @@ const SUPPLIES = [
       })),
     ],
   },
+  {
+    name: '1 SPOT Pro CS6',
+    manufacturer: 'Truetone',
+    isIsolated: true,
+    source: 'https://www.truetone.com/CS6/',
+    notes:
+      'Truetone spec: outputs 1-2 are 9Vdc 500mA; 3-4 are 9/18Vdc switchable ' +
+      '100mA; 5-6 are 9/12Vdc switchable 200mA. 1600mA total.',
+    outputs: [
+      ...[1, 2].map((n) => ({
+        label: `Output ${n}`, voltage: 9, ratedMa: 500, alternateModes: [],
+      })),
+      ...[3, 4].map((n) => ({
+        label: `Output ${n}`, voltage: 9, ratedMa: 100,
+        alternateModes: [{ voltage: 18, ratedMa: 100 }],
+      })),
+      ...[5, 6].map((n) => ({
+        label: `Output ${n}`, voltage: 9, ratedMa: 200,
+        alternateModes: [{ voltage: 12, ratedMa: 200 }],
+      })),
+    ],
+  },
+  {
+    name: '1 SPOT Pro CS7',
+    manufacturer: 'Truetone',
+    isIsolated: true,
+    source: 'https://www.truetone.com/CS7/',
+    notes:
+      'Truetone spec: output 1 is 9Vdc 100mA; outputs 2-5 are 9/12Vdc ' +
+      'switchable 200mA each; outputs 6-7 are 9Vdc 500mA each.',
+    outputs: [
+      { label: 'Output 1', voltage: 9, ratedMa: 100, alternateModes: [] },
+      ...[2, 3, 4, 5].map((n) => ({
+        label: `Output ${n}`, voltage: 9, ratedMa: 200,
+        alternateModes: [{ voltage: 12, ratedMa: 200 }],
+      })),
+      ...[6, 7].map((n) => ({
+        label: `Output ${n}`, voltage: 9, ratedMa: 500, alternateModes: [],
+      })),
+    ],
+  },
+  {
+    name: '1 SPOT Pro CS12',
+    manufacturer: 'Truetone',
+    isIsolated: true,
+    source: 'https://www.truetone.com/CS12/',
+    notes:
+      'Truetone spec: outputs 1-2 are 18Vdc 100mA; 3-6 are 9/12Vdc switchable ' +
+      '100mA; output 7 is 9Vdc/4-9Vdc switchable 100mA; 8-9 are 9Vdc 250mA; ' +
+      '10-11 are 9Vdc 500mA; output 12 is 9V AC 800mA, which the Truetone ' +
+      'manual describes as "for certain older Line 6 or Digitech pedals". ' +
+      'Output 7 sag: its ' +
+      'sag range is recorded as its 9V setting only - a continuously variable ' +
+      '4-9V dial is not a mode you assign a pedal to. Output 12 is flagged AC, ' +
+      'so nothing in the DC catalogue will match it however the numbers read.',
+    outputs: [
+      ...[1, 2].map((n) => ({
+        label: `Output ${n}`, voltage: 18, ratedMa: 100, alternateModes: [],
+      })),
+      ...[3, 4, 5, 6].map((n) => ({
+        label: `Output ${n}`, voltage: 9, ratedMa: 100,
+        alternateModes: [{ voltage: 12, ratedMa: 100 }],
+      })),
+      { label: 'Output 7 (sag)', voltage: 9, ratedMa: 100, alternateModes: [] },
+      ...[8, 9].map((n) => ({
+        label: `Output ${n}`, voltage: 9, ratedMa: 250, alternateModes: [],
+      })),
+      ...[10, 11].map((n) => ({
+        label: `Output ${n}`, voltage: 9, ratedMa: 500, alternateModes: [],
+      })),
+      { label: 'Output 12 (AC)', voltage: 9, ratedMa: 800, alternateModes: [], isAc: true },
+    ],
+  },
 ];
 
 (async () => {
@@ -133,6 +206,7 @@ const SUPPLIES = [
       voltage: o.voltage,
       rated_ma: o.ratedMa,
       alternate_modes: o.alternateModes,
+      is_ac: o.isAc ?? false,
       sort_order: i,
     }));
     const { error: outErr } = await sb.from('power_supply_outputs').insert(rows);

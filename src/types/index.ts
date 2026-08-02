@@ -159,6 +159,13 @@ export interface PowerOutput {
    * bare voltage list would have this reporting twice the real headroom.
    */
   alternateModes: Array<{ voltage: number; ratedMa: number }>;
+  /**
+   * AC output. Not a voltage variant of DC - a 9V DC pedal on a 9Vac output is
+   * wrong however well the numbers line up, so the plan treats this as a
+   * mismatch rather than comparing ratings. (CS12 output 12, for old Line 6
+   * and Digitech pedals.)
+   */
+  isAc: boolean;
   sortOrder: number;
 }
 
