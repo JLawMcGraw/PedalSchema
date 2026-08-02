@@ -1,5 +1,5 @@
 import type { Amp, Board, Pedal, PlacedPedal, RoutingConfig, JointOptimizationResult, PedalPlacement, SwappableGroup } from '@/types';
-import { deriveSignalTopology, primaryChain, ampClusters, hubClusters } from '../topology';
+import { deriveSignalTopology, primaryChain, ampClusters, hubClusters, resolvePedalLoop } from '../topology';
 import { calculateRoutingCost, type RoutingCostResult } from './routing-cost';
 import { identifySwappableGroups } from '../signal-chain';
 import { COLLISION_SPACING } from '../collision';
@@ -1074,9 +1074,36 @@ export function calculateOptimalLayoutJoint(
     .filter(([id, rot]) => rot !== (pedalById.get(id)?.rotationDegrees ?? 0))
     .map(([id, rotationDegrees]) => ({ id, rotationDegrees }));
 
+  /*
+   * A loop hub is listed before the pedals in its loop.
+   *
+   * normalizeChain already does this, but the order SEARCH above works on raw
+   * permutations and does not know the rule, so whichever order it settles on
+   * can put the hub back after its members. The board then showed the right
+   * thing - the hub beside the chorus, drives after it - while the chain list
+   * read "Conspiracy -> TS9 -> NS-2", describing a rig that was not on screen.
+   *
+   * Placement is unaffected either way: the topology decides loop membership
+   * by ID, not by position. This is about the two views agreeing.
+   */
+  const hoisted = [...bestOrder];
+  const loopForOrder = resolvePedalLoop(
+    hoisted.map((id) => pedalById.get(id)!).filter(Boolean),
+    (p) => pedalsById[p.pedalId] || p.pedal,
+    routingConfig
+  );
+  if (loopForOrder && !loopForOrder.loopPedal.chainPositionLocked) {
+    const firstMember = hoisted.findIndex((id) => loopForOrder.memberIds.includes(id));
+    const hubAt = hoisted.indexOf(loopForOrder.loopPedal.id);
+    if (firstMember >= 0 && hubAt > firstMember) {
+      hoisted.splice(hubAt, 1);
+      hoisted.splice(firstMember, 0, loopForOrder.loopPedal.id);
+    }
+  }
+
   return {
     placements: best.placements,
-    chainOrder: bestOrder,
+    chainOrder: hoisted,
     swappableGroups,
     rotations: changedRotations.length > 0 ? changedRotations : undefined,
     baselineCost,
