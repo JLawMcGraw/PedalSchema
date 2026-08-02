@@ -742,6 +742,67 @@ comment.
 
 ---
 
+## Step 5 results — P1.5 landed, with one open regression
+
+Steps 1–4 are committed on `routing/one-router`. Suite 266 passing.
+
+**Perf — the worry was backwards.**
+
+```
+test (20 pedals)   367.9ms -> 127.3ms   (2.9x FASTER)
+J$ Home (9)         18.7ms ->  21.9ms
+```
+
+One batch corridor solve beats 21 cascade calls. `optimize.worker.ts`'s
+"seconds" was never true and the headroom question is closed.
+
+**Risk checklist.**
+
+- **(a) Failure gradient** — nothing to lose: `routingFailures` was 0 before and
+  after on both boards.
+- **(b) The `assignLanes` cliff** — **still open.** Not instrumented. There is a
+  hint worth chasing: J$ Home's chosen layout was served 10/10 by the lane
+  router before, and after the change its cables come back mostly as cascade
+  fallbacks (`l-horizontal`, `direct`, `channel`). Either the optimizer is now
+  selecting layouts the corridor graph cannot serve, or the cliff is firing.
+  Count full all-null-then-fallback events per Optimize before trusting this.
+- **(c) The collision-guard landmine — did not fire.** With `baselineEligible`
+  disabled the suite still passes (266), exactly as 2026-08-01 mutation testing
+  found, and `placement-property`'s "cannot profit from colliding, however small
+  the overlap" is green. A cost rebalance was the recorded risk to that guard;
+  it remains dead code. Guard restored, diff empty.
+- **(d) Non-separability** — accepted.
+
+**`complexRouting` did not shift at all** — 100 → 90 before and after, identical.
+The plan predicted a constant offset that cancels; it is not even an offset.
+
+### The open regression: crossings vs cable length
+
+| Board | Drawn cable before | after | Δ |
+|---|---|---|---|
+| J$ Home (9 pedals) | 45.05in | **63.70in** | **+18.65in (+41%)** |
+| test (20 pedals) | 132.63in | 132.63in | unchanged |
+
+Only `cableLength` and `crossings` moved; every other dimension is identical to
+the digit. **The tell is in the baseline:** its crossing count went `1 -> 3`
+under honest scoring. Cascade geometry was systematically under-counting
+crossings, so the old chosen layout's `crossings: 0` was a fiction measured on
+geometry nobody drew.
+
+So the optimizer is not misbehaving. It is honestly trading **18.65in of real
+cable to remove 3 real crossings**, because `CROSSING_PENALTY_INCHES = 8`
+(`routing-cost.ts:38`) values them at 24 inch-equivalents. **That exchange rate
+has never before been applied to true geometry.** The old mis-scoring was
+masking it.
+
+**Follow-up, not part of this change:** decide what a crossing is worth. Sweep
+`CROSSING_PENALTY_INCHES` against both saved boards *and* `config-matrix`,
+comparing trial IDs rather than counts. Two boards is too thin a corpus to tune
+a global weight against on its own — and tuning it to rescue one 9-pedal board
+is exactly how overfitting starts.
+
+---
+
 ## Re-verification log — 2026-08-02
 
 Every trace below was re-read against the tree, not recalled. Recorded so the
