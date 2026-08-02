@@ -1632,6 +1632,60 @@
       "jacks": []
     },
     {
+      "manufacturer": "Ibanez",
+      "name": "TS9 Tube Screamer",
+      "confidence": "confirmed",
+      "sourceUrl": "https://www.ibanez.com/usa/products/detail/ts9_99.html",
+      "notes": "Ibanez's own product page states the edges outright: \"Input is on the right side. Output is on the left side.\" The DC jack's edge is NOT stated anywhere on that page - only the power requirement (9V, centre-negative) - so no power row is recorded. Recording two sourced jacks beats recording three where one is assumed.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 25,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 25,
+          "label": "INPUT"
+        }
+      ]
+    },
+    {
+      "manufacturer": "PastFX",
+      "name": "Chorus Ensemble Deluxe",
+      "confidence": "confirmed",
+      "sourceUrl": "https://www.pastfx.com/images/New_Deluxe_Chorus.jpg",
+      "notes": "CE-1 clone in a LANDSCAPE 1590BB. The manufacturer product photograph shows two jack barrels on the LEFT edge beside a vertical 'mono stereo output' label, one on the RIGHT edge labelled 'Input', and '9V (-)+' printed on the face by the top edge for the DC jack. The owner reported input right / output left independently and the photo agrees; the SECOND (stereo) output and the DC jack come from the photo, so both are recorded now. Ordinary side-jack layout, so rotation would only move the jacks off the sides.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 35,
+          "label": "MONO OUT"
+        },
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 65,
+          "label": "STEREO OUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "9V DC"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 50,
+          "label": "INPUT"
+        }
+      ]
+    },
+    {
       "manufacturer": "Strymon",
       "name": "BigSky",
       "confidence": "confirmed",
@@ -1685,6 +1739,45 @@
           "side": "top",
           "positionPercent": 92,
           "label": "POWER"
+        }
+      ]
+    },
+    {
+      "manufacturer": "Strymon",
+      "name": "Flint",
+      "confidence": "confirmed",
+      "sourceUrl": "owner-inspection",
+      "notes": "V2. Owner reports EVERY jack is on the TOP (rear) edge, with input to the right and output to the left - matching the BigSky and Timeline entries, whose rear panels were read off Strymon's own manuals. Stereo: the product page lists 'low impedance independent TS stereo outputs (left and right)' and a single 'high impedance TRS stereo audio input', so two output rows and one input row. EXP and POWER are on the same edge; their positions along it are approximate, which the positionPercent contract permits - the edge is what was observed. USB is not modelled as a jack type.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 10,
+          "label": "LEFT OUT"
+        },
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 24,
+          "label": "RIGHT OUT"
+        },
+        {
+          "jackType": "expression",
+          "side": "top",
+          "positionPercent": 45,
+          "label": "EXP/MIDI"
+        },
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 70,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 88,
+          "label": "DC IN"
         }
       ]
     },
@@ -1746,6 +1839,48 @@
       ]
     },
     {
+      "manufacturer": "TC Electronic",
+      "name": "Ditto Looper",
+      "confidence": "confirmed",
+      "sourceUrl": "https://www.manualslib.com/manual/2863307/Tc-Electronic-Ditto-Looper.html",
+      "notes": "User manual, Unpacking and setting up: \"Connect your instrument to the INPUT jack on the right side of the pedal using a 1/4\\\" cable.\" and \"Connect the OUTPUT jack on the left side of the pedal to your amplifier.\" The DC connector is specified electrically (5.5/2.1mm, centre-negative) but its edge is never given, so no power row is recorded.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 25,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 25,
+          "label": "INPUT"
+        }
+      ]
+    },
+    {
+      "manufacturer": "TC Electronic",
+      "name": "Polytune 3",
+      "confidence": "confirmed",
+      "sourceUrl": "https://www.manualslib.com/manual/1273592/Tc-Electronic-Polytune-3.html?page=3",
+      "notes": "User manual, Inputs/Outputs and Controls: \"Connect your instrument to the in jack on the right side of the pedal using a 1/4\\\" jack cable. Connect the out jack on the left side of the pedal to your amplifier using a 1/4\\\" jack cable.\" The DC socket is described functionally (\"power input socket\") with no edge given, so no power row is recorded.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 25,
+          "label": "OUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 25,
+          "label": "IN"
+        }
+      ]
+    },
+    {
       "manufacturer": "Way Huge",
       "name": "Aqua-Puss",
       "confidence": "confirmed",
@@ -1796,78 +1931,6 @@
           "side": "top",
           "positionPercent": 78,
           "label": "IN"
-        }
-      ]
-    },
-    {
-      "manufacturer": "Strymon",
-      "name": "Flint",
-      "confidence": "confirmed",
-      "sourceUrl": "owner-inspection",
-      "notes": "V2. Owner reports EVERY jack is on the TOP (rear) edge, with input to the right and output to the left - matching the BigSky and Timeline entries, whose rear panels were read off Strymon's own manuals. Stereo: the product page lists 'low impedance independent TS stereo outputs (left and right)' and a single 'high impedance TRS stereo audio input', so two output rows and one input row. EXP and POWER are on the same edge; their positions along it are approximate, which the positionPercent contract permits - the edge is what was observed. USB is not modelled as a jack type.",
-      "jacks": [
-        {
-          "jackType": "output",
-          "side": "top",
-          "positionPercent": 10,
-          "label": "LEFT OUT"
-        },
-        {
-          "jackType": "output",
-          "side": "top",
-          "positionPercent": 24,
-          "label": "RIGHT OUT"
-        },
-        {
-          "jackType": "expression",
-          "side": "top",
-          "positionPercent": 45,
-          "label": "EXP/MIDI"
-        },
-        {
-          "jackType": "input",
-          "side": "top",
-          "positionPercent": 70,
-          "label": "INPUT"
-        },
-        {
-          "jackType": "power",
-          "side": "top",
-          "positionPercent": 88,
-          "label": "DC IN"
-        }
-      ]
-    },
-    {
-      "manufacturer": "PastFX",
-      "name": "Chorus Ensemble Deluxe",
-      "confidence": "confirmed",
-      "sourceUrl": "https://www.pastfx.com/images/New_Deluxe_Chorus.jpg",
-      "notes": "CE-1 clone in a LANDSCAPE 1590BB. The manufacturer product photograph shows two jack barrels on the LEFT edge beside a vertical 'mono stereo output' label, one on the RIGHT edge labelled 'Input', and '9V (-)+' printed on the face by the top edge for the DC jack. The owner reported input right / output left independently and the photo agrees; the SECOND (stereo) output and the DC jack come from the photo, so both are recorded now. Ordinary side-jack layout, so rotation would only move the jacks off the sides.",
-      "jacks": [
-        {
-          "jackType": "output",
-          "side": "left",
-          "positionPercent": 35,
-          "label": "MONO OUT"
-        },
-        {
-          "jackType": "output",
-          "side": "left",
-          "positionPercent": 65,
-          "label": "STEREO OUT"
-        },
-        {
-          "jackType": "power",
-          "side": "top",
-          "positionPercent": 50,
-          "label": "9V DC"
-        },
-        {
-          "jackType": "input",
-          "side": "right",
-          "positionPercent": 50,
-          "label": "INPUT"
         }
       ]
     }
