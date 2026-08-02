@@ -105,6 +105,51 @@ the phase 6 session below, which retracts it.**
 
 ---
 
+## Photos for the new pedals, and the chorus-as-preamp request
+
+### Photos: 58 -> 62 of 67
+Flint (strymon.net), Aqua-Puss + Conspiracy Theory (Dunlop BigCommerce), PastFX
+Chorus Deluxe. The five still missing are the deliberate PEDAL_OVERRIDES skips.
+
+**pastfx.com refuses the product PAGE to some clients (HTTP 425) but serves the
+image FILE fine to a browser UA** - which is what had blocked the original
+research. `curl -A <browser UA>` got it; the entry pins the file directly.
+Added pastfx.com to MANUFACTURER_HOSTS so the licence records
+`manufacturer-proprietary`, not `unknown`.
+
+Each was checked against the knockout regression signature before being
+believed: damaged fills reach 77-91% of the centre-20% box, these reach 0.0%,
+and trimmed aspect ratios land within 0.5% of each footprint - which is also
+what proves they are head-on rather than three-quarter shots.
+
+**The photos then settled three things the data had guessed at:**
+1. Both Way Huge tops read OUT / +9VDC / IN, corroborating the owner's report
+   and supplying the DC jack that had been omitted as unobserved. Source moved
+   from `owner-inspection` to the Dunlop page.
+2. The PastFX shows two barrels left ("mono stereo output"), one right
+   ("Input"), and "9V (-)+" by the top edge - so the stereo output and DC jack
+   are now recorded.
+3. Its aspect ratio (1.259 vs a 1.276 footprint) independently confirms the
+   LANDSCAPE orientation the owner had corrected.
+
+Lesson: **a product photo is jack research.** Four pedals' worth of layout came
+out of images fetched for a different purpose.
+
+### "I want the chorus after the tuner, I use it as a preamp"
+Already possible - the Chain panel's up-arrow calls updatePedalChainPosition,
+which PINS the pedal (chainPositionLocked), and it survives both normalizeChain
+and Optimize. Verified by replaying the owner's board.
+
+But it exposed a real latent bug: **a pedal could sit in a loop the rig does not
+have.** addPedal copies the catalogue's preferredLocation without asking whether
+a loop exists, so a chorus landed in 'effects_loop' on a board with none. Every
+signal-chain RULE gates on ampHasEffectsLoop, and the properties panel hides the
+Signal Location control when there is no loop - correctly - so the pedal sat
+somewhere the owner could neither see nor change. Harmless while the loop is
+off; the trap is that switching it ON would have yanked the pinned chorus into
+the loop segment. normalizeChain now corrects it, so existing boards heal on
+their next normalize instead of needing a migration.
+
 ## Two more from the owner: Optimize dead, PastFX orientation
 
 ### Optimize did nothing - TWO answers to "where are the rows"
