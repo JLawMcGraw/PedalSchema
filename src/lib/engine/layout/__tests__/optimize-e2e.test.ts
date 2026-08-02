@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { calculateGreedyPlacement, calculateOptimalLayoutJoint } from '../index';
 import { summarizeOptimization } from '../routing-cost';
+import { ROUTING_STRATEGIES } from '../../cables/routing-strategies';
 import type { Board, Pedal, PlacedPedal } from '@/types';
 
 const board: Board = {
@@ -78,10 +79,11 @@ describe('optimize end-to-end', () => {
     const details = result.cost!.cableDetails;
 
     expect(details.length).toBeGreaterThan(0);
-    const known = new Set([
-      'facing', 'direct', 'l-horizontal', 'l-vertical', 'channel',
-      'above', 'below', 'safe-lane', 'astar', 'fallback-invalid',
-    ]);
+    // Derived from the strategy declaration, never hand-listed. The previous
+    // hardcoded set omitted 'perimeter' and passed only because no fixture
+    // board needed one - a stale test list masquerading as a passing check.
+    // 'lane-router' is not a cascade strategy, so it is added explicitly.
+    const known = new Set<string>([...ROUTING_STRATEGIES, 'lane-router']);
     for (const d of details) expect(known).toContain(d.strategy);
   });
 

@@ -22,7 +22,8 @@ import {
 } from '../pathfinding';
 import { generateObstacles } from '../obstacles';
 import { deriveRowBands } from './rows';
-import { routeCableWithObstacles } from '../cables/routing-strategies';
+import { routeCablePaths } from '../cables/route-cables';
+import type { LaneRouteRequest } from '../lanes';
 import {
   deriveSignalTopology,
   primaryChain,
@@ -185,31 +186,22 @@ export function calculateRoutingCost(
       : { x: placed.xInches * scale, y: placed.yInches * scale };
   };
 
+  // COLLECT, not route. The lane router is inherently batch: assignLanes
+  // derives a cable's perpendicular lane from how many cables share its
+  // corridor, so routing one at a time would centre every cable in its
+  // corridor (n=1) - different geometry AND zero lane separation. Scoring has
+  // to see the same batch the renderer draws, so the walk below only gathers
+  // requests; routing and accumulation happen after it.
+  const pending: Array<{ fromId: string; toId: string; fromPos: Point; toPos: Point }> = [];
+  const requests: LaneRouteRequest[] = [];
+
   const addCableRoute = (
     fromId: string, toId: string,
     fromPos: Point, toPos: Point,
     fromPedalId: string | null, toPedalId: string | null
   ) => {
-    const result = routeCableWithObstacles(fromPos, toPos, obstacles, fromPedalId, toPedalId);
-    const path = result.path;
-    const routedDist = calculatePathLength(path) / scale;
-    const directDist = dist(fromPos, toPos) / scale;
-
-    if (path.length > 3) {
-      complexRoutingPenalty += COMPLEX_ROUTING_PENALTY_INCHES;
-      complexRoutingCount++;
-    }
-    if (!result.valid) {
-      validationFailurePenalty += CABLE_COLLISION_PENALTY_INCHES * 2;
-      validationFailureCount++;
-    }
-
-    cableDetails.push({
-      fromId, toId, directDistance: directDist, routedDistance: routedDist, path,
-      strategy: result.strategy,
-    });
-    allPaths.push({ id: `${fromId}-${toId}`, points: path });
-    totalRoutedLength += routedDist;
+    pending.push({ fromId, toId, fromPos, toPos });
+    requests.push({ from: fromPos, to: toPos, fromPedalId, toPedalId });
   };
 
   for (const segment of topology.segments) {
@@ -233,6 +225,35 @@ export function calculateRoutingCost(
     const last = segment.pedals[segment.pedals.length - 1];
     addCableRoute(last.id, to.id, jackPx(placedById.get(last.id)!, 'output'), to.pos, last.id, to.pedalId);
   }
+
+  // --- Route the batch, then accumulate ------------------------------------
+  // routeCablePaths is the same call store/derived.ts makes to draw these
+  // cables. Scoring geometry the user will not see is how the optimizer came
+  // to steer away from layouts that render perfectly well.
+  const routed = routeCablePaths(requests, obstacles);
+
+  routed.forEach((rp, i) => {
+    const { fromId, toId, fromPos, toPos } = pending[i];
+    const path = rp.path;
+    const routedDist = calculatePathLength(path) / scale;
+    const directDist = dist(fromPos, toPos) / scale;
+
+    if (path.length > 3) {
+      complexRoutingPenalty += COMPLEX_ROUTING_PENALTY_INCHES;
+      complexRoutingCount++;
+    }
+    if (!rp.valid) {
+      validationFailurePenalty += CABLE_COLLISION_PENALTY_INCHES * 2;
+      validationFailureCount++;
+    }
+
+    cableDetails.push({
+      fromId, toId, directDistance: directDist, routedDistance: routedDist, path,
+      strategy: rp.strategy,
+    });
+    allPaths.push({ id: `${fromId}-${toId}`, points: path });
+    totalRoutedLength += routedDist;
+  });
 
   // --- Penalties ------------------------------------------------------------
   const crossings = detectCableCrossings(allPaths);
