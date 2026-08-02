@@ -688,7 +688,13 @@ export const useConfigurationStore = create<ConfigurationState>()(
           // list that scored the layouts. Null when there is nothing to say.
           state.lastOptimization =
             result.baselineCost && result.cost
-              ? summarizeOptimization(result.baselineCost, result.cost, result.noLegalCandidate)
+              ? summarizeOptimization(
+                  result.baselineCost,
+                  result.cost,
+                  result.noLegalCandidate,
+                  result.rowFit,
+                  result.placementDegraded
+                )
               : null;
 
           state.isDirty = true;

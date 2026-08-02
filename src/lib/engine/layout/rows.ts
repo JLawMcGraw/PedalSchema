@@ -35,11 +35,55 @@ export interface RowBand {
   height: number;
 }
 
+/**
+ * Why the rows came out the way they did.
+ *
+ * deriveRows computes all of this to place the bands and then throws it away,
+ * returning only {y, height}. That is why the optimizer can only say "could
+ * not fit these pedals on this board" - it genuinely does not know which
+ * constraint bound. Phase 6 established the binding constraint is usually
+ * CORRIDORS, not area: three rows of ~5.1in pedals on a 16in board leave
+ * 0.2in between rows against a ~0.24in patch cable.
+ */
+export interface RowFit {
+  /** How many bands the board holds at the sizing depth */
+  rowCount: number;
+  /** Corridor between adjacent bands, inches - what cables have to run through */
+  corridorInches: number;
+  /** Depth the bands themselves consume */
+  usedInches: number;
+  boardDepthInches: number;
+  /** Deepest pedal on the board */
+  deepestPedalInches: number;
+  /** Pedals too deep for any band - they must straddle two rows */
+  straddlerCount: number;
+  /** The corridor is at its floor: no room left between rows */
+  corridorAtFloor: boolean;
+}
+
+export interface RowLayout {
+  rows: RowBand[];
+  fit: RowFit;
+}
+
 export function deriveRowBands(
   placedPedals: PlacedPedal[],
   pedalsById: Record<string, Pedal>,
   board: Board
 ): RowBand[] {
+  return deriveRowLayout(placedPedals, pedalsById, board).rows;
+}
+
+/**
+ * Rows, plus the arithmetic that produced them. `deriveRowBands` is this
+ * without the diagnostic - kept because most callers place pedals and do not
+ * explain themselves.
+ */
+export function deriveRowLayout(
+  placedPedals: PlacedPedal[],
+  pedalsById: Record<string, Pedal>,
+  board: Board
+): RowLayout {
   const dims = (placed: PlacedPedal): { width: number; depth: number } => {
     const pedal = pedalsById[placed.pedalId] || placed.pedal;
     if (!pedal) return { width: 2.87, depth: 5.12 };
@@ -50,6 +94,18 @@ export function deriveRowBands(
   const rails = [...(board.rails || [])].sort((a, b) => b.positionFromBackInches - a.positionFromBackInches);
 
   const maxDepth = placedPedals.reduce((max, placed) => Math.max(max, dims(placed).depth), 0);
+
+  // Filled by deriveRows below. The empty-board shape is the honest answer for
+  // a board with nothing on it, not a placeholder.
+  let fit: RowFit = {
+    rowCount: 0,
+    corridorInches: 0,
+    usedInches: 0,
+    boardDepthInches: board.depthInches,
+    deepestPedalInches: maxDepth,
+    straddlerCount: 0,
+    corridorAtFloor: false,
+  };
 
   /**
    * How many rows of the deepest pedal actually fit, and where they sit.
@@ -179,6 +235,21 @@ export function deriveRowBands(
       rows.push({ y, height });
       y += height + gap;
     }
+
+    // Capture the arithmetic on the way past. Every number here was already
+    // computed to place the bands; recording it costs nothing and is the only
+    // way anything downstream can say WHICH constraint bound.
+    const tallestBand = heights.reduce((max, h) => Math.max(max, h), 0);
+    fit = {
+      rowCount: count,
+      corridorInches: gap,
+      usedInches: used,
+      boardDepthInches: board.depthInches,
+      deepestPedalInches: maxDepth,
+      straddlerCount: placedPedals.filter((p) => dims(p).depth > tallestBand + 1e-6).length,
+      corridorAtFloor: count > 1 && gap <= MIN_ROW_CLEARANCE + 1e-6,
+    };
+
     return rows.sort((a, b) => b.y - a.y); // front-to-back, matching the rails convention
   };
 
@@ -219,5 +290,5 @@ export function deriveRowBands(
   }
 
 
-  return rows;
+  return { rows, fit };
 }

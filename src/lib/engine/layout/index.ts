@@ -6,7 +6,7 @@ import { COLLISION_SPACING } from '../collision';
 import { rotateSide, rotatedFootprint } from '../geometry/rotation';
 import { canOptimizerRotate, mayRotateTo } from './rotation-eligibility';
 import { ROW_GAP, MIN_ROW_CLEARANCE } from './constants';
-import { deriveRowBands, type RowBand } from './rows';
+import { deriveRowBands, deriveRowLayout, type RowBand, type RowFit } from './rows';
 import { isDebugEnabled } from '../debug-flag';
 
 
@@ -921,6 +921,13 @@ export interface ScoredJointOptimizationResult extends JointOptimizationResult {
    * looking at a cramped board deserves to know which.
    */
   placementDegraded?: boolean;
+  /**
+   * The row arithmetic behind this board - corridor width, depth used, how
+   * many pedals are too deep for any band. deriveRows computed all of it to
+   * place the bands and used to discard it, which is why "could not fit these
+   * pedals" could never say WHICH constraint bound.
+   */
+  rowFit?: RowFit;
 }
 
 export function calculateOptimalLayoutJoint(
@@ -969,6 +976,11 @@ export function calculateOptimalLayoutJoint(
   const baselineEligible = !hasPlacementCollision(
     currentPlacements, placedPedals, pedalsById, board
   );
+  // Row arithmetic for the whole board, computed once. Only consumed when the
+  // search fails, but computing it there would mean re-deriving rows in the
+  // one situation where every derivation already went wrong.
+  const rowFit = deriveRowLayout(placedPedals, pedalsById, board).fit;
+
   const baselineCandidate = {
     placements: currentPlacements,
     score: baselineEligible ? baselineCost.totalScore : Infinity,
@@ -1023,6 +1035,7 @@ export function calculateOptimalLayoutJoint(
       noLegalCandidate: !Number.isFinite(greedyScore),
       // Only meaningful for a layout we actually returned.
       placementDegraded: keepBaseline ? false : greedy.degraded,
+      rowFit,
     };
   }
 
@@ -1202,6 +1215,7 @@ export function calculateOptimalLayoutJoint(
     // The WINNER's flag, not any candidate's - the search may have degraded
     // its way through a dozen arrangements and still returned a clean one.
     placementDegraded: best.degraded,
+    rowFit,
   };
 }
 

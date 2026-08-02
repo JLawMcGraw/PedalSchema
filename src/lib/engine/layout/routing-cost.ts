@@ -21,7 +21,7 @@ import {
   dist,
 } from '../pathfinding';
 import { generateObstacles } from '../obstacles';
-import { deriveRowBands } from './rows';
+import { deriveRowBands, type RowFit } from './rows';
 import { routeCablePaths } from '../cables/route-cables';
 import type { LaneRouteRequest } from '../lanes';
 import {
@@ -423,12 +423,50 @@ export interface OptimizationSummary {
   headline: string;
   /** No legal arrangement was found; the board was left as-is */
   noLegalCandidate?: boolean;
+  /** The layout was produced by giving up on the placer's own rules */
+  placementDegraded?: boolean;
 }
 
 /** Round to one decimal, avoiding "-0.0" */
 function round1(n: number): number {
   const r = Math.round(n * 10) / 10;
   return r === 0 ? 0 : r;
+}
+
+/**
+ * Name the constraint that actually bound, in the user's units.
+ *
+ * Order matters: report the TIGHTEST real constraint, not the first true
+ * statement. A board can be short on depth AND have a collapsed corridor, and
+ * "the rows are 0.2in apart" is actionable where "it does not fit" is not.
+ */
+function explainFit(fit?: RowFit): string | null {
+  if (!fit || fit.rowCount === 0) return null;
+
+  if (fit.deepestPedalInches > fit.boardDepthInches) {
+    return `The deepest pedal is ${round1(fit.deepestPedalInches)}in and the board is ` +
+      `only ${round1(fit.boardDepthInches)}in front to back.`;
+  }
+
+  if (fit.straddlerCount > 0) {
+    const n = fit.straddlerCount;
+    return `${n} pedal${n === 1 ? ' is' : 's are'} deeper than any row this board can offer, ` +
+      `so ${n === 1 ? 'it has' : 'they have'} to straddle two rows and block the column.`;
+  }
+
+  const depth = `${fit.rowCount} row${fit.rowCount === 1 ? '' : 's'} use ` +
+    `${round1(fit.usedInches)}in of the board's ${round1(fit.boardDepthInches)}in depth`;
+
+  // With one row there is no corridor to report, and the constraint is width.
+  if (fit.rowCount < 2) return `${depth}. Try a larger board or removing a pedal.`;
+
+  // The corridor is the number that matters and the one nobody could see. A
+  // 16in board with three 5.1in rows leaves 0.2in between them, against a
+  // patch cable about 0.24in thick - the board looks roomy and is not.
+  const corridor = `leaving ${round1(fit.corridorInches)}in between rows`;
+  return fit.corridorAtFloor
+    ? `${depth}, ${corridor} - too narrow to route a patch cable through.`
+    : `${depth}, ${corridor}. Try a larger board or removing a pedal.`;
 }
 
 /**
@@ -444,7 +482,15 @@ export function summarizeOptimization(
   before: RoutingCostResult,
   after: RoutingCostResult,
   /** Every arrangement tried was illegal - see JointOptimizationResult */
-  noLegalCandidate = false
+  noLegalCandidate = false,
+  /**
+   * The row arithmetic, when the caller has it. Turns "could not fit these
+   * pedals" into which constraint actually bound - usually the corridor
+   * between rows rather than board area.
+   */
+  fit?: RowFit,
+  /** The returned layout was produced by degrading - see GreedyPlacementResult */
+  placementDegraded = false
 ): OptimizationSummary {
   const beforeByKey = new Map(before.dimensions.map((d) => [d.key, d]));
 
@@ -491,9 +537,12 @@ export function summarizeOptimization(
   if (noLegalCandidate) {
     // Never report this as "already optimal" - the search failed, it did not
     // conclude the board was ideal.
+    // Lead unchanged on purpose: optimize-e2e asserts /could not fit/i and
+    // NOT /already optimal/i, and that assertion should keep meaning what it
+    // meant. The arithmetic is appended, not substituted.
     headline =
       'Could not fit these pedals on this board - your layout was left alone. ' +
-      'Try a larger board or removing a pedal.';
+      (explainFit(fit) ?? 'Try a larger board or removing a pedal.');
   } else if (changes.length === 0) {
     headline = 'Already optimal - nothing moved.';
   } else if (delta > 0.05) {
@@ -515,5 +564,6 @@ export function summarizeOptimization(
     changes,
     headline,
     noLegalCandidate,
+    placementDegraded,
   };
 }
