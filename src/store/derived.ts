@@ -234,6 +234,7 @@ if (typeof window !== 'undefined') {
     __getPedalSchemaDerived: () => DerivedBoardState;
     __getPedalSchemaSnapshot: () => PedalSchemaSnapshot;
     __pedalSchemaSetSupply: (nameFragment: string) => { name: string; outputs: number } | null;
+    __pedalSchemaAssignOne: (placedPedalId: string, outputId: string | null) => void;
     __pedalSchemaAssignAll: (outputIndex: number) => Record<string, unknown>;
     __pedalSchemaAssignSpread: () => Record<string, unknown>;
     __pedalSchemaProbeUnknownOnOutput: () => Record<string, unknown>;
@@ -298,6 +299,11 @@ if (typeof window !== 'undefined') {
       headroomMa: load?.headroomMa ?? null,
       unknownCount: load?.unknownCount ?? 0,
     };
+  };
+
+  /** Assign ONE pedal, by id, through the real store action. */
+  w.__pedalSchemaAssignOne = (placedPedalId: string, outputId: string | null) => {
+    useConfigurationStore.getState().assignPedalToOutput(placedPedalId, outputId);
   };
 
   w.__pedalSchemaAssignAll = (outputIndex: number) => {
