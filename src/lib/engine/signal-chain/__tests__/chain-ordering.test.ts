@@ -184,3 +184,55 @@ describe('split chains carry final positions', () => {
     expect(result.effectsLoopChain.map((p) => p.id)).toEqual(['delay1', 'reverb1']);
   });
 });
+
+describe('a pedal cannot sit in a loop the rig does not have', () => {
+  /*
+   * addPedal copies the catalogue's preferredLocation onto the placed pedal,
+   * so adding a chorus (preferred: effects_loop) to a board with no effects
+   * loop filed it under 'effects_loop'. The properties panel hides the Signal
+   * Location control when there is no loop - correctly, there is nothing to
+   * choose - so the pedal sat somewhere the user could neither see nor change.
+   *
+   * Harmless while the loop is off, because the topology is then one chain.
+   * The trap is later: switching the loop ON would yank that pedal into the
+   * loop segment, undoing a chain position the owner had deliberately pinned.
+   */
+  const inLoop = (overrides: Partial<PlacedPedal> = {}) =>
+    setup([
+      ['tuner1', 'tuner', 1],
+      ['chorus1', 'modulation', 2, { location: 'effects_loop', ...overrides }],
+    ]);
+
+  it('moves it front-of-amp when the amp has no loop', () => {
+    const { pedalsById, placed } = inLoop();
+    const result = signalChainEngine.calculate(placed, pedalsById, noLoopContext);
+    expect(result.orderedPedals.find((p) => p.id === 'chorus1')!.location).toBe('front_of_amp');
+    expect(result.effectsLoopChain).toHaveLength(0);
+  });
+
+  it('moves it front-of-amp when the loop exists but is switched off', () => {
+    const { pedalsById, placed } = inLoop();
+    const result = signalChainEngine.calculate(placed, pedalsById, {
+      ampHasEffectsLoop: true, useEffectsLoop: false,
+      use4CableMethod: false, modulationInLoop: false,
+    });
+    expect(result.orderedPedals.find((p) => p.id === 'chorus1')!.location).toBe('front_of_amp');
+  });
+
+  it('leaves it alone when there really is a loop in use', () => {
+    const { pedalsById, placed } = inLoop();
+    const result = signalChainEngine.calculate(placed, pedalsById, loopContext);
+    expect(result.orderedPedals.find((p) => p.id === 'chorus1')!.location).toBe('effects_loop');
+  });
+
+  it('does not disturb a pinned chain position while correcting the location', () => {
+    // The case this came from: the owner pinned a chorus directly after the
+    // tuner to use it as a preamp. Correcting its location must not move it.
+    const { pedalsById, placed } = inLoop({ chainPositionLocked: true });
+    const result = signalChainEngine.calculate(placed, pedalsById, noLoopContext);
+    const chorus = result.orderedPedals.find((p) => p.id === 'chorus1')!;
+    const tuner = result.orderedPedals.find((p) => p.id === 'tuner1')!;
+    expect(chorus.location).toBe('front_of_amp');
+    expect(chorus.chainPosition).toBe(tuner.chainPosition + 1);
+  });
+});

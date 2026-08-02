@@ -55,6 +55,27 @@ export class SignalChainEngine {
       pedals.splice(index, 0, lockedPedal);
     }
 
+    // Step 3b: A pedal cannot be in a loop the rig does not have.
+    //
+    // The RULES already gate 'effects_loop' on ampHasEffectsLoop, but nothing
+    // else did: addPedal copies the catalogue's preferredLocation straight
+    // onto the placed pedal, so adding a chorus to a board with no effects
+    // loop filed it under 'effects_loop' anyway. The properties panel hides
+    // the Signal Location control when there is no loop - correctly, there is
+    // nothing to choose - so the pedal sat in a location the user could
+    // neither see nor change.
+    //
+    // Harmless today, because with no loop the topology is one chain and the
+    // split is never used. The trap is later: turning the effects loop ON
+    // would suddenly yank that pedal into the loop segment, undoing a chain
+    // position the user had deliberately pinned.
+    const hasLoop = context.ampHasEffectsLoop === true && context.useEffectsLoop === true;
+    if (!hasLoop) {
+      pedals = pedals.map((p) =>
+        p.location === 'effects_loop' ? { ...p, location: 'front_of_amp' as const } : p
+      );
+    }
+
     // Step 4: Assign final chain positions
     pedals = this.assignChainPositions(pedals);
 

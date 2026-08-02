@@ -75,6 +75,17 @@ const PRODUCT_PAGES = {
     'https://www.ehx.com/products/holy-grail-neo/',
   ],
   'Strymon Timeline': ['https://www.strymon.net/product/timeline/'],
+  'Strymon Flint': ['https://www.strymon.net/product/flint/'],
+  // Dunlop is BigCommerce; its og:image is usually the head-on product shot.
+  // If one comes back angled, pin the gallery TOPP file directly, as Cry Baby
+  // above had to.
+  'Way Huge Aqua-Puss': ['https://www.jimdunlop.com/way-huge-smalls-aqua-puss-analog-delay/'],
+  'Way Huge Conspiracy Theory': [
+    'https://www.jimdunlop.com/way-huge-smalls-conspiracy-theory-professional-overdrive/',
+  ],
+  // Direct file: the product PAGE fetch is refused (HTTP 425 to some clients),
+  // but the image itself serves fine with a browser UA.
+  'PastFX Chorus Ensemble Deluxe': ['https://www.pastfx.com/images/New_Deluxe_Chorus.jpg'],
   'Strymon BigSky': ['https://www.strymon.net/product/bigsky/'],
   'TC Electronic Polytune 3': [
     'https://web.archive.org/web/20211010004401im_/https://mediadl.musictribe.com/media/PLM/data/images/products/P0CM0/2000Wx2000H/POLYTUNE-3_P0CM0_Top_XL.png',
@@ -407,7 +418,7 @@ async function acceptCandidate(url, physicalAspect) {
 const MANUFACTURER_HOSTS = [
   'roland.com', 'boss.info', 'ibanez.com', 'jimdunlop.com', 'bigcommerce.com',
   'ehx.com', 'actentertainment.com', 'musictribe.com', 'tcelectronic.com',
-  'strymon.net',
+  'strymon.net', 'pastfx.com',
 ];
 
 function provenanceFor(sourceUrl) {
