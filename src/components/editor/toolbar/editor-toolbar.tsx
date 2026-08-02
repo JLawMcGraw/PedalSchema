@@ -29,6 +29,10 @@ interface EditorToolbarProps {
 }
 
 export function EditorToolbar({ onSave }: EditorToolbarProps) {
+  const { selectedPedalId, selectPedal } = useEditorStore(
+    useShallow((s) => ({ selectedPedalId: s.selectedPedalId, selectPedal: s.selectPedal }))
+  );
+  const removePedal = useConfigurationStore((s) => s.removePedal);
   const { zoom, zoomIn, zoomOut, resetZoom, gridVisible, toggleGrid, cablesVisible, toggleCables } =
     useEditorStore(
     useShallow((s) => ({ zoom: s.zoom, zoomIn: s.zoomIn, zoomOut: s.zoomOut, resetZoom: s.resetZoom, gridVisible: s.gridVisible, toggleGrid: s.toggleGrid, cablesVisible: s.cablesVisible, toggleCables: s.toggleCables }))
@@ -50,13 +54,42 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
   );
   const { collisions } = useDerivedConfiguration((d) => ({ collisions: d.collisions }));
 
-  // Cmd/Ctrl+Z to undo, Shift+Cmd/Ctrl+Z or Ctrl+Y to redo
+  /**
+   * Every global editor shortcut lives here, in one handler, so "what does
+   * this key do" has a single answer rather than one per component that
+   * happened to be mounted.
+   *
+   *   Cmd/Ctrl+Z          undo          Shift+Cmd/Ctrl+Z or Ctrl+Y   redo
+   *   Delete / Backspace  remove the selected pedal
+   */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return;
       }
+
+      // Delete the selected pedal. Backspace as well as Delete: Mac laptop
+      // keyboards have no Delete key, and its Backspace is labelled "delete".
+      //
+      // Bare key only - a modifier means the user meant something else
+      // (Cmd+Z is right below, and Cmd/Alt+Backspace is a browser Back
+      // gesture we have no business hijacking).
+      //
+      // preventDefault matters even so: plain Backspace still navigates Back
+      // in some browsers, and losing an unsaved board to a stray keypress is
+      // a far worse outcome than the delete itself.
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (!selectedPedalId) return;
+        e.preventDefault();
+        removePedal(selectedPedalId);
+        // removePedal records history, so Cmd+Z brings it back. Clearing the
+        // selection afterwards keeps the Properties tab from describing a
+        // pedal that is no longer on the board.
+        selectPedal(null);
+        return;
+      }
+
       if (!(e.metaKey || e.ctrlKey)) return;
       const key = e.key.toLowerCase();
       if (key === 'z') {
@@ -70,7 +103,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [undo, redo]);
+  }, [undo, redo, selectedPedalId, selectPedal, removePedal]);
 
   return (
     <TooltipProvider>

@@ -77,3 +77,19 @@ export const useEditorStore = create<EditorState>()(
       set({ pedalToAdd: pedalId, mode: pedalId ? 'add-pedal' : 'select' }),
   }))
 );
+
+/**
+ * Selection, for verification scripts.
+ *
+ * Lives here rather than beside the other __pedalSchema* hooks in derived.ts
+ * because selection is editor-store state and derived.ts does not import this
+ * store - reaching across for one getter would create the dependency the two
+ * stores are kept apart to avoid.
+ *
+ * Goes through selectPedal, so a script cannot select in a way a click could
+ * not.
+ */
+if (typeof window !== 'undefined') {
+  (window as unknown as { __pedalSchemaSelect: (id: string | null) => void })
+    .__pedalSchemaSelect = (id) => useEditorStore.getState().selectPedal(id);
+}
