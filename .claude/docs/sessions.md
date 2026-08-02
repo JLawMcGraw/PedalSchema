@@ -105,6 +105,47 @@ the phase 6 session below, which retracts it.**
 
 ---
 
+## The loop-hub placement fix (five attempts, measured each time)
+
+DONE. Optimize now produces `TU-3 <- Chorus <- NS-2 <- Conspiracy <- TS9` on the
+owner's board: 413.88 -> 170.84, cable 53.2in against 77.9, one crossing
+against sixteen.
+
+**The ordering was never the hard part - the PADDING was.** The hub carries
+0.5in of extra corridor per side (two cables cross each of its gaps). On an
+18in row the run needs 17.82in bare and 18.82in padded, so the padding pushed
+the group past the end and the packer wrapped THROUGH it, stranding a member on
+the next row where its send and return had to cross the board. The four failed
+attempts were each a different way of losing that fight:
+  1. cluster-first against a dry-run hub position - cluster took the hub's row
+  2. same, excluding that row - overflow scrambled, score 621.74
+  3. inline (the right model) - group split by a row wrap, 18 matrix failures
+  4. an atomic-group rule - did not catch the case
+
+**The fix**: make the padding a RETRY. Attempted, and given up only if it splits
+the group, because a stranded member costs two board-length cables while
+crowded corridors cost only lane separation. Plus the group's TAIL needs the
+same padding as the hub - the return and the hub's output both cross the gap
+past it, and at minimum spacing that gap leaves a 4px band for two runs needing
+10px apart. That single addition cleared 12 of the 18 matrix failures.
+
+**An invariant was rewritten, not relaxed.** "Every member within 8in of its
+hub" was right for a bunched cluster; with an inline run a three-member group
+legitimately spans 11.11in. It now asserts the group is not BROKEN, which still
+catches a stranded member and catches it for the right reason.
+
+Also: the optimizer's chain-ORDER search did not know the hub-before-members
+rule, so the list could disagree with the board. The returned chainOrder gets
+the same hoist now.
+
+Verified: 254 tests, full 66-scenario matrix, both real boards byte-identical
+with no loop configured, 0 invalid/through-body/placement/chain-order
+violations with the loop on, new tests mutation-checked (reverting to a cluster
+fails 3, unconditional padding fails 2), and end-to-end in the running app.
+
+Residual: one lane violation on that board - an 18in row has no space for the
+padding that would fix it. Cosmetic; it is the P4 lane-separation item.
+
 ## Photos for the new pedals, and the chorus-as-preamp request
 
 ### Photos: 58 -> 62 of 67
