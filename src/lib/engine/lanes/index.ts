@@ -341,6 +341,19 @@ function assignLanes(corridors: Corridor[], traversals: Traversal[]): boolean {
 // Main entry
 // ---------------------------------------------------------------------------
 
+/**
+ * The stub exemptions isPathClear needs: a cable is allowed to touch the two
+ * pedals it terminates on. Shared by the facing-jack shortcut and the realize
+ * loop so both are held to one policy - they were the same expression written
+ * twice, which is how the shortcut came to skip validation entirely.
+ */
+function endpointBoxes(req: LaneRouteRequest, obstacles: ObstacleSet) {
+  return {
+    fromBoxIdx: req.fromPedalId ? obstacles.pedalIdToBox.get(req.fromPedalId) ?? -1 : -1,
+    toBoxIdx: req.toPedalId ? obstacles.pedalIdToBox.get(req.toPedalId) ?? -1 : -1,
+  };
+}
+
 export function routeCablesWithLanes(
   requests: LaneRouteRequest[],
   obstacles: ObstacleSet
@@ -357,16 +370,27 @@ export function routeCablesWithLanes(
     const fromStub = getStandoffPoint(req.from, fromBox, STANDOFF);
     const toStub = getStandoffPoint(req.to, toBox, STANDOFF);
 
-    // Facing-jack shortcut: nearly-touching stubs connect directly
-    if (Math.abs(fromStub.x - toStub.x) < 1 && Math.abs(fromStub.y - toStub.y) <= 2 * STANDOFF + 1) {
-      planned.push(null);
-      paths[index] = dedupe([req.from, fromStub, toStub, req.to]);
-      return;
-    }
-    if (Math.abs(fromStub.y - toStub.y) < 1 && Math.abs(fromStub.x - toStub.x) <= 2 * STANDOFF + 1) {
-      planned.push(null);
-      paths[index] = dedupe([req.from, fromStub, toStub, req.to]);
-      return;
+    // Facing-jack shortcut: nearly-touching stubs connect directly.
+    //
+    // Collinearity and proximity say the two standoffs face each other; they
+    // say NOTHING about what sits between them. Every other path this function
+    // returns is checked by isPathClear in the realize loop below, and callers
+    // stamp the whole batch `valid: true` on the strength of that. An
+    // unchecked path here is therefore not a shortcut but an unearned
+    // guarantee - and it becomes a scoring error the moment the layout cost
+    // function shares this router. Check it on the same policy, and fall
+    // through to the corridor graph when it does not hold.
+    const collinearX = Math.abs(fromStub.x - toStub.x) < 1
+      && Math.abs(fromStub.y - toStub.y) <= 2 * STANDOFF + 1;
+    const collinearY = Math.abs(fromStub.y - toStub.y) < 1
+      && Math.abs(fromStub.x - toStub.x) <= 2 * STANDOFF + 1;
+    if (collinearX || collinearY) {
+      const direct = dedupe([req.from, fromStub, toStub, req.to]);
+      if (isPathClear(direct, obstacles.boxes, endpointBoxes(requests[index], obstacles))) {
+        planned.push(null);
+        paths[index] = direct;
+        return;
+      }
     }
 
     const startC = attachCorridor(corridors, fromStub);
@@ -481,11 +505,7 @@ export function routeCablesWithLanes(
     const path = dedupe(manhattanize(pts));
 
     // Shared validation policy (stub exemptions at the ends)
-    const fromBoxIdx = requests[index].fromPedalId
-      ? obstacles.pedalIdToBox.get(requests[index].fromPedalId!) ?? -1 : -1;
-    const toBoxIdx = requests[index].toPedalId
-      ? obstacles.pedalIdToBox.get(requests[index].toPedalId!) ?? -1 : -1;
-    if (isPathClear(path, obstacles.boxes, { fromBoxIdx, toBoxIdx })) {
+    if (isPathClear(path, obstacles.boxes, endpointBoxes(requests[index], obstacles))) {
       paths[index] = path;
     }
   });
