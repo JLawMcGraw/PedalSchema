@@ -1,5 +1,10 @@
 # What to do next (2026-08-02, after P1.5)
 
+> **STATUS: P0, P2–P7 are all done.** See § Outcome at the foot of this file
+> for what the work actually proved — including that this document's diagnosis
+> of the cable-length regression was wrong twice, and what it turned out to be.
+> Remaining: Group 3 (research) and Group 4 (gated on a product decision).
+
 Successor to `8-2-plan.md`, written after P1.5 landed on `routing/one-router`.
 Same convention: ordered by what it costs to be wrong, every claim tied to a
 measurement or code trace taken today rather than to recollection.
@@ -357,3 +362,81 @@ node .claude/scripts/verify-optimize.js
   Classic Pro 32x16    20 pedals, 21 cables   settled 201ms   lane-router 18 -> 18
   PASS - Optimize runs on the worker, settles, and never falls back inline
 ```
+
+---
+
+## Outcome — 2026-08-02
+
+All of P0 and P2–P7 landed on `routing/one-router`. Suite 279 green, browser
+gate passing, fingerprint stable.
+
+### The cable-length regression: this document was wrong twice
+
+P1.5 left J$ Home drawing 63.70in against a 45.05in baseline. This plan named
+two candidate causes and set up a test to separate them. **Both were wrong**,
+and both were killed by measurement rather than argument:
+
+| Hypothesis | Prediction | Result |
+|---|---|---|
+| The `assignLanes` cliff (P6) | Fixing it recovers the 18.65in | 63.70 → **62.60in**. Falsified. |
+| `CROSSING_PENALTY_INCHES` (P7) | Re-weighting recovers it | Swept 2/4/6/8 — **identical layout at every value**. Falsified. |
+
+The actual cause was neither. Scoring the pre-P1.5 layout with today's cost
+function showed it winning by **33.56** — so the optimizer *preferred* a layout
+it never visited. A search failure, not a weighting one.
+
+`calculateOptimalLayoutJoint` ran its two stages **once each**: every chain
+order at the starting rotations, then every rotation at the winning order. That
+walks a single path through (order × rotation) space, so the answer is only as
+good as the first stage's guess, and the better layout needed a different order
+*and* a different rotation. Alternating the stages until neither improves —
+ordinary coordinate descent — recovers it exactly:
+
+```
+J$ Home drawn cable   45.05in   pre-P1.5, scored on a fiction
+                      62.60in   honest scoring, single-pass search
+                      45.05in   honest scoring, alternating search
+                      score 135.08, and 45.08 scored vs 45.05 drawn
+```
+
+**Lesson worth keeping: a cost-function change can expose a SEARCH defect, and
+the two are easy to confuse.** Both wrong hypotheses were plausible, and both
+would have meant tuning a global constant to compensate for a local bug. What
+settled it was scoring the old layout with the new function — a five-minute
+experiment that should have come first.
+
+### A crash nobody was looking for
+
+Writing a fixture for P5 turned up `enumerateChainOrders` building **every**
+permutation of a swappable group before the cap discarded them. One group of 12
+pedals is 12! = 479,001,600 arrays generated to keep 48:
+
+```
+ 6 pedals        720 perms     31ms
+ 8 pedals     40,320 perms     63ms
+10 pedals  3,628,800 perms   1895ms
+12 pedals       479m perms   heap exhausted, worker dead
+```
+
+Pre-existing, not a regression from the alternating search — forcing
+`MAX_PASSES` back to 1 dies at exactly the same point. And in a Web Worker that
+crash is not catchable: no reply, nothing `run-optimize` can rescue, and an
+Optimize button that spins forever — the same visible symptom as the
+route-cables landmine, by an unrelated route. 12 pedals now optimizes in 48ms.
+
+### P3 was built at half scope, on purpose
+
+Perimeter cables are dashed; the tooltip is not built. It needs pointer events
+on a stroke that sits under draggable pedals, and **no board produces a drawn
+perimeter route** — across every config-matrix fixture the tally is
+`lane-router 68, l-horizontal 3, channel 3`, and neither saved configuration
+produces one. With no subject to test against and no jsdom in the project,
+shipping an untestable interaction change to annotate an invisible cable was
+the wrong trade. Reasoning recorded at the call site.
+
+### Still open
+
+- **Group 3** — 13 jack layouts, 2 image gaps. Research, not code. Unblocked.
+- **Group 4** — power supply. Gated on deciding the app should plan wiring
+  rather than report demand.
+- **The branch** — 15 commits on `routing/one-router`, unmerged.
