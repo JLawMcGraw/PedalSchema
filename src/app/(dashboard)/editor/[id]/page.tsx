@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { EditorClient } from './editor-client';
-import type { Board, Pedal, Amp, PlacedPedal } from '@/types';
+import type { Board, Pedal, Amp, PlacedPedal , RoutingConfig } from '@/types';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -179,6 +179,7 @@ export default async function EditorPage({ params }: PageProps) {
       useEffectsLoop={config.use_effects_loop}
       use4CableMethod={config.use_4_cable_method}
       modulationInLoop={config.modulation_in_loop ?? false}
+      routingConfig={(config.routing_config as Partial<RoutingConfig>) ?? undefined}
       placedPedals={placedPedals}
       pedalsById={pedalsById}
       availablePedals={availablePedals}

@@ -18,7 +18,7 @@ import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import { PlusCircle, List } from 'lucide-react';
 import { describeSaveError, failIf } from '@/lib/save-error';
-import type { Board, Amp, Pedal, PlacedPedal } from '@/types';
+import type { Board, Amp, Pedal, PlacedPedal, RoutingConfig } from '@/types';
 
 interface EditorClientProps {
   configId: string;
@@ -33,6 +33,8 @@ interface EditorClientProps {
   pedalsById: Record<string, Pedal>;
   availablePedals: Pedal[];
   availableAmps: Amp[];
+  /** Stored pedal-loop wiring; undefined for configurations saved before it was persisted. */
+  routingConfig?: Partial<RoutingConfig>;
 }
 
 export function EditorClient({
@@ -48,6 +50,7 @@ export function EditorClient({
   pedalsById: initialPedalsById,
   availablePedals,
   availableAmps,
+  routingConfig: initialRoutingConfig,
 }: EditorClientProps) {
   const initConfiguration = useConfigurationStore((s) => s.initConfiguration);
   const isDirty = useConfigurationStore((s) => s.isDirty);
@@ -81,6 +84,7 @@ export function EditorClient({
       modulationInLoop,
       placedPedals: initialPlacedPedals,
       pedalsById: initialPedalsById,
+      routingConfig: initialRoutingConfig,
     });
   }, [
     configId,
@@ -93,6 +97,7 @@ export function EditorClient({
     modulationInLoop,
     initialPlacedPedals,
     initialPedalsById,
+    initialRoutingConfig,
     initConfiguration,
   ]);
 
@@ -124,7 +129,7 @@ export function EditorClient({
   const handleSave = useCallback(async () => {
     const {
       id, name, description, placedPedals, amp,
-      useEffectsLoop, use4CableMethod, modulationInLoop,
+      useEffectsLoop, use4CableMethod, modulationInLoop, routingConfig,
       setSaving, markClean, setSaveError,
     } = useConfigurationStore.getState();
 
@@ -145,6 +150,17 @@ export function EditorClient({
           use_effects_loop: useEffectsLoop,
           use_4_cable_method: use4CableMethod,
           modulation_in_loop: modulationInLoop,
+          // Pedal-loop wiring (which pedal is the hub, what runs in its
+          // send/return) and the rotation toggle. Everything else in
+          // RoutingConfig has its own column and is NOT duplicated here - the
+          // loader rebuilds those from the columns.
+          routing_config: {
+            useLoopPedals: routingConfig.useLoopPedals,
+            pedalConfigs: routingConfig.pedalConfigs,
+            ...(routingConfig.allowRotation !== undefined
+              ? { allowRotation: routingConfig.allowRotation }
+              : {}),
+          },
           updated_at: new Date().toISOString(),
         })
         .eq('id', id);

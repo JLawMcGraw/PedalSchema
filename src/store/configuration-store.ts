@@ -84,6 +84,12 @@ interface ConfigurationState {
     modulationInLoop?: boolean;
     placedPedals?: PlacedPedal[];
     pedalsById?: Record<string, Pedal>;
+    /**
+     * Pedal-loop wiring and the rotation toggle, as stored. The
+     * useEffectsLoop / use4CableMethod flags above stay authoritative - they
+     * have their own columns - so whatever this carries for them is ignored.
+     */
+    routingConfig?: Partial<RoutingConfig>;
   }) => void;
 
   setBoard: (board: Board) => void;
@@ -212,6 +218,18 @@ export const useConfigurationStore = create<ConfigurationState>()(
           state.modulationInLoop = config.modulationInLoop || false;
           state.placedPedals = config.placedPedals || [];
           state.pedalsById = config.pedalsById || {};
+          // Stored pedal-loop wiring. The two flags that have their own
+          // columns are re-applied from those, never from this JSON, so the
+          // column and the blob cannot drift into disagreeing.
+          state.routingConfig = {
+            useLoopPedals: config.routingConfig?.useLoopPedals ?? true,
+            pedalConfigs: config.routingConfig?.pedalConfigs ?? [],
+            ...(config.routingConfig?.allowRotation !== undefined
+              ? { allowRotation: config.routingConfig.allowRotation }
+              : {}),
+            useEffectsLoop: config.useEffectsLoop || false,
+            use4CableMethod: config.use4CableMethod || false,
+          };
           state.history = { past: [], future: [] };
           state.isDirty = false;
         });

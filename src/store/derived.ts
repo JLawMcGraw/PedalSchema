@@ -220,6 +220,7 @@ if (typeof window !== 'undefined') {
     __getPedalSchemaDerived: () => DerivedBoardState;
     __getPedalSchemaSnapshot: () => PedalSchemaSnapshot;
     __pedalSchemaOptimize: () => Promise<void>;
+    __pedalSchemaSetLoop: (hubId: string, memberIds: string[]) => void;
   };
   w.__getPedalSchemaState = () => {
     const s = useConfigurationStore.getState();
@@ -241,6 +242,11 @@ if (typeof window !== 'undefined') {
   // script cannot tell when it finished by waiting a fixed time. Hand back the
   // promise so a measurement can bracket exactly the run and nothing else.
   w.__pedalSchemaOptimize = () => useConfigurationStore.getState().optimizeLayout();
+
+  // Configure a pedal loop the way the Routing panel does, so a verification
+  // script can exercise persistence without driving that panel's markup.
+  w.__pedalSchemaSetLoop = (hubId: string, memberIds: string[]) =>
+    useConfigurationStore.getState().setPedalRoutingMode(hubId, 'loop', memberIds);
 
   w.__getPedalSchemaSnapshot = () => {
     const s = useConfigurationStore.getState();
