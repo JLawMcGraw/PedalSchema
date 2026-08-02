@@ -6,7 +6,7 @@ import { COLLISION_SPACING } from '../collision';
 import { rotateSide, rotatedFootprint } from '../geometry/rotation';
 import { canOptimizerRotate, mayRotateTo } from './rotation-eligibility';
 import { ROW_GAP, MIN_ROW_CLEARANCE } from './constants';
-import { deriveRowBands, type RowBand } from './rows';
+import { deriveRowBands, deriveRowLayout, type RowBand, type RowFit } from './rows';
 import { isDebugEnabled } from '../debug-flag';
 
 
@@ -34,14 +34,41 @@ interface PlacedBox {
  *    the hub, right-aligned to the hub so send (right jack) and return
  *    (left jack) runs stay short.
  */
-export function calculateGreedyPlacement(
+export interface GreedyPlacementResult {
+  placements: PedalPlacement[];
+  /**
+   * The placer could not honour its own layout rules and fell back - to
+   * order-relaxed placement, or to "anywhere on the board".
+   *
+   * This has always been computed (`placementDegraded`) and never left the
+   * function, so no caller could tell a clean placement from a salvaged one.
+   * findValidPositionInZone has two returns with no validity check at all -
+   * the narrow-zone bail and the terminal "truly full board" clamp - and its
+   * return type is non-nullable, so callers have no failure branch either.
+   *
+   * Deliberately NOT fixed by returning null: that was tried, and it turns a
+   * wrong answer into no answer (see the note at the retry loop). Reporting
+   * honestly beats failing differently.
+   */
+  degraded: boolean;
+}
+
+/**
+ * Greedy placement, plus whether it had to degrade to produce it.
+ *
+ * The plain `calculateGreedyPlacement` below is the same call without the
+ * diagnostic. Both exist because 15 test call sites want placements and
+ * nothing else, and churning them to unpack a tuple would obscure the change
+ * that matters.
+ */
+export function calculateGreedyPlacementWithDiagnostics(
   placedPedals: PlacedPedal[],
   pedalsById: Record<string, Pedal>,
   board: Board,
   routingConfig?: RoutingConfig
-): PedalPlacement[] {
+): GreedyPlacementResult {
   if (placedPedals.length === 0) {
-    return [];
+    return { placements: [], degraded: false };
   }
 
   const useEffectsLoop = routingConfig?.useEffectsLoop ?? false;
@@ -598,7 +625,22 @@ export function calculateGreedyPlacement(
     attemptPlacement();
   }
 
-  return placements;
+  return { placements, degraded: placementDegraded };
+}
+
+/**
+ * Greedy placement. See calculateGreedyPlacementWithDiagnostics when you need
+ * to know whether the placer had to degrade to get there.
+ */
+export function calculateGreedyPlacement(
+  placedPedals: PlacedPedal[],
+  pedalsById: Record<string, Pedal>,
+  board: Board,
+  routingConfig?: RoutingConfig
+): PedalPlacement[] {
+  return calculateGreedyPlacementWithDiagnostics(
+    placedPedals, pedalsById, board, routingConfig
+  ).placements;
 }
 
 /**
@@ -869,6 +911,23 @@ export interface ScoredJointOptimizationResult extends JointOptimizationResult {
    * Currently reachable with ~20+ pedals, where greedy placement overlaps.
    */
   noLegalCandidate?: boolean;
+  /**
+   * The placer had to degrade to produce the layout being returned - it fell
+   * back to order-relaxed or anywhere-on-board placement rather than honouring
+   * its own row and clearance rules.
+   *
+   * Distinct from `noLegalCandidate`: that means nothing legal was found at
+   * all. This means something was found, by giving up on the rules. A user
+   * looking at a cramped board deserves to know which.
+   */
+  placementDegraded?: boolean;
+  /**
+   * The row arithmetic behind this board - corridor width, depth used, how
+   * many pedals are too deep for any band. deriveRows computed all of it to
+   * place the bands and used to discard it, which is why "could not fit these
+   * pedals" could never say WHICH constraint bound.
+   */
+  rowFit?: RowFit;
 }
 
 export function calculateOptimalLayoutJoint(
@@ -917,10 +976,18 @@ export function calculateOptimalLayoutJoint(
   const baselineEligible = !hasPlacementCollision(
     currentPlacements, placedPedals, pedalsById, board
   );
+  // Row arithmetic for the whole board, computed once. Only consumed when the
+  // search fails, but computing it there would mean re-deriving rows in the
+  // one situation where every derivation already went wrong.
+  const rowFit = deriveRowLayout(placedPedals, pedalsById, board).fit;
+
   const baselineCandidate = {
     placements: currentPlacements,
     score: baselineEligible ? baselineCost.totalScore : Infinity,
     cost: baselineCost,
+    // The user's own layout was not placed by us, so there is nothing to
+    // have degraded.
+    degraded: false,
   };
 
   // Pedals the optimizer may turn unasked: a jack-facing change to gain from,
@@ -938,7 +1005,10 @@ export function calculateOptimalLayoutJoint(
 
   // Nothing to search: greedy placement, kept only if it beats what's there
   if (!hasOrderSearch && rotatableIds.length === 0) {
-    const placements = calculateGreedyPlacement(placedPedals, pedalsById, board, routingConfig);
+    const greedy = calculateGreedyPlacementWithDiagnostics(
+      placedPedals, pedalsById, board, routingConfig
+    );
+    const placements = greedy.placements;
     const greedyCost = calculateRoutingCost(
       placements, placedPedals, pedalsById, board, undefined,
       useEffectsLoop, use4CableMethod, routingConfig
@@ -963,6 +1033,9 @@ export function calculateOptimalLayoutJoint(
       baselineCost,
       cost: keepBaseline ? baselineCost : greedyCost,
       noLegalCandidate: !Number.isFinite(greedyScore),
+      // Only meaningful for a layout we actually returned.
+      placementDegraded: keepBaseline ? false : greedy.degraded,
+      rowFit,
     };
   }
 
@@ -979,20 +1052,23 @@ export function calculateOptimalLayoutJoint(
       chainPosition: index + 1,
       rotationDegrees: rotations.get(id) ?? pedalById.get(id)!.rotationDegrees,
     }));
-    const placements = calculateGreedyPlacement(reordered, pedalsById, board, routingConfig);
+    const greedy = calculateGreedyPlacementWithDiagnostics(
+      reordered, pedalsById, board, routingConfig
+    );
+    const placements = greedy.placements;
 
     // HARD collision guard: a candidate whose placement overlaps or leaves
     // the board is never eligible, no matter how short its cables score
     // (the routing cost has no overlap term - shorter-but-colliding layouts
     // would otherwise win)
     if (hasPlacementCollision(placements, reordered, pedalsById, board)) {
-      return { placements, score: Infinity, cost: undefined };
+      return { placements, score: Infinity, cost: undefined, degraded: greedy.degraded };
     }
 
     const cost = calculateRoutingCost(
       placements, reordered, pedalsById, board, undefined, useEffectsLoop, use4CableMethod, routingConfig
     );
-    return { placements, score: cost.totalScore, cost };
+    return { placements, score: cost.totalScore, cost, degraded: greedy.degraded };
   };
 
   // --- Stage 1: chain orders at current rotations -----------------------------
@@ -1037,37 +1113,62 @@ export function calculateOptimalLayoutJoint(
     best = baselineCandidate;
   }
 
-  for (const order of candidateOrders) {
-    if (order === initialChainOrder) continue;
-    if (evaluations >= MAX_EVALUATIONS) break;
-    const result = evaluate(order, bestRotations);
-    if (Number.isFinite(result.score)) anyLegalCandidate = true;
-    if (result.score < best.score - 1e-9) {
-      best = result;
-      bestOrder = order;
-    }
-  }
+  // Stages 1 and 2 alternate until neither improves.
+  //
+  // They used to run ONCE each: every order at the starting rotations, then
+  // every rotation at the winning order. That explores a single path through
+  // (order x rotation) space, and which path depends on the scores - so it is
+  // only as good as the first stage's guess.
+  //
+  // P1.5 made that visible. With the cost function scoring real drawn geometry,
+  // the search on the J$ Home board settled on a layout scoring 168.65 while a
+  // reachable layout scoring 135.08 - 17 inches less cable - went unvisited,
+  // purely because the better one needs a different order AND a different
+  // rotation, and neither stage could see past the other.
+  //
+  // Alternating is ordinary coordinate descent: each pass takes the best order
+  // at the current rotations, then the best rotations at that order, and stops
+  // when a full pass finds nothing. Only strictly-better candidates are ever
+  // kept, so re-optimizing an optimized layout is still a no-op (idempotence,
+  // asserted by config-matrix). MAX_EVALUATIONS still bounds the whole thing.
+  const MAX_PASSES = 4;
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    const scoreAtPassStart = best.score;
 
-  // --- Stage 2: rotation coordinate descent -----------------------------------
-  // One pass per rotatable pedal; only strictly-better rotations are kept,
-  // so re-optimizing an optimized layout is a no-op (idempotence).
-  for (const id of rotatableIds) {
-    const current = bestRotations.get(id) ?? 0;
-    for (const rotation of [0, 90, 180, 270]) {
-      if (rotation === current) continue;
-      // A half turn leaves the pedal upside down - refused outright, whatever
-      // it scores. See mayRotateTo.
-      if (!mayRotateTo(rotation)) continue;
+    // --- Stage 1: chain orders at the current rotations ----------------------
+    for (const order of candidateOrders) {
+      if (order === bestOrder) continue;
       if (evaluations >= MAX_EVALUATIONS) break;
-      const candidate = new Map(bestRotations);
-      candidate.set(id, rotation);
-      const result = evaluate(bestOrder, candidate);
+      const result = evaluate(order, bestRotations);
       if (Number.isFinite(result.score)) anyLegalCandidate = true;
       if (result.score < best.score - 1e-9) {
         best = result;
-        bestRotations = candidate;
+        bestOrder = order;
       }
     }
+
+    // --- Stage 2: rotation coordinate descent at the current order -----------
+    for (const id of rotatableIds) {
+      const current = bestRotations.get(id) ?? 0;
+      for (const rotation of [0, 90, 180, 270]) {
+        if (rotation === current) continue;
+        // A half turn leaves the pedal upside down - refused outright, whatever
+        // it scores. See mayRotateTo.
+        if (!mayRotateTo(rotation)) continue;
+        if (evaluations >= MAX_EVALUATIONS) break;
+        const candidate = new Map(bestRotations);
+        candidate.set(id, rotation);
+        const result = evaluate(bestOrder, candidate);
+        if (Number.isFinite(result.score)) anyLegalCandidate = true;
+        if (result.score < best.score - 1e-9) {
+          best = result;
+          bestRotations = candidate;
+        }
+      }
+    }
+
+    if (best.score >= scoreAtPassStart - 1e-9) break; // a full pass changed nothing
+    if (evaluations >= MAX_EVALUATIONS) break;
   }
 
   const changedRotations = [...bestRotations]
@@ -1111,6 +1212,10 @@ export function calculateOptimalLayoutJoint(
     // what the UI reports is literally what the search compared.
     cost: best.cost,
     noLegalCandidate: !anyLegalCandidate,
+    // The WINNER's flag, not any candidate's - the search may have degraded
+    // its way through a dozen arrangements and still returned a clean one.
+    placementDegraded: best.degraded,
+    rowFit,
   };
 }
 
@@ -1160,16 +1265,36 @@ function enumerateChainOrders(
   swappableGroups: SwappableGroup[],
   cap: number
 ): string[][] {
-  const permutations = (ids: string[]): string[][] => {
-    if (ids.length <= 1) return [ids];
-    const result: string[][] = [];
-    for (let i = 0; i < ids.length; i++) {
-      const rest = [...ids.slice(0, i), ...ids.slice(i + 1)];
-      for (const perm of permutations(rest)) {
-        result.push([ids[i], ...perm]);
+  /**
+   * The first `limit` permutations, in the order the full enumeration would
+   * have produced them - and it STOPS there.
+   *
+   * This used to build every permutation and let the caller's cap discard the
+   * rest, which is factorial work for a constant-size answer. A single
+   * swappable group of 12 pedals meant 12! = 479,001,600 arrays to keep 48,
+   * and the process ran out of heap: measured 31ms at 6 pedals, 63ms at 8,
+   * 1.9s at 10, and dead at 12. Since the optimizer runs in a Web Worker, that
+   * crash took the worker with it - no reply, no error the host could catch,
+   * and an Optimize button that spins forever.
+   *
+   * Same traversal order, so the candidate set is unchanged for every group
+   * small enough that the old code finished at all.
+   */
+  const permutations = (ids: string[], limit: number): string[][] => {
+    const out: string[][] = [];
+    const walk = (chosen: string[], rest: string[]) => {
+      if (out.length >= limit) return;
+      if (rest.length === 0) {
+        out.push(chosen);
+        return;
       }
-    }
-    return result;
+      for (let i = 0; i < rest.length; i++) {
+        if (out.length >= limit) return;
+        walk([...chosen, rest[i]], [...rest.slice(0, i), ...rest.slice(i + 1)]);
+      }
+    };
+    walk([], ids);
+    return out;
   };
 
   let candidates: string[][] = [initialOrder];
@@ -1177,7 +1302,9 @@ function enumerateChainOrders(
   for (const group of swappableGroups) {
     if (group.pedalIds.length < 2) continue;
 
-    const groupPerms = permutations(group.pedalIds);
+    // `cap` is the most any single candidate can consume before the caps
+    // below break out, so generating more is dead work by construction.
+    const groupPerms = permutations(group.pedalIds, cap);
     const next: string[][] = [];
 
     for (const candidate of candidates) {

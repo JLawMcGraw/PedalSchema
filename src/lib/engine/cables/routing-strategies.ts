@@ -185,18 +185,28 @@ function routeAroundBoard(
  * inferred because "why did this cable take that shape?" is otherwise only
  * answerable by re-tracing the whole cascade by hand.
  */
-export type RoutingStrategy =
-  | 'facing'           // standoffs meet - the cable is just the two stubs
-  | 'direct'           // straight line between standoffs (<= 80px)
-  | 'l-horizontal'     // single corner, horizontal leg first
-  | 'l-vertical'       // single corner, vertical leg first
-  | 'channel'          // through a gap between pedal rows
-  | 'above'            // over the top of every pedal
-  | 'below'            // under the bottom of every pedal
-  | 'safe-lane'        // a lane just outside the obstacle rows
-  | 'astar'            // grid pathfinding
-  | 'perimeter'        // around the outside of the board - see routeAroundBoard
-  | 'fallback-invalid'; // nothing worked; renderer draws this red
+export const ROUTING_STRATEGIES = [
+  'facing',           // standoffs meet - the cable is just the two stubs
+  'direct',           // straight line between standoffs (<= 80px)
+  'l-horizontal',     // single corner, horizontal leg first
+  'l-vertical',       // single corner, vertical leg first
+  'channel',          // through a gap between pedal rows
+  'above',            // over the top of every pedal
+  'below',            // under the bottom of every pedal
+  'safe-lane',        // a lane just outside the obstacle rows
+  'astar',            // grid pathfinding
+  'perimeter',        // around the outside of the board - see routeAroundBoard
+  'fallback-invalid', // nothing worked; renderer draws this red
+] as const;
+
+/**
+ * Derived from the value, not declared alongside it. A hand-written union
+ * next to a hardcoded list in a test is how optimize-e2e came to assert
+ * against a set that silently omitted 'perimeter' - it passed only because
+ * no fixture board happened to need one. Adding a strategy here can no
+ * longer leave a test list stale.
+ */
+export type RoutingStrategy = (typeof ROUTING_STRATEGIES)[number];
 
 /**
  * Result of cable routing with validation info

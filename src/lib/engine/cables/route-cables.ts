@@ -15,15 +15,24 @@
 
 import type { Board, Cable, Pedal, PlacedPedal } from '@/types';
 import type { Point } from '../geometry';
-import { LANE_SPACING, manhattanize } from '../geometry';
+import { LANE_SPACING, LANE_TOLERANCE, manhattanize } from '../geometry';
 import { generateObstacles, type ObstacleSet } from '../obstacles';
 import { routeCableWithObstacles, type RoutingStrategy } from './routing-strategies';
 import { getExternalEndpointPx, getPedalJackPx, type ExternalEndpointType } from './endpoints';
 import { isPathValid, type ValidationResult } from './validation';
 import { routeCablesWithLanes, type LaneRouteRequest } from '../lanes';
+import { isDebugEnabled } from '../debug-flag';
 
-export interface RoutedCable {
-  cable: Cable;
+/**
+ * One routed polyline, with no `Cable` attached.
+ *
+ * This is the unit BOTH callers share: the renderer, which has real Cable
+ * objects, and the layout cost function, which has none. Keeping the pedal ids
+ * on here is not optional - `separateParallelRuns` re-validates every lane
+ * shift with `isPathValid(candidate, obstacles, fromPedalId, toPedalId)`, so a
+ * path that has lost its endpoints cannot be laned.
+ */
+export interface RoutedPath {
   /** Routed polyline in pixels */
   path: Point[];
   /**
@@ -35,14 +44,27 @@ export interface RoutedCable {
   strategy: RoutingStrategy | 'lane-router';
   /** Whether the path clears all obstacles */
   valid: boolean;
+  /** Populated only when invalid */
+  validation?: ValidationResult;
+  /** The pedals this path terminates on, if any - see the note above */
+  fromPedalId: string | null;
+  toPedalId: string | null;
+}
+
+export interface RoutedCable extends RoutedPath {
+  cable: Cable;
   /** Resolved endpoint positions in pixels */
   fromPos: Point;
   toPos: Point;
-  /** Populated only when invalid */
-  validation?: ValidationResult;
 }
 
-const DEBUG_PATHS = typeof window !== 'undefined' && window.location?.search?.includes('debug=cables');
+/**
+ * Enabled by ?debug-cables in the browser, or DEBUG_CABLES=1 for offline
+ * replay. Asked through debug-flag rather than `typeof window`: bundlers fold
+ * that check to a literal in a client bundle, and a Worker IS a client bundle
+ * with no `window` - see engine/debug-flag for the full account.
+ */
+const DEBUG_PATHS = isDebugEnabled('debug-cables');
 
 /**
  * Resolve a cable endpoint (external or pedal jack) to pixel coordinates.
@@ -81,8 +103,6 @@ function resolveEndpoint(
 // adjacent lanes, re-validating every shift against the shared policy.
 // ---------------------------------------------------------------------------
 
-/** Runs closer than this (perpendicular) count as overlapping */
-const LANE_TOLERANCE = 10;
 /** Minimum shared run length that counts as an overlap */
 const MIN_PARALLEL_OVERLAP = 12;
 /**
@@ -115,16 +135,25 @@ function toLaneSegment(a: Point, b: Point): LaneSegment | null {
 }
 
 function separateParallelRuns(
-  results: RoutedCable[],
+  results: RoutedPath[],
   obstacles: ObstacleSet,
-  board: Board,
-  scale: number,
   movable?: Set<number>
 ): void {
-  const minX = -LANE_BOARD_OVERHANG;
-  const maxX = board.widthInches * scale + LANE_BOARD_OVERHANG;
-  const minY = -LANE_BOARD_OVERHANG;
-  const maxY = board.depthInches * scale + LANE_BOARD_OVERHANG;
+  // Nothing may move: every cable was served by the lane router, which already
+  // coordinates its own lanes. Cheap, but the real point is that it makes this
+  // pass provably a no-op for that case rather than merely an empty one.
+  if (movable && movable.size === 0) return;
+
+  // Board bounds come from the obstacle set, not from board/scale. They are
+  // the same numbers: generateObstacles sets boardBounds to {0, w*scale, 0,
+  // d*scale}, so `-LANE_BOARD_OVERHANG` is exactly `minX - LANE_BOARD_OVERHANG`.
+  // Taking them from here is what lets the cost function - which has a board
+  // but no reason to pass one - share this pass.
+  const { boardBounds } = obstacles;
+  const minX = boardBounds.minX - LANE_BOARD_OVERHANG;
+  const maxX = boardBounds.maxX + LANE_BOARD_OVERHANG;
+  const minY = boardBounds.minY - LANE_BOARD_OVERHANG;
+  const maxY = boardBounds.maxY + LANE_BOARD_OVERHANG;
 
   interface OwnedRun extends LaneSegment { cable: number }
 
@@ -198,7 +227,7 @@ function separateParallelRuns(
         if (!inBounds(seg, fixed)) continue;
         if (separationAt(conflicting, fixed) < LANE_TOLERANCE) continue;
         const candidate = shifted(path, i, seg.horizontal, fixed);
-        if (!isPathValid(candidate, obstacles, rc.cable.fromPedalId, rc.cable.toPedalId)) continue;
+        if (!isPathValid(candidate, obstacles, rc.fromPedalId, rc.toPedalId)) continue;
         path = candidate;
         moved = true;
         resolved = true;
@@ -216,7 +245,7 @@ function separateParallelRuns(
           const sep = separationAt(conflicting, fixed);
           if (sep <= bestSep) continue;
           const candidate = shifted(path, i, seg.horizontal, fixed);
-          if (!isPathValid(candidate, obstacles, rc.cable.fromPedalId, rc.cable.toPedalId)) continue;
+          if (!isPathValid(candidate, obstacles, rc.fromPedalId, rc.toPedalId)) continue;
           bestFixed = fixed;
           bestSep = sep;
         }
@@ -245,13 +274,94 @@ function separateParallelRuns(
 }
 
 /**
- * Route every cable for the current configuration.
- */
-/**
  * When true, cables route through the Manhattan corridor graph
  * (src/lib/engine/lanes) with the strategy router as per-cable fallback.
  */
 export const USE_LANE_ROUTER = true;
+
+/**
+ * Route a batch of endpoint pairs. THE routing entry point - everything that
+ * needs a cable path goes through here, so nothing can score one geometry
+ * while the user is shown another.
+ *
+ * Batch, not per-cable, and that is load-bearing: `assignLanes` derives a
+ * cable's perpendicular lane from how many cables share its corridor. Routed
+ * one at a time every cable centres in its corridor (n=1), giving different
+ * geometry AND zero lane separation. A caller holding one cable must still
+ * call this with an array of one and understand it is getting the n=1 answer.
+ *
+ * Deliberately takes no `board` and no `scale`: everything positional it needs
+ * is already in the obstacle set. That is what lets the layout cost function
+ * share it.
+ *
+ * This lives in route-cables.ts rather than a new module on purpose.
+ * `lane-spacing-authority.test.ts` asserts BY FILENAME that this file imports
+ * LANE_SPACING from geometry and does not redefine it; moving the lane logic
+ * elsewhere would satisfy that test while defeating its point.
+ */
+export function routeCablePaths(
+  requests: LaneRouteRequest[],
+  obstacles: ObstacleSet,
+  options?: { laneRouter?: boolean }
+): RoutedPath[] {
+  const laneRouter = options?.laneRouter ?? USE_LANE_ROUTER;
+
+  // Corridor-graph routing first (when enabled); nulls fall back below
+  let lanePaths: Array<Point[] | null> = requests.map(() => null);
+  if (laneRouter) {
+    lanePaths = routeCablesWithLanes(requests, obstacles).paths;
+  }
+
+  const results: RoutedPath[] = [];
+  const fallbackIndices = new Set<number>();
+
+  requests.forEach((req, index) => {
+    const lanePath = lanePaths[index];
+    if (lanePath) {
+      results.push({
+        path: lanePath,
+        strategy: 'lane-router',
+        valid: true,
+        fromPedalId: req.fromPedalId,
+        toPedalId: req.toPedalId,
+      });
+      return;
+    }
+
+    const result = routeCableWithObstacles(
+      req.from,
+      req.to,
+      obstacles,
+      req.fromPedalId,
+      req.toPedalId
+    );
+    fallbackIndices.add(results.length);
+    results.push({
+      path: result.path,
+      strategy: result.strategy,
+      valid: result.valid,
+      validation: result.validation,
+      fromPedalId: req.fromPedalId,
+      toPedalId: req.toPedalId,
+    });
+  });
+
+  // Spread overlapping parallel runs into adjacent lanes. Lane-routed
+  // cables have coordinated lanes already and stay fixed; only fallback
+  // cables shift around them.
+  separateParallelRuns(results, obstacles, laneRouter ? fallbackIndices : undefined);
+
+  return results;
+}
+
+/**
+ * Route every cable for the current configuration.
+ *
+ * Endpoint resolution and Cable mapping only - the routing itself is
+ * routeCablePaths. Note the asymmetry this wrapper owns: a cable whose
+ * endpoints no longer resolve is silently dropped, so the returned array can
+ * be shorter than `cables`.
+ */
 
 export function routeAllCables(
   cables: Cable[],
@@ -281,58 +391,21 @@ export function routeAllCables(
     resolved.push({ cable, fromPos, toPos });
   }
 
-  // Corridor-graph routing first (when enabled); nulls fall back below
-  let lanePaths: Array<Point[] | null> = resolved.map(() => null);
-  if (laneRouter) {
-    const requests: LaneRouteRequest[] = resolved.map((r) => ({
-      from: r.fromPos,
-      to: r.toPos,
-      fromPedalId: r.cable.fromPedalId ?? null,
-      toPedalId: r.cable.toPedalId ?? null,
-    }));
-    lanePaths = routeCablesWithLanes(requests, obstacles).paths;
-  }
+  const requests: LaneRouteRequest[] = resolved.map((r) => ({
+    from: r.fromPos,
+    to: r.toPos,
+    fromPedalId: r.cable.fromPedalId ?? null,
+    toPedalId: r.cable.toPedalId ?? null,
+  }));
 
-  const results: RoutedCable[] = [];
-  const fallbackIndices = new Set<number>();
+  const routed = routeCablePaths(requests, obstacles, { laneRouter });
 
-  resolved.forEach((r, index) => {
-    const lanePath = lanePaths[index];
-    if (lanePath) {
-      results.push({
-        cable: r.cable,
-        path: lanePath,
-        strategy: 'lane-router',
-        valid: true,
-        fromPos: r.fromPos,
-        toPos: r.toPos,
-      });
-      return;
-    }
-
-    const result = routeCableWithObstacles(
-      r.fromPos,
-      r.toPos,
-      obstacles,
-      r.cable.fromPedalId ?? null,
-      r.cable.toPedalId ?? null
-    );
-    fallbackIndices.add(results.length);
-    results.push({
-      cable: r.cable,
-      path: result.path,
-      strategy: result.strategy,
-      valid: result.valid,
-      fromPos: r.fromPos,
-      toPos: r.toPos,
-      validation: result.validation,
-    });
-  });
-
-  // Spread overlapping parallel runs into adjacent lanes. Lane-routed
-  // cables have coordinated lanes already and stay fixed; only fallback
-  // cables shift around them.
-  separateParallelRuns(results, obstacles, board, scale, laneRouter ? fallbackIndices : undefined);
+  const results: RoutedCable[] = routed.map((rp, index) => ({
+    ...rp,
+    cable: resolved[index].cable,
+    fromPos: resolved[index].fromPos,
+    toPos: resolved[index].toPos,
+  }));
 
   if (DEBUG_PATHS) {
     for (const rc of results) {

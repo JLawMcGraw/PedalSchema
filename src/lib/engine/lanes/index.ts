@@ -307,22 +307,77 @@ function findCorridorPath(
 // Lane assignment
 // ---------------------------------------------------------------------------
 
-function assignLanes(corridors: Corridor[], traversals: Traversal[]): boolean {
-  const byCorridor = new Map<number, Traversal[]>();
-  for (const t of traversals) {
-    if (!byCorridor.has(t.corridorId)) byCorridor.set(t.corridorId, []);
-    byCorridor.get(t.corridorId)!.push(t);
+/** How many lanes a corridor can seat before runs would visually merge. */
+function corridorCapacity(corridor: Corridor): number {
+  const width = corridor.hi - corridor.lo;
+  return Math.max(1, Math.floor(width / MIN_LANE_SPACING) + 1);
+}
+
+/**
+ * Seat every cable's runs in a lane, evicting only what genuinely will not fit.
+ *
+ * This used to return a boolean, and ONE over-capacity corridor anywhere on the
+ * board discarded the lane assignment for EVERY cable. That is a step
+ * discontinuity worth ~100 x nCables between two candidate layouts that differ
+ * by a quarter inch of pedal position - tolerable while only the renderer used
+ * this, and not tolerable once the layout cost function scores through it
+ * (P1.5). Measured on the real Classic Jr board it meant 1 of 11 cables served.
+ *
+ * Now a corridor that cannot seat n cables evicts the fewest it can and the
+ * rest keep their lanes. An evicted cable falls back to the strategy cascade
+ * exactly as an unplannable one already does.
+ *
+ * Eviction order is by SHORTEST traversal first: a cable barely clipping a
+ * corridor loses least by routing around it, while one running its whole length
+ * depends on it. Ties break on cableIndex so the result is deterministic -
+ * config-matrix asserts determinism and idempotence, and a Set iteration order
+ * would quietly violate both.
+ *
+ * @returns cable indices that could not be seated and must fall back
+ */
+function assignLanes(corridors: Corridor[], traversals: Traversal[]): Set<number> {
+  const evicted = new Set<number>();
+
+  const groupRemaining = (): Map<number, Traversal[]> => {
+    const byCorridor = new Map<number, Traversal[]>();
+    for (const t of traversals) {
+      if (evicted.has(t.cableIndex)) continue;
+      if (!byCorridor.has(t.corridorId)) byCorridor.set(t.corridorId, []);
+      byCorridor.get(t.corridorId)!.push(t);
+    }
+    return byCorridor;
+  };
+
+  // Evicting a cable removes it from EVERY corridor it crossed, which can
+  // relieve pressure elsewhere, so this has to re-check rather than sweep once.
+  for (;;) {
+    const byCorridor = groupRemaining();
+    let worst: { corridorId: number; over: number; list: Traversal[] } | null = null;
+
+    for (const corridorId of [...byCorridor.keys()].sort((a, b) => a - b)) {
+      const list = byCorridor.get(corridorId)!;
+      const over = list.length - corridorCapacity(corridors[corridorId]);
+      if (over > 0 && (!worst || over > worst.over)) worst = { corridorId, over, list };
+    }
+    if (!worst) break;
+
+    const victim = [...worst.list].sort((a, b) => {
+      const lenA = a.alongHi - a.alongLo;
+      const lenB = b.alongHi - b.alongLo;
+      return lenA !== lenB ? lenA - lenB : a.cableIndex - b.cableIndex;
+    })[0];
+    evicted.add(victim.cableIndex);
   }
 
-  for (const [corridorId, list] of byCorridor) {
+  for (const [corridorId, list] of groupRemaining()) {
     const corridor = corridors[corridorId];
     const width = corridor.hi - corridor.lo;
     const n = list.length;
 
     let spacing = LANE_SPACING;
     if (n > 1 && (n - 1) * spacing > width) {
+      // Guaranteed >= MIN_LANE_SPACING now: eviction ran first.
       spacing = width / (n - 1);
-      if (spacing < MIN_LANE_SPACING) return false; // over capacity
     }
 
     // Keep parallel flows parallel: order lanes by run midpoint
@@ -334,12 +389,26 @@ function assignLanes(corridors: Corridor[], traversals: Traversal[]): boolean {
       t.lane = first + i * spacing;
     });
   }
-  return true;
+
+  return evicted;
 }
 
 // ---------------------------------------------------------------------------
 // Main entry
 // ---------------------------------------------------------------------------
+
+/**
+ * The stub exemptions isPathClear needs: a cable is allowed to touch the two
+ * pedals it terminates on. Shared by the facing-jack shortcut and the realize
+ * loop so both are held to one policy - they were the same expression written
+ * twice, which is how the shortcut came to skip validation entirely.
+ */
+function endpointBoxes(req: LaneRouteRequest, obstacles: ObstacleSet) {
+  return {
+    fromBoxIdx: req.fromPedalId ? obstacles.pedalIdToBox.get(req.fromPedalId) ?? -1 : -1,
+    toBoxIdx: req.toPedalId ? obstacles.pedalIdToBox.get(req.toPedalId) ?? -1 : -1,
+  };
+}
 
 export function routeCablesWithLanes(
   requests: LaneRouteRequest[],
@@ -357,16 +426,27 @@ export function routeCablesWithLanes(
     const fromStub = getStandoffPoint(req.from, fromBox, STANDOFF);
     const toStub = getStandoffPoint(req.to, toBox, STANDOFF);
 
-    // Facing-jack shortcut: nearly-touching stubs connect directly
-    if (Math.abs(fromStub.x - toStub.x) < 1 && Math.abs(fromStub.y - toStub.y) <= 2 * STANDOFF + 1) {
-      planned.push(null);
-      paths[index] = dedupe([req.from, fromStub, toStub, req.to]);
-      return;
-    }
-    if (Math.abs(fromStub.y - toStub.y) < 1 && Math.abs(fromStub.x - toStub.x) <= 2 * STANDOFF + 1) {
-      planned.push(null);
-      paths[index] = dedupe([req.from, fromStub, toStub, req.to]);
-      return;
+    // Facing-jack shortcut: nearly-touching stubs connect directly.
+    //
+    // Collinearity and proximity say the two standoffs face each other; they
+    // say NOTHING about what sits between them. Every other path this function
+    // returns is checked by isPathClear in the realize loop below, and callers
+    // stamp the whole batch `valid: true` on the strength of that. An
+    // unchecked path here is therefore not a shortcut but an unearned
+    // guarantee - and it becomes a scoring error the moment the layout cost
+    // function shares this router. Check it on the same policy, and fall
+    // through to the corridor graph when it does not hold.
+    const collinearX = Math.abs(fromStub.x - toStub.x) < 1
+      && Math.abs(fromStub.y - toStub.y) <= 2 * STANDOFF + 1;
+    const collinearY = Math.abs(fromStub.y - toStub.y) < 1
+      && Math.abs(fromStub.x - toStub.x) <= 2 * STANDOFF + 1;
+    if (collinearX || collinearY) {
+      const direct = dedupe([req.from, fromStub, toStub, req.to]);
+      if (isPathClear(direct, obstacles.boxes, endpointBoxes(requests[index], obstacles))) {
+        planned.push(null);
+        paths[index] = direct;
+        return;
+      }
     }
 
     const startC = attachCorridor(corridors, fromStub);
@@ -404,14 +484,13 @@ export function routeCablesWithLanes(
     });
   });
 
-  if (!assignLanes(corridors, traversals)) {
-    // Corridor over capacity somewhere - let every planned cable fall back
-    return { paths: paths.map((p) => p ?? null) };
-  }
+  // Cables the corridors could not seat. They fall back individually; the rest
+  // keep their lanes. This used to be all-or-nothing for the whole board.
+  const evicted = assignLanes(corridors, traversals);
 
   // --- Realize geometry --------------------------------------------------------
   planned.forEach((plan, index) => {
-    if (!plan) return;
+    if (!plan || evicted.has(index)) return;
 
     const lanes = plan.corridors.map(
       (cid) => traversals.find((t) => t.cableIndex === index && t.corridorId === cid)!.lane
@@ -481,11 +560,7 @@ export function routeCablesWithLanes(
     const path = dedupe(manhattanize(pts));
 
     // Shared validation policy (stub exemptions at the ends)
-    const fromBoxIdx = requests[index].fromPedalId
-      ? obstacles.pedalIdToBox.get(requests[index].fromPedalId!) ?? -1 : -1;
-    const toBoxIdx = requests[index].toPedalId
-      ? obstacles.pedalIdToBox.get(requests[index].toPedalId!) ?? -1 : -1;
-    if (isPathClear(path, obstacles.boxes, { fromBoxIdx, toBoxIdx })) {
+    if (isPathClear(path, obstacles.boxes, endpointBoxes(requests[index], obstacles))) {
       paths[index] = path;
     }
   });

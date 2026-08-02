@@ -3,13 +3,25 @@
  *
  * Optimize is the most expensive thing the app does: up to MAX_EVALUATIONS
  * (200) candidate arrangements, each one a full greedy placement plus an O(n^2)
- * collision check plus a complete cable route of every cable. On a 20-pedal
- * board that is seconds of solid computation, and run inline it freezes the
- * editor - no repaint, no scroll, no cancel.
+ * collision check plus a complete cable route of every cable.
+ *
+ * Measured 2026-08-02 on the real saved boards: 20 pedals in ~130ms, 9 pedals
+ * in ~37ms. This comment previously claimed "seconds of solid computation",
+ * which was ~5x pessimistic - but the reason to stay off the main thread is
+ * unchanged, because the tail is what hurts. A board whose pedals are all one
+ * swappable category runs the full order search, and an over-subscribed board
+ * spends far longer failing than a roomy one spends succeeding. Run inline,
+ * any of that freezes the editor: no repaint, no scroll, no cancel.
  *
  * The engine is pure and imports nothing from React, Next or the DOM, so it
- * moves here unmodified. Both of its browser touches are `typeof window`
- * guards that simply read false in a worker.
+ * moves here unmodified.
+ *
+ * It must STAY that way, and that is not a matter of care. A Worker is built
+ * as a CLIENT bundle, so bundlers fold `typeof window` to a literal inside it
+ * and any such guard silently vanishes - see engine/debug-flag.ts, which
+ * exists because that killed this worker once, and
+ * __tests__/worker-safety.test.ts, which walks this file's import graph and
+ * fails if it happens again.
  */
 
 import { calculateOptimalLayoutJoint } from './index';
