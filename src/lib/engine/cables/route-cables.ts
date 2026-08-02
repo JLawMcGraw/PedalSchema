@@ -15,7 +15,7 @@
 
 import type { Board, Cable, Pedal, PlacedPedal } from '@/types';
 import type { Point } from '../geometry';
-import { LANE_SPACING, manhattanize } from '../geometry';
+import { LANE_SPACING, LANE_TOLERANCE, manhattanize } from '../geometry';
 import { generateObstacles, type ObstacleSet } from '../obstacles';
 import { routeCableWithObstacles, type RoutingStrategy } from './routing-strategies';
 import { getExternalEndpointPx, getPedalJackPx, type ExternalEndpointType } from './endpoints';
@@ -103,8 +103,6 @@ function resolveEndpoint(
 // adjacent lanes, re-validating every shift against the shared policy.
 // ---------------------------------------------------------------------------
 
-/** Runs closer than this (perpendicular) count as overlapping */
-const LANE_TOLERANCE = 10;
 /** Minimum shared run length that counts as an overlap */
 const MIN_PARALLEL_OVERLAP = 12;
 /**

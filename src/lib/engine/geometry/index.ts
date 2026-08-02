@@ -88,6 +88,23 @@ export const LANE_SPACING = 12;
  */
 export const MIN_LANE_SPACING = 9;
 
+/**
+ * How close two parallel runs may sit before the separation pass treats them
+ * as overlapping, in pixels.
+ *
+ * This is the ACCEPTANCE threshold, and it must never sit above the floor the
+ * invariant judges against. It was declared locally in cables/route-cables as
+ * 10 while `laneViolations` flagged anything below MIN_LANE_SPACING (9), so
+ * separateParallelRuns could stop at 10px believing it had succeeded while the
+ * runs were still one pixel from a violation - and the invariant, satisfied at
+ * 9, never said otherwise. Two thresholds for one question, in two files,
+ * disagreeing by design.
+ *
+ * Equal to MIN_LANE_SPACING on purpose: "far enough apart" and "not a
+ * violation" are the same question and now have one answer.
+ */
+export const LANE_TOLERANCE = MIN_LANE_SPACING;
+
 // ============================================================================
 // BASIC GEOMETRY
 // ============================================================================
