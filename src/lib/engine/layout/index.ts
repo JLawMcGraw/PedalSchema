@@ -90,14 +90,70 @@ export function calculateGreedyPlacement(
    * tight to its left, the LAST pedal ending near packMinX. Rows are tried
    * in rowOrder; overflow re-packs the remainder strip-aware.
    */
-  // The hub pedal (NS-2 style / 4CM wiring center) has up to four jacks
-  // pulling cable runs into the corridors on BOTH its sides - it places
-  // with extra padding so those corridors fit multiple lanes.
-  // The hub pad does NOT degrade with the clearance tier: its four jacks
-  // guarantee up to three cable runs per side, the highest corridor demand
-  // on the board.
-  const hubPad = (placed: PlacedPedal): number =>
-    topology.hub && placed.id === topology.hub.id ? 0.5 : 0;
+  /*
+   * The hub pedal (NS-2 style / 4CM wiring centre) has up to four jacks
+   * pulling cable runs into the corridors on BOTH its sides, so it places with
+   * extra padding to fit multiple lanes there. Earning that room is worth
+   * 1.0in of row.
+   *
+   * Except when it costs more than it buys. A pedal loop's members are laid
+   * out immediately after their hub, and if the padded group no longer fits
+   * the row the packer wraps THROUGH it - stranding a member on the next row,
+   * where its send and return have to cross the board to get back. On the real
+   * 9-pedal board the run needs 17.82in of an 18in row: the padding takes it
+   * to 18.82 and splits the group, trading two crowded corridors for two
+   * board-length cables.
+   *
+   * So for a pedal loop the pad is ATTEMPTED and dropped only if it splits the
+   * group - see the retry at the end of this function. 4-cable mode keeps it
+   * unconditionally: there the hub spans the amp preamp and its members are
+   * not adjacent, so nothing is gained by giving the room back.
+   */
+  let hubPadEnabled = true;
+
+  /**
+   * The pedal the loop group ENDS on, which needs the same room as the hub.
+   *
+   * Two cables cross the gap just past it: the RETURN, running back to the hub
+   * on the far side of the group, and the hub's OUTPUT, running the other way
+   * to the next pedal in the chain. At minimum spacing that gap is 20px, and
+   * OBSTACLE_MARGIN takes 8px off each side - leaving a 4px band for two runs
+   * that need LANE_TOLERANCE (10px) between them. They came out 2px apart,
+   * which is one cable as far as the eye is concerned.
+   *
+   * Widening the gap is the only thing that helps: the lane router cannot
+   * spread runs through space that is not there.
+   */
+  const loopGroupTail =
+    topology.mode === 'pedal-loop'
+      ? (topology.segments.find((seg) => seg.id === 'hub-loop')?.pedals ?? []).slice(-1)[0]?.id
+      : undefined;
+
+  const hubPad = (placed: PlacedPedal): number => {
+    const isHub = !!topology.hub && placed.id === topology.hub.id;
+    const isTail = !!loopGroupTail && placed.id === loopGroupTail;
+    if (!isHub && !isTail) return 0;
+    if (topology.mode === 'pedal-loop' && !hubPadEnabled) return 0;
+    return 0.5;
+  };
+
+  /** The hub and the pedals in its loop, which are placed consecutively. */
+  const loopGroupIds =
+    topology.mode === 'pedal-loop' && topology.hub
+      ? [
+          topology.hub.id,
+          ...(topology.segments.find((seg) => seg.id === 'hub-loop')?.pedals ?? []).map((p) => p.id),
+        ]
+      : [];
+
+  /** Did a row wrap fall inside the loop group? */
+  const loopGroupSplit = (): boolean => {
+    if (loopGroupIds.length < 2) return false;
+    const ys = loopGroupIds
+      .map((id) => placements.find((p) => p.id === id)?.y)
+      .filter((y): y is number => y !== undefined);
+    return new Set(ys.map((y) => Math.round(y * 100))).size > 1;
+  };
 
   // Pedals whose input AND output land on the SAME edge (after rotation,
   // e.g. a rotated top-jack pedal) pull both cable runs into one gap -
@@ -497,19 +553,35 @@ export function calculateGreedyPlacement(
   const hasStraddler = placedPedals.some((p) => dims(p).depth > maxBandHeight + 1e-6);
   const orderings = hasStraddler ? [false, true] : [false];
 
+  /*
+   * Hub padding is the outermost retry axis: try WITH it, and give it up only
+   * if it splits the loop group across a row. Crowded corridors beside the hub
+   * cost a little; a member stranded on the next row costs two board-length
+   * cables, so the padding is the cheaper thing to lose.
+   *
+   * Only a pedal loop can give it up - see hubPad.
+   */
+  const padOptions = loopGroupIds.length >= 2 ? [true, false] : [true];
+
   let settled = false;
-  for (let tier = 0; tier < CLEARANCE_TIERS.length && !settled; tier++) {
-    CLUSTER_CABLE_CLEARANCE = CLEARANCE_TIERS[tier];
-    for (const straddlersFirst of orderings) {
-      straddleFirstPass = straddlersFirst;
-      placementDegraded = false;
-      placements.length = 0;
-      placedBoxes.length = 0;
-      attemptPlacement();
-      if (!placementDegraded) { settled = true; break; }
-    }
-    if (!settled && tier < CLEARANCE_TIERS.length - 1 && DEBUG_PLACEMENT) {
-      console.log(`[GREEDY] Placement degraded at clearance ${CLUSTER_CABLE_CLEARANCE}, retrying tighter`);
+  for (const padOn of padOptions) {
+    if (settled) break;
+    hubPadEnabled = padOn;
+    for (let tier = 0; tier < CLEARANCE_TIERS.length && !settled; tier++) {
+      CLUSTER_CABLE_CLEARANCE = CLEARANCE_TIERS[tier];
+      for (const straddlersFirst of orderings) {
+        straddleFirstPass = straddlersFirst;
+        placementDegraded = false;
+        placements.length = 0;
+        placedBoxes.length = 0;
+        attemptPlacement();
+        // With the pad on, a split group is not good enough - that is the one
+        // outcome dropping the pad exists to avoid.
+        if (!placementDegraded && !(padOn && loopGroupSplit())) { settled = true; break; }
+      }
+      if (!settled && tier < CLEARANCE_TIERS.length - 1 && DEBUG_PLACEMENT) {
+        console.log(`[GREEDY] Placement degraded at clearance ${CLUSTER_CABLE_CLEARANCE}, retrying tighter`);
+      }
     }
   }
 
@@ -518,6 +590,7 @@ export function calculateGreedyPlacement(
   // existed, so a board that was already unsatisfiable is not ALSO changed.
   if (!settled) {
     CLUSTER_CABLE_CLEARANCE = CLEARANCE_TIERS[CLEARANCE_TIERS.length - 1];
+    hubPadEnabled = true;
     straddleFirstPass = false;
     placementDegraded = false;
     placements.length = 0;

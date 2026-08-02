@@ -10,6 +10,7 @@ import type { Point, Box } from '../../geometry';
 import type { RoutedCable } from '../../cables/route-cables';
 import { generateObstacles } from '../../obstacles';
 import { rotatedFootprint } from '../../geometry/rotation';
+import { COLLISION_SPACING } from '../../collision';
 import { primaryChain, type SignalTopology } from '../../topology';
 import { SCALE } from './fixtures';
 
@@ -176,7 +177,9 @@ export function placementViolations(
 export function chainOrderViolations(
   topology: SignalTopology,
   placedPedals: PlacedPedal[],
-  pedalsById: Record<string, Pedal>
+  pedalsById: Record<string, Pedal>,
+  /** Needed to tell a group that WILL NOT fit a row from one that was broken. */
+  board: Board
 ): string[] {
   const violations: string[] = [];
   const byId = new Map(placedPedals.map((p) => [p.id, p]));
@@ -220,17 +223,55 @@ export function chainOrderViolations(
       }
     }
 
-    // Hub clusters stay near the hub (within a couple pedal-widths)
+    /*
+     * A loop group must not be BROKEN, which is not the same as being small.
+     *
+     * This used to assert that every member sat within 8in of its hub, and
+     * that was right when members were placed as a cluster bunched beside it.
+     * They are now laid out consecutively in the run (see primaryChain), so a
+     * three-member group legitimately spans three pedal widths - the twelve-
+     * pedal board puts its third member 11.11in from the hub, correctly, with
+     * every one of them on the hub's row and in order.
+     *
+     * What must hold is that the run is unbroken: every member shares the
+     * hub's row, and no foreign pedal is interleaved among them. A member on
+     * ANOTHER row is the real failure - its send and return then have to cross
+     * the board to get back, which is what the old distance rule was really
+     * reaching for. That case is still caught, and now for the right reason.
+     *
+     * A group too wide for one row has nowhere to go, so it is exempt.
+     */
     if (topology.mode === 'pedal-loop' && segment.id === 'hub-loop' && topology.hub) {
       const hub = byId.get(topology.hub.id);
-      if (hub) {
-        for (const member of segment.pedals) {
-          const m = byId.get(member.id) ?? member;
-          const dx = Math.abs(m.xInches - hub.xInches);
-          if (dx > 8) {
-            violations.push(
-              `hub-loop member ${member.id} far from hub (dx=${dx.toFixed(2)}")`
-            );
+      const members = segment.pedals.map((m) => byId.get(m.id) ?? m);
+      const groupWidth = [topology.hub, ...segment.pedals].reduce((sum, p) => {
+        const pedal = pedalsById[p.pedalId];
+        return sum + (pedal?.widthInches ?? 0) + COLLISION_SPACING;
+      }, 0);
+      const fitsOneRow = groupWidth <= board.widthInches;
+
+      if (hub && fitsOneRow) {
+        const offRow = members.filter((m) => Math.abs(m.yInches - hub.yInches) > 0.01);
+        for (const m of offRow) {
+          violations.push(
+            `hub-loop member ${m.id} is not on the hub's row ` +
+            `(hub y=${hub.yInches.toFixed(2)}, member y=${m.yInches.toFixed(2)}) - ` +
+            `its send and return have to cross the board`
+          );
+        }
+
+        // Nothing foreign may sit between the hub and the far end of its group
+        if (offRow.length === 0 && members.length > 0) {
+          const groupIds = new Set([hub.id, ...members.map((m) => m.id)]);
+          const xs = [hub, ...members].map((p) => p.xInches);
+          const lo = Math.min(...xs);
+          const hi = Math.max(...xs);
+          for (const p of placedPedals) {
+            if (groupIds.has(p.id)) continue;
+            if (Math.abs(p.yInches - hub.yInches) > 0.01) continue;
+            if (p.xInches > lo && p.xInches < hi) {
+              violations.push(`${p.id} sits inside the loop group's run`);
+            }
           }
         }
       }

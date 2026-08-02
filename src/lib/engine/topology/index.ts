@@ -256,6 +256,7 @@ export function primaryChain(topology: SignalTopology): PlacedPedal[] {
       return [
         ...(byId.get('before-hub')?.pedals ?? []),
         ...(topology.hub ? [topology.hub] : []),
+        ...(byId.get('hub-loop')?.pedals ?? []),
         ...(byId.get('after-hub')?.pedals ?? []),
       ];
     }
@@ -278,7 +279,6 @@ export function ampClusters(topology: SignalTopology): Segment[] {
 
 /** Segments placed as clusters anchored at a hub pedal */
 export function hubClusters(topology: SignalTopology): Segment[] {
-  return topology.mode === 'pedal-loop'
-    ? topology.segments.filter((s) => s.id === 'hub-loop')
-    : [];
+  void topology;
+  return [];
 }

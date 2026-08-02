@@ -224,7 +224,7 @@ describe(`configuration matrix (${scenarios.length} scenarios)`, () => {
           }
         );
         expect(
-          chainOrderViolations(topology, r1.pedals, scenario.pedalsById)
+          chainOrderViolations(topology, r1.pedals, scenario.pedalsById, scenario.board)
         ).toEqual([]);
       }
 
