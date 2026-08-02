@@ -232,34 +232,51 @@ export function EditorClient({
   // Right panel tabs content - shared between desktop and mobile
   const rightPanelContent = (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full w-full flex flex-col gap-0">
-      <TabsList className="w-full justify-start rounded-none border-b bg-transparent p-0 h-auto shrink-0 overflow-x-auto">
+      {/*
+        WRAPS rather than scrolls. Five tabs need 316px; the panel is 256px at
+        lg and 288px at xl, so the last one - Props - sat off the end at every
+        viewport width. `overflow-x-auto` made it technically reachable, but a
+        scrollbar nobody can see on a tab strip is the same as a missing tab,
+        which is how it was reported.
+
+        Wrapping needs two of TabsTrigger's own defaults overridden, and both
+        are load-bearing:
+          h-auto     - the default is h-[calc(100%-1px)], a height defined
+                       against the LIST's height. That is circular once the
+                       list's height depends on how many rows the tabs wrap
+                       onto, and the tabs render taller than their container.
+          flex-none  - the default flex-1 stretches tabs to fill their row, so
+                       a lone tab on row two spanned the full 287px.
+        With both, tabs size to their labels and wrap like text.
+      */}
+      <TabsList className="w-full justify-start rounded-none border-b bg-transparent p-0 h-auto shrink-0 flex-wrap">
         <TabsTrigger
           value="chain"
-          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-3 py-2 shrink-0"
+          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-2 py-2 h-auto flex-none"
         >
           Chain
         </TabsTrigger>
         <TabsTrigger
           value="cables"
-          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-3 py-2 shrink-0"
+          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-2 py-2 h-auto flex-none"
         >
           Cables
         </TabsTrigger>
         <TabsTrigger
           value="routing"
-          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-3 py-2 shrink-0"
+          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-2 py-2 h-auto flex-none"
         >
           Routing
         </TabsTrigger>
         <TabsTrigger
           value="power"
-          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-3 py-2 shrink-0"
+          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-2 py-2 h-auto flex-none"
         >
           Power
         </TabsTrigger>
         <TabsTrigger
           value="properties"
-          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-3 py-2 shrink-0"
+          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-2 py-2 h-auto flex-none"
         >
           Props
         </TabsTrigger>
