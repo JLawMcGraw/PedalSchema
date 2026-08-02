@@ -1037,37 +1037,62 @@ export function calculateOptimalLayoutJoint(
     best = baselineCandidate;
   }
 
-  for (const order of candidateOrders) {
-    if (order === initialChainOrder) continue;
-    if (evaluations >= MAX_EVALUATIONS) break;
-    const result = evaluate(order, bestRotations);
-    if (Number.isFinite(result.score)) anyLegalCandidate = true;
-    if (result.score < best.score - 1e-9) {
-      best = result;
-      bestOrder = order;
-    }
-  }
+  // Stages 1 and 2 alternate until neither improves.
+  //
+  // They used to run ONCE each: every order at the starting rotations, then
+  // every rotation at the winning order. That explores a single path through
+  // (order x rotation) space, and which path depends on the scores - so it is
+  // only as good as the first stage's guess.
+  //
+  // P1.5 made that visible. With the cost function scoring real drawn geometry,
+  // the search on the J$ Home board settled on a layout scoring 168.65 while a
+  // reachable layout scoring 135.08 - 17 inches less cable - went unvisited,
+  // purely because the better one needs a different order AND a different
+  // rotation, and neither stage could see past the other.
+  //
+  // Alternating is ordinary coordinate descent: each pass takes the best order
+  // at the current rotations, then the best rotations at that order, and stops
+  // when a full pass finds nothing. Only strictly-better candidates are ever
+  // kept, so re-optimizing an optimized layout is still a no-op (idempotence,
+  // asserted by config-matrix). MAX_EVALUATIONS still bounds the whole thing.
+  const MAX_PASSES = 4;
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    const scoreAtPassStart = best.score;
 
-  // --- Stage 2: rotation coordinate descent -----------------------------------
-  // One pass per rotatable pedal; only strictly-better rotations are kept,
-  // so re-optimizing an optimized layout is a no-op (idempotence).
-  for (const id of rotatableIds) {
-    const current = bestRotations.get(id) ?? 0;
-    for (const rotation of [0, 90, 180, 270]) {
-      if (rotation === current) continue;
-      // A half turn leaves the pedal upside down - refused outright, whatever
-      // it scores. See mayRotateTo.
-      if (!mayRotateTo(rotation)) continue;
+    // --- Stage 1: chain orders at the current rotations ----------------------
+    for (const order of candidateOrders) {
+      if (order === bestOrder) continue;
       if (evaluations >= MAX_EVALUATIONS) break;
-      const candidate = new Map(bestRotations);
-      candidate.set(id, rotation);
-      const result = evaluate(bestOrder, candidate);
+      const result = evaluate(order, bestRotations);
       if (Number.isFinite(result.score)) anyLegalCandidate = true;
       if (result.score < best.score - 1e-9) {
         best = result;
-        bestRotations = candidate;
+        bestOrder = order;
       }
     }
+
+    // --- Stage 2: rotation coordinate descent at the current order -----------
+    for (const id of rotatableIds) {
+      const current = bestRotations.get(id) ?? 0;
+      for (const rotation of [0, 90, 180, 270]) {
+        if (rotation === current) continue;
+        // A half turn leaves the pedal upside down - refused outright, whatever
+        // it scores. See mayRotateTo.
+        if (!mayRotateTo(rotation)) continue;
+        if (evaluations >= MAX_EVALUATIONS) break;
+        const candidate = new Map(bestRotations);
+        candidate.set(id, rotation);
+        const result = evaluate(bestOrder, candidate);
+        if (Number.isFinite(result.score)) anyLegalCandidate = true;
+        if (result.score < best.score - 1e-9) {
+          best = result;
+          bestRotations = candidate;
+        }
+      }
+    }
+
+    if (best.score >= scoreAtPassStart - 1e-9) break; // a full pass changed nothing
+    if (evaluations >= MAX_EVALUATIONS) break;
   }
 
   const changedRotations = [...bestRotations]
