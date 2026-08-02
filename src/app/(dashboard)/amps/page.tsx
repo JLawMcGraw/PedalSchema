@@ -29,6 +29,17 @@ export default async function AmpsPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {amps.map((amp) => (
             <Card key={amp.id} className="hover:border-primary/50 transition-colors cursor-pointer">
+              {amp.image_url && (
+                <div className="flex items-center justify-center h-36 mx-4 mt-4 rounded-md bg-muted/40 overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={amp.image_url}
+                    alt={`${amp.manufacturer} ${amp.name}`}
+                    className="max-h-full max-w-full object-contain"
+                    loading="lazy"
+                  />
+                </div>
+              )}
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div>

@@ -117,6 +117,43 @@ so share-alike would reach our output. Referencing avoids creating the derivativ
 
 See **Image Rights** in the root `README.md` for the removal path.
 
+### Amps and boards
+
+`mirror-gear-images.js` does the same for the twelve amps and eight boards, importing
+the pedal script's pipeline rather than copying it, and writing to `amps/{id}.png` and
+`boards/{id}.png` in the same bucket.
+
+Two things differ, both deliberate:
+
+- **No footprint-aspect gate.** A pedal photo is stretched onto the pedal's physical
+  width × depth on the canvas, so its aspect is checked against that. Amps and boards
+  appear face-on in a library card — width × *height* — and would all fail that gate.
+- **Sources are a fixed, human-checked table, not a search.** The failure mode here is
+  not a dead URL, it is a live URL for the wrong object, and it does not look wrong in
+  the report. Three real examples: `voxamps.com/product/ac30c2/` redirects to the
+  AC30C2 *canvas cover* (a padded bag); every Pedaltrain listing leads with a composite
+  of board + gig bag + accessories; and the next image along is a third party's
+  watermarked diagram.
+
+**Resolving a new source** — `resolve-gear-image.js <url>` opens the page in a real
+browser and reports every rendered image with its natural size, because these makers
+defeat plain fetches in three different ways: Fender and EVH answer `curl` with 403,
+Vox builds its gallery in JS (four *different* Vox product pages return the same list
+of image URLs — the shared nav menu), and Marshall's archive is an SPA whose `og:image`
+is the Marshall logo. It reports; a human picks and then *looks at the picture*.
+
+**Dark subject on a dark backdrop will pass every automated check and still be wrong.**
+Marshall shoots black amps against grey (63,63,63); the knockout absorbs anything
+within `BG_TOL=35` of that, and a black cabinet's shadowed edge is inside that band, so
+the flood walks into the amp and eats ragged holes. Prefer a source PNG that already
+ships an alpha silhouette — the knockout then takes its `already-cutout` path and never
+floods. Both Marshall entries do exactly this.
+
+Verify with `node .claude/scripts/verify-gear-images.js`, which asserts each card's
+`<img>` actually decoded in the browser (`naturalWidth > 0`) and is served from our
+storage — a broken image still has a bounding box and still survives a screenshot
+glance.
+
 ## License
 
 Data: CC0 (Public Domain) — the specification fields (dimensions, power, I/O).

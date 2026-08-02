@@ -135,27 +135,42 @@ app can render a pedal as a recognisable cut-out instead of a coloured rectangle
 are used to identify the product being planned. We claim no ownership of them, and the
 MIT licence below covers this project's **code, not these images**.
 
-Every image we serve records where it came from. The `pedals` table carries
-`image_source_url`, `image_license`, `image_attribution` and `image_fetched_at`
-alongside `image_url`, written in the same statement — so there is no row whose origin
-we cannot name, and a request about any single photo can be answered directly from the
-database.
+The same applies to the **amplifier and pedalboard photographs** on the `/amps` and
+`/boards` library pages, mirrored by `scraper/mirror-gear-images.js` under identical
+terms.
 
-Two rules follow from that, and the tooling enforces both:
+Every image we serve records where it came from. The `pedals`, `amps` and `boards`
+tables each carry `image_source_url`, `image_license`, `image_attribution` and
+`image_fetched_at` alongside `image_url`, written in the same statement — so there is
+no row whose origin we cannot name, and a request about any single photo can be
+answered directly from the database.
 
-- **Nothing is served without a recorded origin.** `scraper/mirror-pedal-images.js`
-  writes provenance with the image and clears it with the image.
+Three rules follow from that, and the tooling enforces all three:
+
+- **Nothing is served without a recorded origin.** The mirror scripts write provenance
+  with the image and clear it with the image.
 - **Encumbered sources are referenced, not copied.** Where a licence would reach our
   output, we store the pointer and no bytes, and the board falls back to a category
   rectangle. The Klon Centaur is the current example: its only good source is CC BY-SA
   2.0, and our pipeline knocks out the background — which would make our copy a
   derivative and pull share-alike onto it. So we link the source and mirror nothing.
+- **We mirror the manufacturer's own photograph, not a third party's.** Where a product
+  page hosts someone else's render we skip it: Pedaltrain's board listings include a
+  2000×2000 dimension diagram watermarked `PEDALBOARDPLANNER.COM`, which is that
+  company's work and not Pedaltrain's to redistribute. We take the product elevation
+  instead.
+
+Where no manufacturer photograph exists, the row keeps **no image at all** rather than
+borrowing a similar product's. The Marshall JCM2000 DSL is the current example — long
+discontinued, no page on marshall.com and no Wayback capture — and its card renders as
+text. `scraper/mirror-gear-images.js` records the reason in `UNSOURCED` so the search
+is not repeated.
 
 **Rights holders:** if you own an image here and want it removed, open an issue or
-contact the repository owner. Removal is a single `UPDATE` clearing `image_url` (the
-app already renders the fallback for any pedal without a photo), plus dropping the
-object from the `pedal-images` bucket. We will also add the source to the mirror
-script's exclusion path so it is not re-fetched on the next run.
+contact the repository owner. Removal is a single `UPDATE` clearing `image_url` on the
+relevant row (the app already renders the fallback for any pedal, amp or board without
+a photo), plus dropping the object from the `pedal-images` bucket. We will also add the
+source to the mirror script's exclusion path so it is not re-fetched on the next run.
 
 ## License
 

@@ -31,6 +31,19 @@ export default async function BoardsPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {boards.map((board) => (
             <Card key={board.id} className="hover:border-primary/50 transition-colors cursor-pointer">
+              {board.image_url && (
+                /* Shorter than the pedal/amp box: a board elevation is ~4.5:1,
+                   so a 36-unit box would be mostly empty padding. */
+                <div className="flex items-center justify-center h-24 mx-4 mt-4 rounded-md bg-muted/40 overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={board.image_url}
+                    alt={`${board.manufacturer} ${board.name}`}
+                    className="max-h-full max-w-full object-contain"
+                    loading="lazy"
+                  />
+                </div>
+              )}
               <CardHeader>
                 <CardTitle className="text-lg">{board.name}</CardTitle>
                 <CardDescription>{board.manufacturer}</CardDescription>

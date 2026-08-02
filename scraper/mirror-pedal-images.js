@@ -419,14 +419,39 @@ const MANUFACTURER_HOSTS = [
   'roland.com', 'boss.info', 'ibanez.com', 'jimdunlop.com', 'bigcommerce.com',
   'ehx.com', 'actentertainment.com', 'musictribe.com', 'tcelectronic.com',
   'strymon.net', 'pastfx.com',
+  // Amps and boards (2026-08-01)
+  'fender.com', 'evhgear.com', 'fmicassets.com', 'marshall.com', 'voxamps.com',
+  'mesaboogie.com', 'gibson.com', 'pedaltrain.com',
 ];
 
-function provenanceFor(sourceUrl) {
+/**
+ * Hosts that serve OTHER people's assets. A URL on one of these says nothing
+ * about the terms, because the same host serves every tenant of the platform -
+ * so the licence has to come from the page the image was found on instead.
+ *
+ * This matters for the amps and boards: Marshall's photos live on Contentful,
+ * Fender's and Mesa's on Shopify's CDN. Judging by URL host alone would record
+ * them as `unknown`, which understates what we know (they are manufacturer
+ * product photography, found on the manufacturer's own product page) and
+ * blunts the takedown path that the provenance columns exist to support.
+ */
+const ASSET_CDN_HOSTS = ['ctfassets.net', 'shopify.com', 'shopifycdn.com', 'cloudinary.com'];
+
+/**
+ * @param {string} sourceUrl where the bytes came from
+ * @param {string} [viaPageUrl] the product page the URL was found on, used
+ *   only when sourceUrl sits on a shared asset CDN that carries no terms of
+ *   its own. Never overrides a host we can already judge.
+ */
+function provenanceFor(sourceUrl, viaPageUrl) {
   let host;
   try {
     host = new URL(sourceUrl).hostname.replace(/^www\./, '');
   } catch {
     return { license: null, attribution: null };
+  }
+  if (viaPageUrl && ASSET_CDN_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) {
+    return provenanceFor(viaPageUrl);
   }
   // Archived copies carry the licence of whatever was archived, not the archive's
   if (host.endsWith('web.archive.org')) {
@@ -593,4 +618,31 @@ async function main() {
   report.missed.forEach(l => console.log(' ', l));
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+/*
+ * The image PIPELINE below - fetch, knock out, trim, judge, attribute - is not
+ * pedal-specific, and mirror-gear-images.js reuses it for amps and boards
+ * rather than growing a second copy that drifts. The knockout in particular
+ * has a regression history (see the 2026-07-30 centre guard) that nobody
+ * should have to rediscover in a duplicate.
+ *
+ * What stays here is what IS pedal-specific: the BOSS/Roland URL families,
+ * PRODUCT_PAGES, PEDAL_OVERRIDES and main().
+ */
+module.exports = {
+  BROWSER_UA,
+  IMAGE_URL_RE,
+  ogImageOf,
+  fetchImage,
+  knockOutBackground,
+  trimBackground,
+  acceptCandidate,
+  provenanceFor,
+  MANUFACTURER_HOSTS,
+  ASSET_CDN_HOSTS,
+};
+
+// Only run the pedal pass when invoked directly, so importing the pipeline
+// above does not mirror the whole catalogue as a side effect.
+if (require.main === module) {
+  main().catch(err => { console.error(err); process.exit(1); });
+}
