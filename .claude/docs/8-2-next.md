@@ -28,7 +28,26 @@ straight into `paths[index]` by the shortcut at `lanes/index.ts:360-380` and
 never enters lane assignment at all. Of the cables that actually reach the
 corridor graph, **zero** are served.
 
-That is `assignLanes` failing wholesale, and the code says so plainly:
+**Corroborated live, and refined.** `node .claude/scripts/verify-optimize.js`
+reads the real app rather than the harness:
+
+```
+Classic Jr 18x12.5   9 pedals, 11 cables    lane-router cables:  1 -> 1
+Classic Pro 32x16   20 pedals, 21 cables    lane-router cables: 18 -> 18
+```
+
+The Classic Jr renders **1 of 11** lane-served on the *saved* board, before any
+Optimize runs. Rendering is untouched by P1.5 — step 1 was byte-identical — so
+**the cliff was already firing on that board.** P1.5 did not cause it. What P1.5
+changed is which side of it the optimizer lands on: the old scorer happened to
+choose a layout that was 10/10 lane-served, the new one chooses 1/10.
+
+That makes P6 worse, not better. Honest scoring ought to *prefer* layouts the
+corridor router can serve. Instead it is picking one it cannot — because when
+the cliff fires, every cable falls back at once and the resulting cascade
+geometry scores better on crossings than a partially-laned board would.
+
+The cliff is `assignLanes` failing wholesale, and the code says so plainly:
 
 ```ts
 // lanes/index.ts:325 - inside the per-corridor loop
@@ -97,6 +116,46 @@ first: count all-null-then-fallback events per Optimize and per render. Then:
 - `config-matrix` compared **by trial ID**, not by count.
 - `router-parity.test.ts` must stay green: it is now the thing standing between
   scoring and drawing.
+
+---
+
+## P0 — The gates could not see a totally broken feature *(fixed, but read this)*
+
+Between P1.5 landing and this being noticed, **Optimize was completely dead**:
+the button spun forever on every click. Meanwhile:
+
+```
+vitest run                    269 passing
+saved-board fingerprint       byte-identical
+router-parity                 9/9 green
+tsc --noEmit                  clean
+```
+
+Every one of those runs the engine **in Node**, where `window` genuinely does
+not exist and a `typeof window` guard behaves correctly. The optimizer ships
+inside a Web Worker, which bundlers build as a *client* bundle — so the same
+guard folds to `true` and the window access throws. `engine/debug-flag.ts` was
+written after this bit the first time; P1.5 pulled `cables/route-cables.ts`
+into the worker's import graph and it bit again, harder, because a
+module-level throw kills the worker before `self.onmessage` exists, so
+`run-optimize`'s inline fallback never runs and the promise never settles.
+
+Two guards now exist, and they are not redundant:
+
+| Guard | Catches | Runs |
+|---|---|---|
+| `__tests__/worker-safety.test.ts` | the known pattern, statically, over the worker's actual import graph | CI, milliseconds |
+| `.claude/scripts/verify-optimize.js` | the real thing failing by any mechanism | manual, needs a dev server |
+
+`verify-optimize.js` asserts three things separately, because each has failed
+on its own: the run **settles**, **nothing fell back inline** (the silent mode —
+the feature "works" while freezing the editor), and there are **no page
+errors**.
+
+**Standing instruction for the rest of this list: any change that adds an
+import edge into `layout/` must be verified in the browser, not only in Node.**
+P6 and P7 both touch `lanes/` and `routing-cost.ts`, which are squarely in the
+worker's graph.
 
 ---
 
@@ -256,6 +315,8 @@ Build only if the app should plan wiring rather than report demand.
 
 ## Suggested order
 
+0. **P0 is already done** — but its standing instruction applies to everything
+   below: browser-verify anything that touches the worker's import graph.
 1. **P6** — instrument the cliff, fix `assignLanes` to degrade per corridor,
    re-measure. This is the only correctness item and it probably subsumes P7.
 2. **P7** — only if P6 does not recover J$ Home.
@@ -280,9 +341,19 @@ and already asserts `laneViolations` empty, determinism and idempotence.
 Baseline for all of it:
 
 ```
-vitest run                    23 files, 266 tests pass, ~1.7s   (Node 24.18.1)
+vitest run                    25 files, 269 tests pass, ~1.7s   (Node 24.18.1)
 router-parity                 9 tests - scored geometry == drawn geometry
+worker-safety                 3 tests - worker import graph is window-free
 fingerprint corpus            J$ Home 9 pedals / test 20 pedals
 node .claude/scripts/dump-configs-offline.js <out>
 PEDAL_CONFIG_DUMP=<out> PEDAL_FINGERPRINT_OUT=<fp> npx vitest run saved-board-fingerprint
+```
+
+And the one that runs nothing in Node — needs `npm run dev` up:
+
+```
+node .claude/scripts/verify-optimize.js
+  Classic Jr  18x12.5   9 pedals, 11 cables   settled  81ms   lane-router  1 -> 1
+  Classic Pro 32x16    20 pedals, 21 cables   settled 201ms   lane-router 18 -> 18
+  PASS - Optimize runs on the worker, settles, and never falls back inline
 ```
