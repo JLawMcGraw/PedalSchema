@@ -188,7 +188,15 @@ export function deriveSignalTopology(
  * NS-2 style pedal loop resolution: explicit routingConfig first, then
  * pedals with useLoop enabled (members auto-detected as drive categories).
  */
-function resolvePedalLoop(
+/**
+ * Which pedal is acting as a loop hub, and what runs in its send/return.
+ *
+ * Exported because the signal-chain engine needs the same answer: a hub has to
+ * be ORDERED before the pedals in its loop, since the signal reaches it first
+ * and only then leaves through the send. Two copies of this rule would drift,
+ * and the chain list would describe a different rig than the cables do.
+ */
+export function resolvePedalLoop(
   sorted: PlacedPedal[],
   dataOf: (p: PlacedPedal) => Pedal | undefined,
   routingConfig?: RoutingConfig

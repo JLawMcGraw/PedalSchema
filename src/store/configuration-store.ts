@@ -507,7 +507,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
       },
 
       normalizeChain: () => {
-        const { placedPedals, pedalsById, amp, useEffectsLoop, use4CableMethod, modulationInLoop } = get();
+        const { placedPedals, pedalsById, amp, useEffectsLoop, use4CableMethod, modulationInLoop, routingConfig } = get();
 
         if (placedPedals.length === 0) return;
 
@@ -519,7 +519,9 @@ export const useConfigurationStore = create<ConfigurationState>()(
           loopType: amp?.loopType,
         };
 
-        const result = signalChainEngine.calculate(placedPedals, pedalsById, context);
+        // routingConfig carries the pedal-loop wiring, which decides whether a
+        // hub must be ordered before its members - see the engine's step 3a.
+        const result = signalChainEngine.calculate(placedPedals, pedalsById, context, routingConfig);
 
         set((state) => {
           // Write back normalized chain positions and locations.

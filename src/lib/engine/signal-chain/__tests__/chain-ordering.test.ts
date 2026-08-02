@@ -236,3 +236,66 @@ describe('a pedal cannot sit in a loop the rig does not have', () => {
     expect(chorus.chainPosition).toBe(tuner.chainPosition + 1);
   });
 });
+
+describe('a loop hub is ordered before the pedals in its loop', () => {
+  /*
+   * Category ordering puts a noise gate AFTER the drives, which is right for a
+   * gate wired inline. Wired as an NS-2 style loop hub it is wrong: the signal
+   * reaches the gate first, leaves through its send to the drives, and returns
+   * - so the hub belongs immediately before its members, and a chain list
+   * showing it after them describes a different rig than the cables do.
+   */
+  const rig = () => setup([
+    ['tuner1', 'tuner', 1],
+    ['chorus1', 'modulation', 2, { chainPositionLocked: true }],
+    ['od1', 'overdrive', 3],
+    ['od2', 'overdrive', 4],
+    ['gate1', 'noise_gate', 5, { useLoop: true }],
+    ['delay1', 'delay', 6],
+  ]);
+  const order = (r: { orderedPedals: PlacedPedal[] }) =>
+    [...r.orderedPedals].sort((a, b) => a.chainPosition - b.chainPosition).map((p) => p.id);
+
+  const loopConfig = (hubId: string, memberIds: string[]) => ({
+    useLoopPedals: true, use4CableMethod: false, pedalConfigs: [
+      { pedalId: hubId, mode: 'loop' as const, loopPedalIds: memberIds },
+    ],
+  });
+
+  it('leaves the gate after the drives when no loop is configured', () => {
+    const { pedalsById, placed } = rig();
+    const noLoop = placed.map((p) => (p.id === 'gate1' ? { ...p, useLoop: false } : p));
+    const r = signalChainEngine.calculate(noLoop, pedalsById, noLoopContext);
+    expect(order(r)).toEqual(['tuner1', 'chorus1', 'od1', 'od2', 'gate1', 'delay1']);
+  });
+
+  it('moves the hub in front of its members when the loop IS configured', () => {
+    const { pedalsById, placed } = rig();
+    const r = signalChainEngine.calculate(placed, pedalsById, noLoopContext,
+      loopConfig('gate1', ['od1', 'od2']));
+    expect(order(r)).toEqual(['tuner1', 'chorus1', 'gate1', 'od1', 'od2', 'delay1']);
+  });
+
+  it('is idempotent - re-normalizing its own output changes nothing', () => {
+    // The hoist runs BEFORE locked pedals are re-inserted. Doing it after
+    // shifted a pinned pedal off its pin, and the next normalize re-inserted
+    // it at the new index, so the order drifted on every pass. The config
+    // matrix caught that on every `+locked` combination.
+    const { pedalsById, placed } = rig();
+    const cfg = loopConfig('gate1', ['od1', 'od2']);
+    const first = signalChainEngine.calculate(placed, pedalsById, noLoopContext, cfg);
+    const second = signalChainEngine.calculate(first.orderedPedals, pedalsById, noLoopContext, cfg);
+    expect(order(second)).toEqual(order(first));
+  });
+
+  it('leaves a PINNED hub where the user put it', () => {
+    // An explicit placement outranks this rule.
+    const { pedalsById, placed } = rig();
+    const pinned = placed.map((p) =>
+      p.id === 'gate1' ? { ...p, chainPositionLocked: true, chainPosition: 5 } : p);
+    const r = signalChainEngine.calculate(pinned, pedalsById, noLoopContext,
+      loopConfig('gate1', ['od1', 'od2']));
+    const ids = order(r);
+    expect(ids.indexOf('gate1')).toBeGreaterThan(ids.indexOf('od2'));
+  });
+});

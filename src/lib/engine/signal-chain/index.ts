@@ -7,8 +7,10 @@ import type {
   SignalChainResult,
   SwappableGroup,
   PedalCategory,
+  RoutingConfig,
 } from '@/types';
 import { SIGNAL_CHAIN_RULES } from './rules';
+import { resolvePedalLoop } from '../topology';
 import { getCategoryDefaultOrder } from '@/lib/constants/pedal-categories';
 
 /**
@@ -24,7 +26,9 @@ export class SignalChainEngine {
   calculate(
     placedPedals: PlacedPedal[],
     pedalsById: Record<string, Pedal>,
-    context: ChainContext
+    context: ChainContext,
+    /** Pedal-loop wiring, when configured. Needed to order a hub before its members. */
+    routingConfig?: RoutingConfig
   ): SignalChainResult {
     // Attach pedal data to placed pedals for easier processing
     const allPedals: PlacedPedal[] = placedPedals.map((p) => ({
@@ -48,6 +52,35 @@ export class SignalChainEngine {
     for (const rule of sortedRules) {
       pedals = rule.apply(pedals, context);
     }
+
+    // Step 2b: A LOOP HUB is ordered before the pedals in its loop.
+    //
+    // BEFORE the locked pedals are re-inserted, not after. Splicing the hub
+    // across a pinned pedal shifts that pedal off its pin, and the next
+    // normalize then re-inserts it at the NEW index - so the order kept
+    // drifting and the pipeline stopped being idempotent, which the config
+    // matrix caught on every `+locked` combination.
+    //
+    // Category ordering puts a noise gate after the drives, which is right for
+    // a gate wired inline. It is wrong for one wired as a LOOP hub: there the
+    // signal reaches the NS-2 first, leaves through its send to the drives,
+    // and comes back to its return - so the hub belongs immediately before its
+    // members, and a chain list showing it after them describes a different
+    // rig than the cables do.
+    //
+    // resolvePedalLoop is the topology's own function, so the list and the
+    // wiring cannot disagree about which pedal is the hub.
+    const loop = resolvePedalLoop(pedals, (p) => p.pedal, routingConfig);
+    // A hub the user has PINNED stays pinned: their placement wins over this.
+    if (loop && !loop.loopPedal.chainPositionLocked) {
+      const firstMember = pedals.findIndex((p) => loop.memberIds.includes(p.id));
+      const hubAt = pedals.findIndex((p) => p.id === loop.loopPedal.id);
+      if (firstMember >= 0 && hubAt > firstMember) {
+        const [hub] = pedals.splice(hubAt, 1);
+        pedals.splice(firstMember, 0, hub);
+      }
+    }
+
 
     // Step 3: Re-insert locked pedals at their pinned slots
     for (const lockedPedal of locked) {
