@@ -252,6 +252,9 @@ if (typeof window !== 'undefined') {
       placedPedals: s.placedPedals,
       pedalsById: s.pedalsById,
       routingConfig: s.routingConfig,
+      // Part of SourceSlice since supplies landed. Omitting it made the twin
+      // disagree with what deriveBoardState actually reads.
+      powerSupply: s.powerSupply,
     };
   };
   w.__getPedalSchemaDerived = () => deriveBoardState(useConfigurationStore.getState());
