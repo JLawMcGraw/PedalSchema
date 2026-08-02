@@ -150,6 +150,30 @@ off; the trap is that switching it ON would have yanked the pinned chorus into
 the loop segment. normalizeChain now corrects it, so existing boards heal on
 their next normalize instead of needing a migration.
 
+### The owner's rig: the loop is the NS-2's, not the amp's
+Worth recording, because it changes what "the loop" means on this board. The
+amp (Blues Deluxe) HAS an effects loop, but `useEffectsLoop` is off - the loop
+in use is the **NS-2's own send/return**, containing only the gain pedals.
+
+The app models exactly that and it needs no new code: switching "Use Send/Return
+Loop" on the NS-2 (properties panel, shown for any pedal with supports4Cable)
+puts every PEDAL_LOOP_CATEGORIES pedal - overdrive, distortion, fuzz, boost -
+into the loop automatically. Verified against the real board:
+
+    before-hub   TU-3 -> Chorus Ensemble Deluxe
+    hub-loop     TS9 Tube Screamer -> Conspiracy Theory
+    after-hub    BF-3 -> Aqua-Puss -> Flint -> RC-1
+
+11 cables, 0 invalid, 0 through-body, 0 placement violations, and the chorus
+stays pinned at position 2. `routingConfig.pedalConfigs` is the finer-grained
+alternative if the automatic category selection ever picks the wrong members.
+
+Note the NS-2 also carries `location: 'four_cable_hub'` while use4CableMethod is
+off - the same shape of incoherence as the effects_loop one fixed above, but
+deliberately LEFT alone: that value designates which pedal is the hub, and
+clearing it could lose that designation, whereas effects_loop is re-derived by
+the rules whenever the amp loop is switched on.
+
 ## Two more from the owner: Optimize dead, PastFX orientation
 
 ### Optimize did nothing - TWO answers to "where are the rows"
