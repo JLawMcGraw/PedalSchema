@@ -8,6 +8,10 @@ Every claim below is grounded in a measurement or a code trace taken 2026-08-02,
 quoted with it, so none of it has to be re-derived to decide whether it is worth
 doing.
 
+*Amended 2026-08-02 after a re-verification pass over every trace. Corrections
+are marked **[amended]** where the original claim was wrong rather than merely
+imprecise. Read § Step −1 first: the suite does not currently run.*
+
 ---
 
 ## Context
@@ -19,12 +23,58 @@ also left two data gaps worth recording rather than forgetting.
 **Delivery: three grouped commits** — routing, then UI, then data — each
 self-verifying, so work can stop cleanly at any group boundary.
 
+**[amended] Group 3 now runs first if Node is not upgraded**, since it is the
+only group whose verification does not go through vitest. The ordering below is
+by cost-of-being-wrong, not by execution order.
+
 | Group | Items | Why grouped |
 |---|---|---|
 | 1. Routing | P1.5, P4, P5 | All touch the router/placer; P4's fix is a consequence of P1.5 |
 | 2. UI | P2, P3 | Both surface an engine decision the user currently cannot see |
 | 3. Data | 13 jacks, 2 images | Research-bound, no engine risk |
 | 4. Power supply | P1 second half | Designed here, built last, cuttable |
+
+---
+
+## Step −1 — The suite does not run on this machine *(blocks Groups 1 and 2)*
+
+Every gate below is a vitest gate. As of the re-verification pass, `vitest run`
+does not start:
+
+```
+⎯⎯⎯ Startup Error ⎯⎯⎯
+TypeError [ERR_INVALID_ARG_VALUE]: The argument 'format' must be one of:
+  'reset', 'bold', … Received [ 'underline', 'gray' ]
+    at styleText (node:util:210:5)
+    at styleText$1 (node_modules/rolldown/dist/shared/rolldown-build-CtPvmZgJ.mjs:1370:9)
+    at ModuleJob.run  ← import time, not a code path that can be avoided
+```
+
+Two causes, stacked:
+
+1. `@rolldown/binding-win32-x64-msvc` was absent — the npm optional-dependency
+   bug. **Already resolved:** `npm i @rolldown/binding-win32-x64-msvc@1.1.5
+   --no-save`. Additive, untracked, nothing else touched.
+2. Still open: `node -v` → **v20.12.2**. rolldown 1.1.5 declares
+   `engines: ^20.19.0 || >=22.12.0` and calls `util.styleText(['underline','gray'])`
+   at module top level. The *array* form of `styleText` postdates 20.12.
+   `NO_COLOR=1 FORCE_COLOR=0` does not help — the call is unconditional, not
+   TTY-gated.
+
+**Fix: Node 22 LTS (or ≥20.19), then confirm the 254-test baseline reproduces
+before anything else.** Until then step 0 cannot capture a fingerprint, so
+neither P1.5 nor anything gated on it can start.
+
+The non-vitest half of the apparatus is unaffected — both re-run clean:
+
+```
+node .claude/scripts/dump-configs-offline.js …   J$ Home 9 pedals / test 20 pedals
+node .claude/scripts/verify-pedal-jacks.js       50 / 4 / 13
+```
+
+**Group 3 is therefore unblocked and can proceed today**, Node notwithstanding.
+It is the sensible place to work while the toolchain is sorted, which is a
+reason to pull it forward rather than leave it third.
 
 ---
 
@@ -56,7 +106,7 @@ otherwise.)*
 
 - `routeCablesWithLanes(requests, obstacles)` needs *strictly less* than the
   cost function already holds — no board, no scale, no pedals, no RoutingConfig.
-- `routing-cost.ts:141` already builds an identically-constructed `obstacles`
+- `routing-cost.ts:142` already builds an identically-constructed `obstacles`
   (same `generateObstacles` call as `route-cables.ts:266`).
 - Both cable sets come from the same `deriveSignalTopology` and are emitted in
   the same entry/chain/exit order (`cables/index.ts:195-227` vs
@@ -84,6 +134,7 @@ dependency, and `detectCableCrossings` (`:238`) is already batch.
    export interface RoutedPath {
      path: Point[]; strategy: RoutingStrategy | 'lane-router';
      valid: boolean; validation?: ValidationResult;
+     fromPedalId: string | null; toPedalId: string | null;
    }
    export function routeCablePaths(
      requests: LaneRouteRequest[], obstacles: ObstacleSet,
@@ -94,6 +145,15 @@ dependency, and `detectCableCrossings` (`:238`) is already batch.
    Body is `route-cables.ts:284-335` verbatim, minus the `cable`/`fromPos`/
    `toPos` fields the caller already holds. **No `board`, no `scale`** — see
    below.
+
+   **[amended] The pedal ids are not optional.** An earlier draft of this
+   interface dropped them, and it does not compile: `separateParallelRuns`
+   validates every shift with
+   `isPathValid(candidate, obstacles, rc.cable.fromPedalId, rc.cable.toPedalId)`
+   at `route-cables.ts:200` and `:219`, and the cost model has no `Cable`
+   objects to supply them from. They are already on `LaneRouteRequest`, so
+   carrying them through costs nothing — but the seam the whole change hangs on
+   has to be typed for its one non-obvious consumer.
 
 2. `routeAllCables` keeps endpoint resolution and `Cable[]` mapping (the cost
    model has no `Cable` objects) and becomes a thin wrapper. It has **two**
@@ -122,17 +182,35 @@ changes **crossings**, not just length — nudging a co-linear cable onto an
 adjacent lane can create or destroy an intersection that `detectCableCrossings`
 counts at 8 inch-equivalents.
 
-Add an early `if (movable && movable.size === 0) return;` at its top: when the
-lane router serves every cable, all three sweeps currently do nothing but
-re-collect runs. Free win for the renderer too, and it makes inclusion cost
-~zero on well-routed boards. Land it in the extraction commit, where it is
-provably behaviour-neutral.
+**[amended] Inclusion is cheap for a different reason than first claimed.** The
+original text said an early `if (movable && movable.size === 0) return;` would
+skip "three sweeps that do nothing but re-collect runs." It would not.
+`improveCable` (`route-cables.ts:179-181`) reads:
+
+```ts
+const rc = results[ci];
+if (!rc.valid) return false;
+if (movable && !movable.has(ci)) return false;   // ← precedes collectRuns
+const others = collectRuns(ci);
+```
+
+The guard runs *before* `collectRuns`, so no runs are collected, and the sweep
+loop breaks after the first pass (`if (!changed) break;`) — there are not three
+sweeps. Current cost when every cable is lane-served is one loop of Set
+lookups.
+
+So: the pass really is ~free on well-routed boards, which is what makes
+inclusion cheap — but the early return is not the mechanism, and it must come
+off the performance-fallback list below. Land it anyway, in the extraction
+commit: it is **provably** behaviour-neutral precisely because the guard already
+precedes every side effect, and that provability is what lets step 1 hold a
+byte-identical gate while touching this function.
 
 **Fix a blind spot BEFORE unifying.** The lane router does *not* always run
 `isPathClear` before returning a path — the facing-jack shortcut at
 `lanes/index.ts:361-370` returns early, checking only that the two standoffs are
 near-collinear and within `2*STANDOFF+1`. Nothing checks what is between them.
-So `route-cables.ts:307`'s hardcoded `valid: true` is *unearned* for that
+So `route-cables.ts:306`'s hardcoded `valid: true` is *unearned* for that
 subset, and unification would propagate it straight into `routingFailures`. Gate
 the shortcut on `isPathClear` first — otherwise an honest score improvement is
 indistinguishable from an inherited blind spot.
@@ -142,18 +220,30 @@ pre-optimise.**
 
 - `MAX_EVALUATIONS = 200` is a ceiling real boards never approach. The actual
   budget is `1 + (candidateOrders-1) + 2*nRotatable`; orders cap at 48
-  (`index.ts:1001`) and rotations are ≤2 per pedal (180° is banned by
+  (`index.ts:1000`) and rotations are ≤2 per pedal (180° is banned by
   `mayRotateTo`). A 12-pedal fully-rotatable board is ~72 evaluations.
 - Measured baseline: `lane-router.test.ts`'s `wide/twelve` case — a *complete*
   `calculateOptimalLayoutJoint` plus a full render route — runs in **19ms**.
   There is roughly a 75× budget before a ~1.5s bar is threatened.
+- **[amended] That number is from the wrong board, and it is contradicted in
+  our own tree.** `optimize.worker.ts:4-8` — the module that exists *because*
+  this is slow — says: "up to MAX_EVALUATIONS (200) candidate arrangements,
+  each one a full greedy placement plus an O(n²) collision check plus a
+  complete cable route of every cable. **On a 20-pedal board that is seconds of
+  solid computation**, and run inline it freezes the editor." The fingerprint
+  corpus contains a 20-pedal board (`test`, Classic Pro 32x16). If "seconds" is
+  accurate the headroom is not 75× — it is negative, and the batch corridor
+  graph lands on top of it. **Measure `calculateOptimalLayoutJoint` on the
+  20-pedal config at step 0 and treat it as go/no-go, not as a post-hoc
+  check.** One of the two statements is stale; find out which, and delete or
+  rewrite the loser rather than leaving both standing.
 - **Memoising corridors is a non-starter.** Every evaluation calls
   `calculateGreedyPlacement` with a different order/rotation → different
   `tempPlacedPedals` → different `obstacles` → different corridor graph. Cache
   hit rate ≈ 0, and each `calculateRoutingCost` already builds corridors once.
 - **Do not touch `MAX_EVALUATIONS`** — it would degrade search quality and
   confound the before/after comparison.
-- If it does blow up, in order: the `movable.size === 0` early return;
+- If it does blow up, in order:
   `findCorridorPath`'s `queue.sort` on every pop (`lanes/index.ts:277`);
   `traversals.find` in the realize loop (`lanes/index.ts:416-417`); and only
   then a `{ laneSeparation: false }` flag, never silently.
@@ -185,7 +275,8 @@ detection route:
 
 | Step | Change | Gate |
 |---|---|---|
-| 0 | Capture baseline fingerprint + perf numbers | — |
+| −1 | Node ≥20.19 (see above) | `vitest run` reproduces 21 files / 254 tests |
+| 0 | Capture baseline fingerprint + perf numbers, **including wall-clock `calculateOptimalLayoutJoint` on the 20-pedal `test` config** | Go/no-go: if the 20-pedal number is already seconds, stop and re-plan before extracting anything |
 | 1 | Extract `routeCablePaths`; retarget `separateParallelRuns`; early return; wrapper | **Zero behaviour change** — suite green *and* byte-identical fingerprint |
 | 2 | Gate the facing-jack shortcut on `isPathClear` | Fingerprint diff small and explainable |
 | 3 | Switch `routing-cost.ts` to collect → route → accumulate | Green except the known strategy-set failure |
@@ -240,7 +331,7 @@ and strategy. Plus the cheap structural assertion in the
 
 Two setup details or it fails for the wrong reason: pass `makeAmp(true)` and
 match `useEffectsLoop` (`derived.ts:132` uses `useEffectsLoop && amp?.hasEffectsLoop`
-while `routing-cost.ts:146` synthesises a pseudo-amp — they agree only when the
+while `routing-cost.ts:147` synthesises a pseudo-amp — they agree only when the
 amp has a loop), and use `scale = 40` on both sides.
 
 ---
@@ -292,10 +383,12 @@ Instead make the contract *honest* rather than *different*: return
 retry loop (`:565-596`) — it is **never returned**, so no caller can tell a
 degraded placement from a clean one. Surfacing it costs nothing and feeds P2.
 
-14 test call sites across 5 files reference `calculateGreedyPlacement`; a
-tuple/object return touches all of them, so prefer adding an optional
-out-parameter or a sibling `calculateGreedyPlacementWithDiagnostics` if the
-churn is not worth it.
+**15** invocations across 5 test files reference `calculateGreedyPlacement`
+(`greedy-placement` 5, `optimize-e2e` 11 lines / 6 calls, `rotation-search` 3,
+`pedal-loop-placement` 2, `placement-property` 1); a tuple/object return touches
+all of them, so prefer adding an optional out-parameter or a sibling
+`calculateGreedyPlacementWithDiagnostics` if the churn is not worth it. There is
+also a prose reference at `debug-flag.ts:11` that a rename would leave stale.
 
 ---
 
@@ -323,7 +416,7 @@ it away, returning only `RowBand = {y, height}`:
 |---|---|---|
 | `gap` — corridor width | `rows.ts:121, 158-166` | Nobody downstream knows the corridor collapsed to `MIN_ROW_CLEARANCE` (0.15in) |
 | `used` / `spare` / rejected `count` | `rows.ts:133-166` | The "needed X in, board has Y in" arithmetic |
-| oversize-depth `continue` | `rows.ts:145` | A pedal deeper than every band silently becomes a straddler with no record |
+| oversize-depth `continue` | `rows.ts:151` | A pedal deeper than every band silently becomes a straddler with no record |
 
 **Cheap version:** widen `deriveRowBands`' return to include a `RowFit`
 diagnostic, and have `summarizeOptimization` report the arithmetic that failed.
@@ -352,7 +445,7 @@ Change: read `strategy`, dash the stroke for `'perimeter'`, and add a `<title>`
 for the tooltip.
 
 **The catch, and why it is safe here.** The wrapper `<g>` at
-`cable-renderer.tsx:70` sets `pointerEvents: 'none'`, and that is load-bearing:
+`cable-renderer.tsx:71` sets `pointerEvents: 'none'`, and that is load-bearing:
 cables render *beneath* pedals (`editor-canvas.tsx:346-350`), so hit-testing
 them would let a cable swallow the pointer when you drag a pedal sitting over
 it. A `<title>` needs pointer events to show.
@@ -511,11 +604,24 @@ Per group:
 Baselines measured 2026-08-02, before any change:
 
 ```
-vitest run                      21 files, 254 tests pass, ~1.2s
-optimize-e2e + lane-router      31 tests pass, 575ms
+vitest run                      21 files, 254 tests pass, ~1.2s      ⚠ see below
+optimize-e2e + lane-router      31 tests pass, 575ms                 ⚠ see below
 verify-gear-images.js           PASS - every card renders as expected
 provenance                      pedals 67/62 photos, amps 12/11, boards 8/8, 0 violations
-verify-pedal-jacks.js           50 confirmed / 4 researched-unknown / 13 not researched
+verify-pedal-jacks.js           50 confirmed / 4 researched-unknown / 13 not researched  ✓ re-confirmed
+```
+
+**[amended] The two vitest lines could not be reproduced on re-verification** —
+see § Step −1. They are recorded here as what the suite reported when it last
+ran, not as something a reader can currently re-run. Re-measure both once Node
+is upgraded; if the counts have moved, the fingerprint baseline must be taken
+after that, not before.
+
+Re-confirmed on the same pass, both independent of vitest:
+
+```
+node .claude/scripts/dump-configs-offline.js  →  J$ Home 9 pedals / test 20 pedals
+node .claude/scripts/verify-pedal-jacks.js    →  67 catalogue / 50 / 4 / 13
 ```
 
 **Fingerprint corpus** for before/after comparison on real data —
@@ -557,3 +663,124 @@ sweeps boards × pedal sets × every configuration combination and already asser
 equal-sized swap; `comm -23` / `comm -13` on sorted failing-trial lists exposes
 it. This is a recorded lesson from the straddler work, where 165 fixed / 146
 broken looked like a 240→221 improvement.
+
+---
+
+## Step 0 results — measured 2026-08-02, Node 24.18.1
+
+Captured via the new `__tests__/saved-board-fingerprint.test.ts` against both
+saved boards. **Verdict: GO for the extraction, but P1.5's payoff on the real
+corpus is smaller than this plan assumed.** Three findings, in order of how much
+they change the plan.
+
+### 1. The perf go/no-go passes — and both prior numbers were wrong
+
+```
+J$ Home  (9 pedals)   calculateOptimalLayoutJoint    18.7ms
+test    (20 pedals)   calculateOptimalLayoutJoint   367.9ms
+```
+
+`optimize.worker.ts:4-8`'s "seconds of solid computation" on a 20-pedal board is
+**stale** — it is 0.37s. But the 19ms figure this plan reasoned from is the
+*9-pedal* scale, and the "75× budget" it implied is wrong too: real headroom to
+a ~1.5s bar is **~4×**, on the board that matters. That is enough to proceed and
+too little to spend carelessly. Re-measure at steps 3 and 5, and treat a 2×
+regression as a stop.
+
+Fix the worker comment when convenient; leaving a 5×-pessimistic number in the
+file that exists to justify the worker is how the next reader gets misled.
+
+### 2. `routingFailures` is already 0 on both real boards
+
+```
+                     J$ Home        test
+routingFailures      0  ->  0       0  ->  0
+```
+
+This plan's premise is that spurious 100-inch `routingFailures` penalties steer
+Optimize away from good layouts. The defect is real in the code — but **on the
+real corpus it never fires**, so unifying the routers cannot improve either
+saved board through that mechanism.
+
+Consequences:
+- **Risk (a) is moot on this corpus.** There is no failure gradient to lose.
+- **P1.5's value is insurance, not repair** — it pays off on boards that strain,
+  which neither saved board does. Weigh it accordingly against Groups 2 and 3.
+- The (a) detection metric is nearly signal-free here: see finding 3.
+
+### 3. The scored/drawn gap is real but small — and the 20-pedal board is inert
+
+| Board | Scored `totalLengthInches` | Drawn (sum of rendered paths) | Gap |
+|---|---|---|---|
+| J$ Home (9 pedals) | 41.59 | 45.05 | **scored is 3.46in optimistic** |
+| test (20 pedals) | 134.18 | 132.63 | scored is 1.55in pessimistic |
+
+So scored ≠ drawn is confirmed, in both directions, at ~1–8%. Not the
+distortion the framing implies.
+
+Two further observations from the same run:
+
+- **The 20-pedal board is already `Already optimal - nothing moved.`**, with
+  `baselineCost` and `cost` identical to the decimal (418.38 both). The search
+  never beats the user's own layout there today. So "compare *already optimal*
+  rates before/after" has one inert board and one improving board to work with —
+  too thin to read. Lean on `config-matrix` for that signal, not the corpus.
+- **Strategy divergence is total.** Every drawn cable on J$ Home is
+  `lane-router` (10/10); the 20-pedal board draws 18 `lane-router`, 2
+  `l-horizontal`, 1 `astar`. The scored side meanwhile reports `channel`,
+  `facing`, `perimeter`, `astar`, `l-*`. The two paths agree on almost nothing
+  by name, which is exactly what the parity test exists to pin.
+- **`perimeter` never reaches the screen on either board.** It appears only in
+  the *cost* path (`test`, 54.42in). So **P3 has no live subject on the saved
+  boards** — worth doing as cheap correctness, but it will not visibly change
+  either board, and unification will make it rarer in scoring still. Do not
+  expect a screenshot to show anything.
+
+Baseline artefacts live outside the repo (scratchpad): `configs-baseline.json`,
+`fp-before.txt` (146 lines). Regenerate with the command in the test's header
+comment.
+
+---
+
+## Re-verification log — 2026-08-02
+
+Every trace below was re-read against the tree, not recalled. Recorded so the
+next reader inherits the check instead of repeating it.
+
+**Confirmed as written:**
+
+| Claim | Anchor |
+|---|---|
+| Optimize scores with `routeCableWithObstacles`; the user sees `routeCablesWithLanes` | `routing-cost.ts:193`, `derived.ts:133` |
+| `CABLE_COLLISION_PENALTY_INCHES * 2` charged on `!result.valid` | `routing-cost.ts:202-205` |
+| `strategy` is never scored — only the boolean `valid` is consumed | `routing-cost.ts` cost body |
+| Facing-jack shortcut returns with no `isPathClear`; the blind spot is real | `lanes/index.ts:361-370` |
+| `separateParallelRuns` needs no `board`/`scale`: `boardBounds.minX = 0`, `maxX = widthInches * scale` | `obstacles/index.ts:100-105` |
+| `optimize-e2e` known-strategy set omits `perimeter` **and** `lane-router` | `optimize-e2e.test.ts:80-85` |
+| `RoutingStrategy` is a hand-written union — invertible as proposed | `routing-strategies.ts:188-199` |
+| `cable-renderer` destructures without `strategy` | `cable-renderer.tsx:58` |
+| `findValidPositionInZone` — narrow-zone bail + terminal clamp, non-nullable | `layout/index.ts:728-799` |
+| `placementDegraded` set at `:285`/`:301`, **never returned** | `layout/index.ts:82` |
+| `noLegalCandidate = !anyLegalCandidate`; no area/depth test anywhere | `layout/index.ts:1113` |
+| `deriveRows` computes `gap`/`used`/`spare`/`count`, returns only `RowBand` | `rows.ts:111-175` |
+| `optimize-e2e` pins the `/could not fit/i` headline | `optimize-e2e.test.ts:291-293` |
+| Unresolved endpoints silently skipped on the render side only | `route-cables.ts:280` |
+| `derived.ts` `useEffectsLoop && amp?.hasEffectsLoop` vs the pseudo-amp | `derived.ts:132`, `routing-cost.ts:147` |
+| No `tsx` / `ts-node` in `node_modules/.bin` — replay must be a vitest file | `ls node_modules/.bin` |
+| 13 unresearched pedals; `verify-optimizer.ts` still unrunnable | `verify-pedal-jacks.js` |
+| `MAX_EVALUATIONS = 200`, order cap 48 | `layout/index.ts:972`, `:1000` |
+
+**Corrected** — each marked **[amended]** at its point of use:
+
+1. The toolchain blocker (§ Step −1) — the suite does not run.
+2. `RoutedPath` must carry `fromPedalId`/`toPedalId`.
+3. The `movable.size === 0` early return saves almost nothing; the guard
+   already precedes `collectRuns`, and only one sweep runs.
+4. The 19ms headroom figure is from a 12-pedal fixture and is contradicted by
+   `optimize.worker.ts:4-8`.
+5. P5 is 15 invocations, not 14, plus a prose reference at `debug-flag.ts:11`.
+
+**Line anchors drifted 1–6 lines** in five places (now corrected in text):
+`valid: true` 307→306, `<g>` 70→71, obstacles build 141→142, pseudo-amp
+146→147, rows oversize `continue` 145→151, order cap 1001→1000. Treat every
+line number in this document as an anchor to search near, not an address.
