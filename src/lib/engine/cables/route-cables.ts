@@ -21,6 +21,7 @@ import { routeCableWithObstacles, type RoutingStrategy } from './routing-strateg
 import { getExternalEndpointPx, getPedalJackPx, type ExternalEndpointType } from './endpoints';
 import { isPathValid, type ValidationResult } from './validation';
 import { routeCablesWithLanes, type LaneRouteRequest } from '../lanes';
+import { isDebugEnabled } from '../debug-flag';
 
 /**
  * One routed polyline, with no `Cable` attached.
@@ -57,7 +58,13 @@ export interface RoutedCable extends RoutedPath {
   toPos: Point;
 }
 
-const DEBUG_PATHS = typeof window !== 'undefined' && window.location?.search?.includes('debug=cables');
+/**
+ * Enabled by ?debug-cables in the browser, or DEBUG_CABLES=1 for offline
+ * replay. Asked through debug-flag rather than `typeof window`: bundlers fold
+ * that check to a literal in a client bundle, and a Worker IS a client bundle
+ * with no `window` - see engine/debug-flag for the full account.
+ */
+const DEBUG_PATHS = isDebugEnabled('debug-cables');
 
 /**
  * Resolve a cable endpoint (external or pedal jack) to pixel coordinates.
