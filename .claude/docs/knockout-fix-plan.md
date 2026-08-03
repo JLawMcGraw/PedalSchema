@@ -1,177 +1,159 @@
-# Fixing the photo knockout (2026-08-02)
+# Fixing the photo knockout — plan (2026-08-02) and outcome (2026-08-03)
 
-Five pedals render as category rectangles because the background knockout in
-`scraper/mirror-pedal-images.js` cannot cut them out: Strymon Timeline, Strymon
-BigSky, BOSS DM-2W, EHX Big Muff Pi, Klon Centaur.
+**Status: built. Two of three targets fixed; one proved unfixable by this
+approach, and two of the plan's three proposals were refuted by measurement.**
 
-Klon is a licence problem (CC BY-SA, mirroring makes a derivative) and is out of
-scope here. Big Muff is a source problem — only angled shots are published. The
-other three are **algorithm** problems, and this is the plan for them.
+| pedal | before | after |
+|---|---|---|
+| BOSS DM-2W | top band 27.8% vs 100% mid — plate 70% eaten | **top 88.7%**, matches every other BOSS compact (83–90) |
+| Strymon BigSky | 94.2% opaque, grey box retained, trim 877x703 | **99.3% opaque**, trim 833x599 — 104 rows of backdrop gone |
+| Strymon Timeline | 95.3% opaque, grey oval under it | **unchanged — still skipped.** See "What could not be fixed" |
 
-Ordered by what it costs to be wrong. Every claim is tied to a measurement or a
-code trace taken 2026-08-02.
-
----
-
-## What the knockout does today
-
-`mirror-pedal-images.js:294-400`. Flood fill inward from every border pixel:
-
-```js
-const BG_TOL = 35;           // per-channel window around the border average
-const BG_GRAD_TOL = 12;      // per-channel step allowed between chained pixels
-const BG_GRAD_MIN_LUM = 90;  // gradient-following never enters darker than this
-const MAX_CENTRE_KNOCK_SHARE = 0.02;
-```
-
-A pixel is absorbed if it is within `BG_TOL` of the border average (`isBg`), or
-if it `chains()` — continues a smooth, LIGHT gradient from an already-absorbed
-neighbour. Chaining exists because studio backdrops ramp 240→110, far wider than
-`BG_TOL`. Two safety nets: images already carrying an alpha silhouette bail out
-untouched (`already-cutout`, `:322`), and a fill reaching >2% of the centre-20%
-box is rejected as having eaten the subject (`:391`).
+Klon (licence) and Big Muff (no head-on source) were out of scope and remain so.
 
 ---
 
-## Failure 1 — the fill walks INTO bright pedal features *(DM-2W)*
+## What shipped
 
-**Measured.** Mirrored DM-2W, alpha coverage by band:
+`BG_GRAD_MAX_SAT`, in both `src/lib/images/knockout.ts` and
+`scraper/mirror-pedal-images.js`. Gradient-chaining now additionally requires
+that a pixel be no more than 48 saturation points more colourful than the
+image's own border average.
 
-```
-top 10%   27.4%        mid 45-55%   97.2%        bottom 10%   57.0%
-```
-
-The top of the plate is 70% gone. The owner's words: "its color all cut off on
-the top."
-
-**Mechanism.** `chains()` (`:341-347`) admits any neighbour with
-`lum >= 90` whose channels are within 12 of the absorbed pixel. A BOSS compact
-photographed on white has silver knobs and white legend text at the top, all
-`lum > 200`. Where such a feature touches the pedal's edge, the chain steps off
-the white backdrop onto the bright feature and keeps walking across the panel —
-each step is a small delta, so no single step trips `BG_GRAD_TOL`.
-
-**Why the guard missed it.** `MAX_CENTRE_KNOCK_SHARE` only inspects the centre
-20% box. Damage at an EDGE is invisible to it by construction.
-
-## Failure 2 — the fill stops partway and keeps the backdrop *(Timeline, BigSky)*
-
-**Measured.** Mirrored output:
+The premise held: **studio backdrops and shadows are NEUTRAL; the features
+that were being eaten are COLOURED.** Traced on the real photos, the fill's
+path from the border to the damage:
 
 ```
-             opaque   clear
-Timeline      95.3%    4.7%
-BigSky        94.2%    5.8%
+DM-2W   backdrop sat 5,  path climbs 20,26,41,45,49,51,61,76,78 -> plate 99
+BigSky  backdrop sat 0,  path steps  0 -> 70 -> 115 -> 127 -> body 224
 ```
 
-Near-total opacity. The grey backdrop survived as opaque pixels, which on the
-board reads as a pedal sitting in a grey box. The owner's words: "gray ovals
-under them."
+Relative to the border average rather than absolute, because a backdrop is not
+always neutral — a pedal photographed on a wooden floor sits on saturation ~80,
+and an absolute gate would refuse to chain along the floor at all.
 
-**Mechanism.** `BG_GRAD_MIN_LUM = 90` stops gradient-following at the DARK end
-of the ramp. Strymon's backdrop darkens toward the drop shadow beneath the
-pedal, crossing below luminance 90 — so the chain halts exactly where the
-shadow begins and everything from there inward stays opaque. That is why the
-residue is *under* the pedal specifically.
+### Why 48 and not the 24 the plan proposed
 
-The floor exists for a good reason, recorded at `:288-290`: without it the fill
-creeps through a drop shadow into a black enclosure. It is guarding against
-Failure 1 in the dark direction.
+Both targets are fixed anywhere in 16..120, so **the targets do not choose the
+constant — the 62-pedal corpus does.** Swept with `knockout-regression.js`,
+the count of corpus pedals that move is *not monotonic*:
+
+```
+16..32   7-11 move.  DD-7 loses 11.7pp off its bottom band; both MXR
+                     silhouettes change size by up to 5%
+40..64   4-6 move,   each a single band by <=5pp, no silhouette resizes  <- 48
+72..80   BF-3 COLLAPSES (top 88.2 -> 73.0, left 55.5 -> 21.6)
+96+      quiet again, but BigSky decays (top 96.4 -> 87.5)
+```
+
+48 sits mid-plateau, 24 clear of the BF-3 cliff, and leaves the DM-2W's plate
+(sat 96–102) a margin of 43 and BigSky's body (70 at entry) a margin of 22.
+
+### The 6 corpus pedals that moved are improvements, not regressions
+
+Measured by asking what changed hands — every pixel newly cleared or newly
+kept, and its colour:
+
+```
+BF-3, PH-3     subject-eaten -> knocked-out; newly cleared 60,052 / 12,071 px
+               at mean saturation 2, luminance 251 — white backdrop they had
+               been silently keeping. 0.0% coloured.
+TR-2, XS-100,  newly KEPT 193-318 px each, 88.6-100% coloured (mean sat
+Phase 90,      57-104) — pedal features the fill had been eating.
+Conspiracy Th.
+```
+
+Zero pedal pixels newly removed. Zero backdrop pixels newly kept.
 
 ---
 
-## The fix
+## What could not be fixed: Timeline
 
-### 1. Give the chain a colour test, not just a brightness test *(the core change)*
+**The colour test cannot reach it, and this is measured, not assumed.** Tracing
+the fill's path from the border into the centre of the pedal:
 
-Both failures are the same missing distinction: **studio backdrops and shadows
-are NEUTRAL; pedal features are COLOURED.** The DM-2W's red plate is heavily
-saturated. A grey backdrop at luminance 70 is not.
-
-Add a saturation guard to `chains()`:
-
-```js
-const sat = (i) => {
-  const r = px[i*C], g = px[i*C+1], b = px[i*C+2];
-  return Math.max(r,g,b) - Math.min(r,g,b);   // 0 = perfectly neutral
-};
-const BG_GRAD_MAX_SAT = 24;
+```
+saturation along the path: 0,0,4,5,4,5,3,3,3,3,3,3,3,3
+of the 1,243,441 pixels absorbed, 621 (0.0%) had saturation above 24
 ```
 
-Chaining then requires `sat(j) <= BG_GRAD_MAX_SAT`. This stops the walk into the
-red plate outright — and once colour is doing the work of rejecting the subject,
-`BG_GRAD_MIN_LUM` can drop (60, or removed) so the chain can follow a neutral
-grey ramp down into the shadow that currently blocks it.
+A silver enclosure lit by a neutral studio ramp **is** the same colour as its
+own backdrop. There is no threshold to pick. The plan flagged this as "the
+risk"; it is not a risk, it is the case.
 
-**One change addresses both failures**, and that is the reason to try it first
-rather than tuning two constants in opposite directions.
+The failure then proceeds differently from what the plan described. The plan
+said `BG_GRAD_MIN_LUM = 90` halts the chain at the dark end of the ramp. It
+does not: the gradient pass **runs away into the pedal**, is rejected by the
+centre guard as `subject-eaten`, and the pipeline falls back to the strict
+pass — which cannot span a 255→137 ramp, so everything below luminance 220
+survives. Measured on the output edge: 218, 216, 209, 199, 179, 177, 137, all
+neutral. That is the grey oval, and it is *under* the pedal because that is
+where the drop shadow is.
 
-**The risk is the inverse case:** a genuinely grey/silver pedal photographed on
-grey. That is precisely the Timeline (silver enclosure) — so if this over-eats,
-it will show there, and the guards below are what must catch it.
-
-### 2. Extend the anti-erosion guard from the centre to the EDGES
-
-`MAX_CENTRE_KNOCK_SHARE` cannot see damage at a border, which is where both real
-failures landed. Add a per-band check on the FINAL alpha: compute opaque
-coverage for the top/bottom/left/right 10% bands and the middle. Reject when any
-band falls below ~40% of the middle's coverage.
-
-Against today's numbers: DM-2W top is 27.4% against a middle of 97.2% — 28% of
-it, comfortably rejected. Healthy pedals must be re-measured to set the
-threshold rather than assuming 40%.
-
-### 3. Add a "background survived" check
-
-Neither guard fires when the fill does too LITTLE. After trimming, sample the
-four corner pixels: a real cut-out of a photographed pedal has rounded or
-perspective-tapered corners, so at least some corners should be clear. All four
-opaque means the backdrop is still there.
-
-Cross-check against the 62 pedals that currently look right before trusting it —
-a genuinely rectangular top-down could legitimately fill its own bounding box.
+Separating it needs a different KIND of signal — edge magnitude, or a real
+matting algorithm — not another constant.
+`src/lib/images/__tests__/knockout.test.ts` pins this limit with a fixture, so
+if it ever becomes separable that test fails and says so.
 
 ---
 
-## Verification
+## The plan's other two proposals were refuted — do not rebuild them
 
-**The regression corpus already exists: the 62 pedals that currently work.** Any
-change here must leave them alone, and that is the gate.
+### 2. Band-vs-middle anti-erosion guard: REFUTED
 
-1. Record per-pedal alpha statistics for all 62 today — opaque/partial/clear
-   shares and the five band coverages. This is the fingerprint.
-2. Make the change. Re-mirror everything with `FORCE=1`.
-3. Diff the statistics. Any pedal whose numbers move materially is a
-   regression, whatever the three targets do.
-4. Only then judge the three targets — and judge them **on the board**, not by
-   opening the PNG.
+Proposed: reject when any 10% edge band falls below ~40% of the middle's
+coverage. The plan said to re-measure healthy pedals rather than assume 40%.
+Measured across all 62 (`.claude/docs/knockout-fingerprint.json`):
 
-**That last point is not a nicety.** On 2026-08-02 the mirrored Timeline and
-DM-2W were called clean after being viewed as files, and both were wrong: a
-viewer composites transparency against a light background and hides exactly a
-retained grey backdrop and a softly-eroded edge. The owner looking at the actual
-board caught both. Measure the alpha channel, then confirm in the app.
+```
+healthy pedals, lowest band:  Holy Grail right 15%    Ditto left 22%, right 23%
+                              Polytune 33/33          Cry Baby right 33%
+damaged DM-2W, top band:      27.4%
+```
 
-`node .claude/scripts/verify-pedal-images.js` is the existing app-level check.
+**Healthy pedals go as low as 15% while the damaged one sits at 27%.** The
+distributions overlap, so no single threshold separates them. A guard at 40%
+would have rejected Holy Grail, Ditto, Polytune and Cry Baby — four pedals
+that look right today.
+
+### 3. Four-opaque-corners "background survived" check: REFUTED
+
+Proposed: all four corners opaque means the backdrop is still there. Both
+failing pedals measured `corners 0,0,0,0` — the trim crops to the alpha
+bounding box, which removes the corners before anything can look at them.
+Meanwhile two healthy pedals (XS-100, Conspiracy Theory) genuinely *do* have
+an opaque corner, because a rectangular top-down legitimately fills its box.
+The check misses the failures and flags the healthy.
+
+**What does work** is the same neutral-vs-coloured insight: a surviving studio
+backdrop is BRIGHT and NEUTRAL. Timeline's residue measures luminance 176–197
+at saturation 0–5; no pedal colour and no part of the dark board looks like
+that. That is the check `verify-knockout-on-board.js` actually runs, and it
+was proven to fire before being trusted — it flags Timeline 4/4 corners and
+pre-fix BigSky 1/4, and goes clean on post-fix BigSky.
 
 ---
 
-## If the algorithm cannot be fixed
+## The tooling this left behind
 
-Fall back to sources that never need it. **A PNG that already ships an alpha
-silhouette bypasses the knockout entirely** (`:322`) — that is why every TC
-Electronic entry is clean. Roland publishes exactly such files:
+| script | what it is for |
+|---|---|
+| `fingerprint-pedal-alpha.js` | records the alpha shape of all 62 mirrored images — **the baseline any future change is judged against** |
+| `knockout-regression.js` | re-runs the pipeline over the 62 origin photos and diffs against that baseline. Writes nothing |
+| `knockout-targets.js` | the three hard photos, measured through the real pipeline |
+| `verify-knockout-on-board.js` | reads pixels back off the live canvas |
 
-```
-static.roland.com/products/ds-1w/images/ds-1w_top.png   200 image/png 365KB
-static.roland.com/products/hm-2w/images/hm-2w_top.png   200 image/png 326KB
-static.roland.com/products/dm-2w/images/dm-2w_top.png   403   does not exist
-```
+`.claude/docs/knockout-fingerprint.json` is the baseline. It was taken BEFORE
+the change; leave it that way until the catalogue is re-mirrored, or the gate
+loses its reference point.
 
-There is none for the DM-2W and none from Strymon, so this is a fallback for
-future pedals rather than a route for these three.
+**Validate the harness before trusting a clean result.** `knockout-regression`
+was first run against the *old* algorithm, where it reproduced all 62
+fingerprints exactly — that is what makes "no pedal moved" mean something
+rather than meaning the script is inert. The same was done for the board
+detector.
 
-The best sources found for the three are already pinned in `PRODUCT_PAGES`:
-Timeline's white-background full top-down and Roland's gallery TOP view of the
-DM-2W. BigSky has no better source than the gradient one — a white-background
-file exists but is a cropped hero, so its footprint would be wrong.
+**And still do not judge a knocked-out photo by opening the PNG.** A viewer
+composites transparency against a light background and hides precisely a
+retained grey backdrop and a softly-eroded edge.

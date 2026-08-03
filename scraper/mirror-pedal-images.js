@@ -94,8 +94,8 @@ const PRODUCT_PAGES = {
   'PastFX Chorus Ensemble Deluxe': ['https://www.pastfx.com/images/New_Deluxe_Chorus.jpg'],
   // BigSky has no white-background full top-down: strymon.net publishes only
   // the gradient one (the *_topdowncrop_ file is a cropped hero, so its
-  // footprint would be wrong). Tried anyway - see the override below for what
-  // the pipeline made of it.
+  // footprint would be wrong). The gradient shot cuts out cleanly since
+  // BG_GRAD_MAX_SAT - its blue body is what the grey backdrop is not.
   'Strymon BigSky': [
     'https://www.strymon.net/wp-content/uploads/2016/02/bigsky_topdown_grad2_1600-1024x1024-1.jpeg',
     'https://www.strymon.net/product/bigsky/',
@@ -135,44 +135,42 @@ const PEDAL_OVERRIDES = {
   // og:image and the -1 gallery shot are both angled three-quarter views.
   // Needs a genuine head-on source; until one is found, the rect is honest.
   'Electro-Harmonix Big Muff Pi': { mode: 'skip' },
-  // Silver/grey pedal, grey gradient backdrop, soft drop shadow beneath.
-  // The fill cannot separate pedal from shadow (both neutral, and the pedal
-  // is LIGHTER than some of the backdrop), leaving a grey oval under it.
-  
   /*
-   * ALL THREE RETRIED 2026-08-02 with better sources, and all three still
-   * fail. Measured on the mirrored output rather than eyeballed - looking at
-   * the PNG in a viewer composites it on white and hides precisely these
-   * defects:
+   * BigSky and DM-2W were skipped here until 2026-08-03. BG_GRAD_MAX_SAT (see
+   * knockOutBackground below) fixed both, and they are now mirrored normally:
    *
-   *              opaque  clear   top10%  mid    bottom
-   *   Timeline    95.3%   4.7%    80.7   96.4    97.1
-   *   BigSky      94.2%   5.8%    86.5   94.9    88.8
-   *   DM-2W       80.4%  19.6%    27.4   97.2    57.0
+   *                       top10%   mid     opaque   trimmed size
+   *   DM-2W   before       27.8    100.0    80.4    582x1049
+   *           after        88.7    100.0    88.9    582x1050
+   *   BigSky  before       86.5    100.0    94.2    877x703
+   *           after        96.1    100.0    99.3    833x599
    *
-   * Timeline and BigSky come back ~95% OPAQUE. A real cut-out of a rounded
-   * pedal leaves far more clear area than that; the grey backdrop survived as
-   * opaque pixels, which renders on the board as a pedal sitting in a grey
-   * box. DM-2W's top band is 27% covered against 97% mid - the red plate is
-   * 70% eaten.
-   *
-   * NOTE THE PIPELINE ACCEPTED ALL THREE. The aspect gate only checks
-   * proportions and the centre-20% guard only checks the middle is not
-   * hollow, so neither can see "background retained" or "one end eroded".
-   * Those are the two checks worth adding before the next attempt.
-   *
-   * Sources are left pinned in PRODUCT_PAGES above: they ARE the best photos
-   * these manufacturers publish, and the next person should start from a
-   * better matting algorithm rather than another image hunt.
+   * DM-2W's top band went from 70% eaten to matching its own siblings - every
+   * other BOSS compact in the catalogue measures 83-90 there. BigSky's trim
+   * lost 104 rows, which IS the grey box: the backdrop it used to keep.
    */
-  'Strymon BigSky': { mode: 'skip' },
+
+  /*
+   * Timeline is NOT fixed and stays skipped. The colour test cannot reach it,
+   * and this is measured rather than assumed - tracing the fill's path from
+   * the border to the centre of the pedal on the real photo:
+   *
+   *   saturation along the path: 0,0,4,5,4,5,3,3,3,3,3,3,3,3
+   *   of the 1,243,441 pixels the fill absorbed, 621 (0.0%) had sat > 24
+   *
+   * A silver enclosure lit by a neutral studio ramp IS the same colour as its
+   * own backdrop. There is no threshold to pick. It then fails the centre
+   * guard, falls back to the strict pass, and the strict pass cannot span a
+   * 255->137 ramp, so the shadow below luminance 220 survives - the grey oval
+   * the owner saw, and it is under the pedal because that is where the drop
+   * shadow is.
+   *
+   * Separating it needs a different KIND of signal (edge magnitude, or a real
+   * matting algorithm), not another constant.
+   * `src/lib/images/__tests__/knockout.test.ts` pins this limit with a
+   * fixture, so if it ever becomes separable that test fails and says so.
+   */
   'Strymon Timeline': { mode: 'skip' },
-  'BOSS DM-2W': { mode: 'skip' },
-  // The fill eats the red top plate. Retried 2026-08-02 against Roland's
-  // gallery TOP view (dm-2w_top_gal.jpg, pinned in PRODUCT_PAGES) - a better
-  // photo, same failure: measured top-10% alpha coverage 27.4% against 97.2%
-  // in the middle. The plate is 70% gone.
-  
 };
 
 /** Entries matching this are fetched as images directly, not scraped for og:image */
@@ -294,6 +292,30 @@ async function fetchImage(url) {
 const BG_TOL = 35;
 const BG_GRAD_TOL = 12;
 const BG_GRAD_MIN_LUM = 90;
+/**
+ * How much more COLOURFUL than its own backdrop a pixel may be and still be
+ * chained onto. Brightness alone cannot separate a studio backdrop from a
+ * pedal - both are light, and a soft edge joins them in steps too small for
+ * BG_GRAD_TOL. Colour can: backdrops and shadows are NEUTRAL.
+ *
+ * Traced 2026-08-03 on the two photos this was written for:
+ *   DM-2W   backdrop sat 5, path climbs 20,26,41,45,49,51,61,76,78 -> plate 99
+ *   BigSky  backdrop sat 0, path steps 0 -> 70 -> 115 -> 127 -> body 224
+ *
+ * Relative to the border average, because a backdrop is not always neutral -
+ * a pedal on a wooden floor sits on saturation ~80.
+ *
+ * 48, not a tighter number, because the targets are fixed anywhere in 16..120
+ * so the 62-pedal corpus is what picks it. Swept with knockout-regression.js:
+ * 16..32 moves 7-11 pedals (DD-7 loses 11.7pp of its bottom band, both MXR
+ * silhouettes change size); 40..64 moves 4-6, each a single band by <=5pp;
+ * 72..80 collapses BF-3 (left 55.5 -> 21.6). Mid-plateau, and the full
+ * reasoning is in src/lib/images/knockout.ts.
+ *
+ * Kept in step with src/lib/images/knockout.ts, which is the same algorithm
+ * for user uploads. See the note at the foot of this file.
+ */
+const BG_GRAD_MAX_SAT = 48;
 /** Share of the centre 40% box the fill may touch before it counts as having
  *  eaten the subject. See the guard below for the measured justification. */
 const MAX_CENTRE_KNOCK_SHARE = 0.02;
@@ -338,10 +360,20 @@ async function knockOutBackground(buf, useGradient = true) {
 
   const lum = (i) => 0.299 * px[i * C] + 0.587 * px[i * C + 1] + 0.114 * px[i * C + 2];
 
-  // j continues a smooth, light gradient from already-background i
+  // Colourfulness: 0 is a perfectly neutral grey
+  const sat = (i) =>
+    Math.max(px[i * C], px[i * C + 1], px[i * C + 2]) -
+    Math.min(px[i * C], px[i * C + 1], px[i * C + 2]);
+
+  // The most colour a chained pixel may carry, set by THIS image's backdrop
+  const maxSat = Math.max(r, g, b) - Math.min(r, g, b) + BG_GRAD_MAX_SAT;
+
+  // Can the fill spread onto j at all - light enough and neutral enough
+  const chainable = (j) => px[j * C + 3] >= 20 && lum(j) >= BG_GRAD_MIN_LUM && sat(j) <= maxSat;
+
+  // j continues a smooth, light, neutral gradient from already-background i
   const chains = (i, j) =>
-    px[j * C + 3] >= 20 &&
-    lum(j) >= BG_GRAD_MIN_LUM &&
+    chainable(j) &&
     Math.abs(px[j * C] - px[i * C]) <= BG_GRAD_TOL &&
     Math.abs(px[j * C + 1] - px[i * C + 1]) <= BG_GRAD_TOL &&
     Math.abs(px[j * C + 2] - px[i * C + 2]) <= BG_GRAD_TOL;
@@ -349,7 +381,7 @@ async function knockOutBackground(buf, useGradient = true) {
   const visited = new Uint8Array(W * H);
   const queue = [];
   for (const i of border) {
-    if (!visited[i] && (isBg(i) || (useGradient && px[i * C + 3] >= 20 && lum(i) >= BG_GRAD_MIN_LUM))) {
+    if (!visited[i] && (isBg(i) || (useGradient && chainable(i)))) {
       visited[i] = 1;
       queue.push(i);
     }

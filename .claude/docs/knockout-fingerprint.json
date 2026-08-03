@@ -1,0 +1,1248 @@
+{
+  "takenAt": "2026-08-03T12:46:52.610Z",
+  "pedalsInDb": 67,
+  "withImages": 62,
+  "measured": 62,
+  "pedals": {
+    "BOSS AW-3": {
+      "w": 596,
+      "h": 1050,
+      "opaque": 0.8835,
+      "partial": 0,
+      "clear": 0.1165,
+      "bands": {
+        "top": 0.8922,
+        "bottom": 0.5905,
+        "left": 0.5997,
+        "right": 0.5021,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS BD-2W": {
+      "w": 583,
+      "h": 1049,
+      "opaque": 0.8827,
+      "partial": 0,
+      "clear": 0.1173,
+      "bands": {
+        "top": 0.8856,
+        "bottom": 0.5787,
+        "left": 0.5383,
+        "right": 0.5748,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS BF-3": {
+      "w": 524,
+      "h": 925,
+      "opaque": 0.8857,
+      "partial": 0,
+      "clear": 0.1143,
+      "bands": {
+        "top": 0.8818,
+        "bottom": 0.5637,
+        "left": 0.5549,
+        "right": 0.5894,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS BP-1W": {
+      "w": 370,
+      "h": 666,
+      "opaque": 0.8754,
+      "partial": 0.0066,
+      "clear": 0.118,
+      "bands": {
+        "top": 0.8864,
+        "bottom": 0.5567,
+        "left": 0.511,
+        "right": 0.5519,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS CE-2W": {
+      "w": 180,
+      "h": 323,
+      "opaque": 0.8774,
+      "partial": 0,
+      "clear": 0.1226,
+      "bands": {
+        "top": 0.8677,
+        "bottom": 0.5557,
+        "left": 0.5948,
+        "right": 0.5028,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS CE-5": {
+      "w": 389,
+      "h": 694,
+      "opaque": 0.8695,
+      "partial": 0.0108,
+      "clear": 0.1197,
+      "bands": {
+        "top": 0.8326,
+        "bottom": 0.5466,
+        "left": 0.5068,
+        "right": 0.5342,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS CH-1": {
+      "w": 390,
+      "h": 695,
+      "opaque": 0.8859,
+      "partial": 0.0037,
+      "clear": 0.1105,
+      "bands": {
+        "top": 0.8759,
+        "bottom": 0.5841,
+        "left": 0.5889,
+        "right": 0.5566,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS CP-1X": {
+      "w": 368,
+      "h": 660,
+      "opaque": 0.8768,
+      "partial": 0.0053,
+      "clear": 0.1179,
+      "bands": {
+        "top": 0.8819,
+        "bottom": 0.5682,
+        "left": 0.526,
+        "right": 0.5421,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS CS-3": {
+      "w": 392,
+      "h": 699,
+      "opaque": 0.8661,
+      "partial": 0.0099,
+      "clear": 0.1239,
+      "bands": {
+        "top": 0.8481,
+        "bottom": 0.5347,
+        "left": 0.4884,
+        "right": 0.5042,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS DC-2W": {
+      "w": 393,
+      "h": 700,
+      "opaque": 0.8828,
+      "partial": 0.006,
+      "clear": 0.1111,
+      "bands": {
+        "top": 0.8791,
+        "bottom": 0.5866,
+        "left": 0.5433,
+        "right": 0.5607,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS DD-7": {
+      "w": 592,
+      "h": 1050,
+      "opaque": 0.8454,
+      "partial": 0,
+      "clear": 0.1546,
+      "bands": {
+        "top": 0.764,
+        "bottom": 0.592,
+        "left": 0.424,
+        "right": 0.4574,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS DS-1": {
+      "w": 373,
+      "h": 665,
+      "opaque": 0.8749,
+      "partial": 0.0092,
+      "clear": 0.1158,
+      "bands": {
+        "top": 0.8672,
+        "bottom": 0.5696,
+        "left": 0.5002,
+        "right": 0.5425,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS DS-1W": {
+      "w": 370,
+      "h": 662,
+      "opaque": 0.8706,
+      "partial": 0.006,
+      "clear": 0.1234,
+      "bands": {
+        "top": 0.8819,
+        "bottom": 0.5583,
+        "left": 0.4962,
+        "right": 0.512,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS EQ-200": {
+      "w": 768,
+      "h": 1049,
+      "opaque": 0.9723,
+      "partial": 0,
+      "clear": 0.0277,
+      "bands": {
+        "top": 0.7561,
+        "bottom": 0.9804,
+        "left": 0.9597,
+        "right": 0.9509,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS FZ-1W": {
+      "w": 373,
+      "h": 662,
+      "opaque": 0.8607,
+      "partial": 0.0386,
+      "clear": 0.1006,
+      "bands": {
+        "top": 0.8834,
+        "bottom": 0.5226,
+        "left": 0.4621,
+        "right": 0.4587,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS GE-7": {
+      "w": 394,
+      "h": 700,
+      "opaque": 0.8715,
+      "partial": 0.0057,
+      "clear": 0.1228,
+      "bands": {
+        "top": 0.8727,
+        "bottom": 0.6026,
+        "left": 0.458,
+        "right": 0.51,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS GEB-7": {
+      "w": 184,
+      "h": 327,
+      "opaque": 0.8517,
+      "partial": 0,
+      "clear": 0.1483,
+      "bands": {
+        "top": 0.8025,
+        "bottom": 0.5781,
+        "left": 0.5073,
+        "right": 0.5318,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS HM-2W": {
+      "w": 373,
+      "h": 660,
+      "opaque": 0.8407,
+      "partial": 0.0584,
+      "clear": 0.1009,
+      "bands": {
+        "top": 0.825,
+        "bottom": 0.4813,
+        "left": 0.3955,
+        "right": 0.3982,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS IR-2": {
+      "w": 186,
+      "h": 328,
+      "opaque": 0.8733,
+      "partial": 0,
+      "clear": 0.1267,
+      "bands": {
+        "top": 0.7939,
+        "bottom": 0.5689,
+        "left": 0.5526,
+        "right": 0.5576,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS IR-200": {
+      "w": 779,
+      "h": 1046,
+      "opaque": 0.9642,
+      "partial": 0,
+      "clear": 0.0358,
+      "bands": {
+        "top": 0.7549,
+        "bottom": 0.9794,
+        "left": 0.8533,
+        "right": 0.9647,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS MD-200": {
+      "w": 769,
+      "h": 1049,
+      "opaque": 0.975,
+      "partial": 0,
+      "clear": 0.025,
+      "bands": {
+        "top": 0.762,
+        "bottom": 0.9939,
+        "left": 0.9538,
+        "right": 0.9674,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS MD-500": {
+      "w": 1319,
+      "h": 1050,
+      "opaque": 0.966,
+      "partial": 0,
+      "clear": 0.034,
+      "bands": {
+        "top": 0.7397,
+        "bottom": 0.9787,
+        "left": 0.9266,
+        "right": 0.9418,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS MO-2": {
+      "w": 589,
+      "h": 1049,
+      "opaque": 0.8855,
+      "partial": 0,
+      "clear": 0.1145,
+      "bands": {
+        "top": 0.8941,
+        "bottom": 0.5919,
+        "left": 0.6006,
+        "right": 0.5248,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS MT-2W": {
+      "w": 359,
+      "h": 640,
+      "opaque": 0.8715,
+      "partial": 0.0068,
+      "clear": 0.1216,
+      "bands": {
+        "top": 0.8742,
+        "bottom": 0.5695,
+        "left": 0.4992,
+        "right": 0.5165,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS NS-2": {
+      "w": 394,
+      "h": 700,
+      "opaque": 0.8851,
+      "partial": 0.006,
+      "clear": 0.1089,
+      "bands": {
+        "top": 0.8701,
+        "bottom": 0.5833,
+        "left": 0.5536,
+        "right": 0.5726,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS OC-5": {
+      "w": 182,
+      "h": 323,
+      "opaque": 0.8791,
+      "partial": 0,
+      "clear": 0.1209,
+      "bands": {
+        "top": 0.8875,
+        "bottom": 0.6087,
+        "left": 0.5552,
+        "right": 0.4704,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS PH-3": {
+      "w": 184,
+      "h": 322,
+      "opaque": 0.8694,
+      "partial": 0,
+      "clear": 0.1306,
+      "bands": {
+        "top": 0.8876,
+        "bottom": 0.5158,
+        "left": 0.5431,
+        "right": 0.4563,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS PS-6": {
+      "w": 586,
+      "h": 1049,
+      "opaque": 0.8909,
+      "partial": 0,
+      "clear": 0.1091,
+      "bands": {
+        "top": 0.8963,
+        "bottom": 0.5859,
+        "left": 0.5969,
+        "right": 0.5903,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS PW-3": {
+      "w": 440,
+      "h": 1047,
+      "opaque": 0.9434,
+      "partial": 0,
+      "clear": 0.0566,
+      "bands": {
+        "top": 0.857,
+        "bottom": 0.9343,
+        "left": 0.7039,
+        "right": 0.8123,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS PX-1": {
+      "w": 404,
+      "h": 700,
+      "opaque": 0.9046,
+      "partial": 0.0054,
+      "clear": 0.0899,
+      "bands": {
+        "top": 0.884,
+        "bottom": 0.7854,
+        "left": 0.5405,
+        "right": 0.5954,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS RC-1": {
+      "w": 585,
+      "h": 1047,
+      "opaque": 0.8983,
+      "partial": 0,
+      "clear": 0.1017,
+      "bands": {
+        "top": 0.8882,
+        "bottom": 0.6093,
+        "left": 0.5947,
+        "right": 0.648,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS RT-2": {
+      "w": 391,
+      "h": 700,
+      "opaque": 0.8836,
+      "partial": 0.0067,
+      "clear": 0.1097,
+      "bands": {
+        "top": 0.8772,
+        "bottom": 0.5806,
+        "left": 0.5485,
+        "right": 0.5675,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS RV-200": {
+      "w": 241,
+      "h": 328,
+      "opaque": 0.9233,
+      "partial": 0,
+      "clear": 0.0767,
+      "bands": {
+        "top": 0.359,
+        "bottom": 0.9917,
+        "left": 0.9384,
+        "right": 0.8619,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS RV-6": {
+      "w": 586,
+      "h": 1045,
+      "opaque": 0.8919,
+      "partial": 0,
+      "clear": 0.1081,
+      "bands": {
+        "top": 0.8856,
+        "bottom": 0.6025,
+        "left": 0.5612,
+        "right": 0.6184,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS SD-1": {
+      "w": 182,
+      "h": 329,
+      "opaque": 0.8818,
+      "partial": 0,
+      "clear": 0.1182,
+      "bands": {
+        "top": 0.9001,
+        "bottom": 0.5833,
+        "left": 0.5633,
+        "right": 0.5226,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS SD-1W": {
+      "w": 583,
+      "h": 1048,
+      "opaque": 0.887,
+      "partial": 0,
+      "clear": 0.113,
+      "bands": {
+        "top": 0.895,
+        "bottom": 0.5944,
+        "left": 0.5824,
+        "right": 0.5563,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS SDE-3": {
+      "w": 393,
+      "h": 700,
+      "opaque": 0.8862,
+      "partial": 0.0059,
+      "clear": 0.1078,
+      "bands": {
+        "top": 0.8746,
+        "bottom": 0.5848,
+        "left": 0.5116,
+        "right": 0.6242,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS SL-2": {
+      "w": 371,
+      "h": 660,
+      "opaque": 0.8824,
+      "partial": 0.0073,
+      "clear": 0.1103,
+      "bands": {
+        "top": 0.8756,
+        "bottom": 0.5662,
+        "left": 0.559,
+        "right": 0.5596,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS SY-1": {
+      "w": 588,
+      "h": 1049,
+      "opaque": 0.8887,
+      "partial": 0,
+      "clear": 0.1113,
+      "bands": {
+        "top": 0.8836,
+        "bottom": 0.5956,
+        "left": 0.5642,
+        "right": 0.5961,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS SY-200": {
+      "w": 768,
+      "h": 1045,
+      "opaque": 0.9726,
+      "partial": 0,
+      "clear": 0.0274,
+      "bands": {
+        "top": 0.7774,
+        "bottom": 0.9785,
+        "left": 0.9392,
+        "right": 0.9549,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS SY-300": {
+      "w": 1468,
+      "h": 1045,
+      "opaque": 0.969,
+      "partial": 0,
+      "clear": 0.031,
+      "bands": {
+        "top": 0.8233,
+        "bottom": 0.9667,
+        "left": 0.9325,
+        "right": 0.9106,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS TR-2": {
+      "w": 184,
+      "h": 328,
+      "opaque": 0.8886,
+      "partial": 0,
+      "clear": 0.1114,
+      "bands": {
+        "top": 0.8793,
+        "bottom": 0.6266,
+        "left": 0.5593,
+        "right": 0.5576,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS TU-3": {
+      "w": 395,
+      "h": 700,
+      "opaque": 0.8771,
+      "partial": 0.0056,
+      "clear": 0.1173,
+      "bands": {
+        "top": 0.8716,
+        "bottom": 0.5959,
+        "left": 0.5747,
+        "right": 0.4652,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS TU-3W": {
+      "w": 386,
+      "h": 693,
+      "opaque": 0.873,
+      "partial": 0.0069,
+      "clear": 0.1202,
+      "bands": {
+        "top": 0.8701,
+        "bottom": 0.5371,
+        "left": 0.5268,
+        "right": 0.5416,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS VB-2W": {
+      "w": 583,
+      "h": 1050,
+      "opaque": 0.8776,
+      "partial": 0,
+      "clear": 0.1224,
+      "bands": {
+        "top": 0.8795,
+        "bottom": 0.5471,
+        "left": 0.4983,
+        "right": 0.5948,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS XS-1": {
+      "w": 394,
+      "h": 700,
+      "opaque": 0.8696,
+      "partial": 0.0061,
+      "clear": 0.1242,
+      "bands": {
+        "top": 0.8714,
+        "bottom": 0.5601,
+        "left": 0.4743,
+        "right": 0.5126,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "BOSS XS-100": {
+      "w": 213,
+      "h": 329,
+      "opaque": 0.9756,
+      "partial": 0,
+      "clear": 0.0244,
+      "bands": {
+        "top": 0.792,
+        "bottom": 0.973,
+        "left": 0.9741,
+        "right": 0.9631,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        255,
+        0
+      ]
+    },
+    "Dunlop Cry Baby GCB95": {
+      "w": 411,
+      "h": 1060,
+      "opaque": 0.8717,
+      "partial": 0,
+      "clear": 0.1283,
+      "bands": {
+        "top": 0.8894,
+        "bottom": 0.7454,
+        "left": 0.4671,
+        "right": 0.3314,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "Dunlop Fuzz Face": {
+      "w": 314,
+      "h": 314,
+      "opaque": 0.7832,
+      "partial": 0,
+      "clear": 0.2168,
+      "bands": {
+        "top": 0.4106,
+        "bottom": 0.4081,
+        "left": 0.4025,
+        "right": 0.3921,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "Electro-Harmonix Holy Grail": {
+      "w": 480,
+      "h": 819,
+      "opaque": 0.7626,
+      "partial": 0,
+      "clear": 0.2374,
+      "bands": {
+        "top": 0.7433,
+        "bottom": 0.4648,
+        "left": 0.9249,
+        "right": 0.1484,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "Electro-Harmonix Small Clone": {
+      "w": 582,
+      "h": 830,
+      "opaque": 0.8504,
+      "partial": 0,
+      "clear": 0.1496,
+      "bands": {
+        "top": 0.5929,
+        "bottom": 0.6689,
+        "left": 0.7549,
+        "right": 0.5596,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "Ibanez TS9 Tube Screamer": {
+      "w": 424,
+      "h": 702,
+      "opaque": 0.884,
+      "partial": 0.0074,
+      "clear": 0.1086,
+      "bands": {
+        "top": 0.857,
+        "bottom": 0.8529,
+        "left": 0.4007,
+        "right": 0.4522,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "MXR Carbon Copy": {
+      "w": 188,
+      "h": 321,
+      "opaque": 0.9278,
+      "partial": 0,
+      "clear": 0.0722,
+      "bands": {
+        "top": 0.9144,
+        "bottom": 0.9104,
+        "left": 0.6326,
+        "right": 0.6531,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "MXR Dyna Comp": {
+      "w": 187,
+      "h": 320,
+      "opaque": 0.9279,
+      "partial": 0,
+      "clear": 0.0721,
+      "bands": {
+        "top": 0.9126,
+        "bottom": 0.9088,
+        "left": 0.6258,
+        "right": 0.6664,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "MXR Phase 90": {
+      "w": 186,
+      "h": 321,
+      "opaque": 0.931,
+      "partial": 0,
+      "clear": 0.069,
+      "bands": {
+        "top": 0.9064,
+        "bottom": 0.9143,
+        "left": 0.6563,
+        "right": 0.678,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "PastFX Chorus Ensemble Deluxe": {
+      "w": 1063,
+      "h": 801,
+      "opaque": 0.9164,
+      "partial": 0,
+      "clear": 0.0836,
+      "bands": {
+        "top": 0.7825,
+        "bottom": 0.8467,
+        "left": 0.6621,
+        "right": 0.702,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "Pro Co RAT 2": {
+      "w": 305,
+      "h": 349,
+      "opaque": 0.9396,
+      "partial": 0,
+      "clear": 0.0604,
+      "bands": {
+        "top": 0.7658,
+        "bottom": 0.939,
+        "left": 0.8196,
+        "right": 0.726,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "Strymon Flint": {
+      "w": 492,
+      "h": 555,
+      "opaque": 0.986,
+      "partial": 0,
+      "clear": 0.014,
+      "bands": {
+        "top": 0.8975,
+        "bottom": 0.9796,
+        "left": 0.9639,
+        "right": 0.9837,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "TC Electronic Ditto Looper": {
+      "w": 991,
+      "h": 1920,
+      "opaque": 0.795,
+      "partial": 0.0444,
+      "clear": 0.1606,
+      "bands": {
+        "top": 0.7857,
+        "bottom": 0.332,
+        "left": 0.2189,
+        "right": 0.2276,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "TC Electronic Polytune 3": {
+      "w": 1130,
+      "h": 1932,
+      "opaque": 0.8417,
+      "partial": 0.0235,
+      "clear": 0.1348,
+      "bands": {
+        "top": 0.8515,
+        "bottom": 0.579,
+        "left": 0.329,
+        "right": 0.3321,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "Way Huge Aqua-Puss": {
+      "w": 183,
+      "h": 311,
+      "opaque": 0.9792,
+      "partial": 0,
+      "clear": 0.0208,
+      "bands": {
+        "top": 0.9064,
+        "bottom": 0.9827,
+        "left": 0.9032,
+        "right": 0.9519,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "Way Huge Conspiracy Theory": {
+      "w": 180,
+      "h": 308,
+      "opaque": 0.9886,
+      "partial": 0,
+      "clear": 0.0114,
+      "bands": {
+        "top": 0.8892,
+        "bottom": 0.9971,
+        "left": 0.9836,
+        "right": 0.9872,
+        "middle": 1
+      },
+      "corners": [
+        0,
+        0,
+        0,
+        255
+      ]
+    }
+  }
+}

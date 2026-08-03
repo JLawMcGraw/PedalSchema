@@ -37,6 +37,116 @@ export function pedalOnWhite(size = 40, inset = 10): RgbaImage {
   return image(size, size, (x, y) => (inBody(x, y) ? [30, 30, 35, 255] : [255, 255, 255, 255]));
 }
 
+/** Linear blend between two colours, rounded to bytes. */
+function mix(a: [number, number, number], b: [number, number, number], t: number): Rgba {
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * t),
+    Math.round(a[1] + (b[1] - a[1]) * t),
+    Math.round(a[2] + (b[2] - a[2]) * t),
+    255,
+  ];
+}
+
+/**
+ * A pedal with a bright COLOURED plate whose edge fades into the backdrop -
+ * the BOSS DM-2W, reduced to its essentials.
+ *
+ * The soft band is not decoration: it is the whole mechanism. Traced on the
+ * real photo (2026-08-03), the fill enters at (0,133) on white and walks a
+ * pink halo up the pedal's left edge - sat 20, 26, 41, 45, 49, 51, 61, 76, 78
+ * - onto the red plate at sat ~99, where the uniform colour lets it flood.
+ * No single step exceeds BG_GRAD_TOL, so brightness alone never stops it, and
+ * the damage is entirely in the TOP BAND where the centre guard cannot see it:
+ * measured centre penetration 0.00%, top-band coverage 27.8% against 100%
+ * in the middle.
+ */
+export function pedalWithColouredPlate(): RgbaImage {
+  const WHITE: [number, number, number] = [252, 252, 252];
+  const PLATE: [number, number, number] = [185, 86, 102]; // measured off the DM-2W
+  const HALO0 = 16;
+  const PEDAL_X = 32;
+  return image(80, 60, (x, y) => {
+    const inPedal = x >= PEDAL_X && x < 72 && y >= 10 && y < 50;
+    if (inPedal) return y < 22 ? [...PLATE, 255] : [30, 30, 35, 255];
+    // Pink halo cast on the backdrop beside the plate: 16 steps of <=11 per
+    // channel, so every step chains.
+    if (y >= 10 && y < 22 && x >= HALO0 && x < PEDAL_X) {
+      return mix(WHITE, PLATE, (x - HALO0) / (PEDAL_X - HALO0));
+    }
+    return [...WHITE, 255];
+  });
+}
+
+/**
+ * A pedal on a neutral backdrop ramp, with a soft edge blending into it.
+ *
+ * The proportions are what make this a faithful specimen rather than a toy.
+ * The body covers a QUARTER of the frame and its lower half is dark, so when
+ * the fill walks in it eats 88.5% - under the 90% runaway floor - and the
+ * failure surfaces as 'subject-eaten' from the centre guard, which is what the
+ * real photos do. A small body instead trips the runaway revert first and the
+ * fixture would be testing a different guard than the one that fires in
+ * production.
+ *
+ * The soft edge blends toward the NEAREST body pixel, so the band beside the
+ * dark lower half is dark too - a body-coloured halo there would be a glow no
+ * photograph produces.
+ */
+function pedalOnRamp(
+  body: [number, number, number],
+  rampTop: number,
+  rampBottom: number
+): RgbaImage {
+  const DARK: [number, number, number] = [25, 25, 30];
+  const BAND = 16;
+  const X0 = 24;
+  const X1 = 72;
+  const Y0 = 24;
+  const Y1 = 72;
+  /** Everything from here down is the dark half of the body. */
+  const DARK_Y = 50;
+  const colourAt = (x: number, y: number) => (y >= DARK_Y ? DARK : body);
+  return image(96, 96, (x, y) => {
+    if (x >= X0 && x < X1 && y >= Y0 && y < Y1) return [...colourAt(x, y), 255];
+    const v = Math.round(rampTop - ((rampTop - rampBottom) * y) / 95);
+    const back: [number, number, number] = [v, v, v];
+    const d = Math.max(X0 - x, 0, x - (X1 - 1), Y0 - y, 0, y - (Y1 - 1));
+    if (d >= BAND) return [...back, 255];
+    // Nearest body pixel, so the halo matches the edge it sits against
+    const nx = Math.min(Math.max(x, X0), X1 - 1);
+    const ny = Math.min(Math.max(y, Y0), Y1 - 1);
+    return mix(back, colourAt(nx, ny), (BAND - d) / BAND);
+  });
+}
+
+/**
+ * A strongly COLOURED body on a neutral backdrop that ramps far past BG_TOL -
+ * the Strymon BigSky.
+ *
+ * Traced on the real photo: the fill runs along the backdrop at sat 0, then
+ * steps onto the pedal through sat 70 -> 115 -> 127 -> 224 and hollows it out
+ * (centre penetration 35.75%). Being rejected as 'subject-eaten' is what sends
+ * the pipeline to the strict pass, and the strict pass cannot span the ramp -
+ * so the dark end of the backdrop survives as the grey box the owner saw.
+ */
+export function colouredPedalOnRamp(): RgbaImage {
+  return pedalOnRamp([90, 120, 235], 240, 90);
+}
+
+/**
+ * A NEUTRAL body on a NEUTRAL backdrop ramp - the Strymon Timeline, and the
+ * case colour cannot solve.
+ *
+ * Traced on the real photo: the fill walks from the border to the centre
+ * through pixels of saturation 0,0,4,5,4,5,3,3,3,3,3,3,3,3. Of the 1,243,441
+ * pixels it absorbed, 621 (0.0%) had saturation above 24. A silver enclosure
+ * lit by a neutral studio ramp is the same colour as its own backdrop, so no
+ * saturation threshold separates them.
+ */
+export function neutralPedalOnNeutralRamp(): RgbaImage {
+  return pedalOnRamp([140, 140, 142], 255, 200);
+}
+
 /**
  * Every status the detector can return. A Record keyed by the union is the
  * type-link: omitting a status, or inventing one, fails to compile. Its keys

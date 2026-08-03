@@ -13,7 +13,13 @@ import {
   trimTransparent,
   type RgbaImage,
 } from '../knockout';
-import { image, pedalOnWhite } from './fixtures';
+import {
+  colouredPedalOnRamp,
+  image,
+  neutralPedalOnNeutralRamp,
+  pedalOnWhite,
+  pedalWithColouredPlate,
+} from './fixtures';
 
 const alphaAt = (img: RgbaImage, x: number, y: number) =>
   img.data[(y * img.width + x) * 4 + 3];
@@ -126,6 +132,54 @@ describe('knockOutBackground', () => {
         expect(alphaAt(out, x, y)).toBe(255);
       }
     }
+  });
+
+  it('does not chain off the backdrop onto a bright coloured pedal feature', () => {
+    // The DM-2W: a soft pink halo beside the red plate lets the fill walk in
+    // one small step at a time and flood the plate. Every step is within
+    // BG_GRAD_TOL and every pixel is above BG_GRAD_MIN_LUM, so only COLOUR
+    // distinguishes the plate from the backdrop it is standing on.
+    const { image: out, status } = knockOutBackground(pedalWithColouredPlate());
+
+    expect(status).toBe('knocked-out');
+    expect(alphaAt(out, 0, 0)).toBe(0); // real backdrop still cleared
+    expect(alphaAt(out, 52, 16)).toBe(255); // the plate survives
+    expect(alphaAt(out, 34, 16)).toBe(255); // including its outermost column
+    expect(alphaAt(out, 52, 40)).toBe(255); // dark body untouched, as before
+
+    // The whole plate, not just the sampled pixels: this is the band that
+    // measured 27.8% coverage on the real photo.
+    let opaque = 0;
+    for (let y = 10; y < 22; y++) {
+      for (let x = 32; x < 72; x++) if (alphaAt(out, x, y) === 255) opaque++;
+    }
+    expect(opaque).toBe(12 * 40);
+  });
+
+  it('clears a backdrop ramp without hollowing out a coloured body', () => {
+    // The BigSky. Chaining is REQUIRED here (the ramp runs far outside BG_TOL),
+    // so the fix must not simply refuse to chain - it must chain along the
+    // neutral backdrop and stop at the colour.
+    const { image: out, status } = knockOutBackground(colouredPedalOnRamp());
+
+    expect(status).toBe('knocked-out');
+    expect(alphaAt(out, 48, 95)).toBe(0); // darkest end of the ramp cleared
+    expect(alphaAt(out, 48, 0)).toBe(0); // lightest end cleared
+    expect(alphaAt(out, 48, 48)).toBe(255); // body intact
+  });
+
+  it('cannot separate a neutral body from a neutral backdrop - the Timeline', () => {
+    // Documents the LIMIT of the colour test, so that nobody reads the two
+    // cases above and assumes the knockout now handles every studio photo.
+    // A silver enclosure on a neutral ramp offers no colour difference to
+    // measure; the fill walks in and the centre guard is what stops it, which
+    // sends the pipeline to the strict pass and leaves the backdrop's dark end.
+    // Strymon Timeline is held at mode:'skip' in mirror-pedal-images.js for
+    // exactly this reason. If this test ever fails, the knockout got better -
+    // re-run .claude/scripts/knockout-targets.js and lift the override.
+    const { status } = knockOutBackground(neutralPedalOnNeutralRamp());
+
+    expect(status).toBe('subject-eaten');
   });
 
   it('still clears an evenly textured surface, like a pedal on wood or carpet', () => {

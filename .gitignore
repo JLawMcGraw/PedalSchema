@@ -47,6 +47,10 @@ next-env.d.ts
 # Claude screenshots
 .claude/screenshots/
 
+# Downloaded source photos cached by the knockout scripts. Regenerable, and
+# they are manufacturer product photography we hold no licence to redistribute.
+.claude/scripts/.cache/
+
 # Scraper: the scripts are tracked, the scraped data dumps are not.
 # (pedal.schema.json is the schema they validate against, not output.)
 scraper/*.json

@@ -25,6 +25,47 @@ const BG_GRAD_TOL = 12;
 /** Gradient-following never enters pixels darker than this, so it cannot creep
  *  through a drop shadow into a black enclosure. */
 const BG_GRAD_MIN_LUM = 90;
+/**
+ * How much more COLOURFUL than its own backdrop a pixel may be and still be
+ * chained onto. Brightness alone cannot tell a studio backdrop from a pedal:
+ * both are light, and a soft edge joins them in steps too small for
+ * BG_GRAD_TOL to catch. Colour can - studio backdrops and shadows are
+ * NEUTRAL, and the features that get eaten are not.
+ *
+ * Measured on the two photos this was written for (2026-08-03), tracing the
+ * path the fill took from the border to the damage:
+ *
+ *   DM-2W   backdrop sat 5, path climbs 20,26,41,45,49,51,61,76,78 -> plate 99
+ *   BigSky  backdrop sat 0, path steps 0 -> 70 -> 115 -> 127 -> body 224
+ *
+ * Measured RELATIVE to the border average, because a backdrop is not always
+ * neutral: a pedal shot on a wooden floor sits on saturation ~80, and an
+ * absolute threshold would refuse to chain along the floor at all.
+ *
+ * The VALUE is 48 because both targets are fixed across the whole range
+ * 16..120, so they do not choose it - the 62-pedal corpus does. Swept against
+ * .claude/scripts/knockout-regression.js, the number of corpus pedals that
+ * move is not monotonic, and 48 sits mid-plateau between two cliffs:
+ *
+ *    16..32  7-11 move; DD-7 loses 11.7pp off its bottom band and the two
+ *            MXR silhouettes change size by up to 5% - the gate is tight
+ *            enough to stop the fill on the pedals' own coloured edges
+ *    40..64  4-6 move, every one a single band by <=5pp, no silhouette
+ *            changes size                                      <- chosen
+ *    72..80  BF-3 collapses (top 88.2 -> 73.0, left 55.5 -> 21.6): loose
+ *            enough that its gradient pass now scrapes past the centre guard
+ *            and is used instead of the strict pass
+ *    96+     quiet again, but BigSky decays (top band 96.4 -> 87.5) as the
+ *            gate stops holding its blue body back
+ *
+ * 48 leaves the DM-2W's plate (saturation 96-102) a margin of 43 and the
+ * BigSky's body (70 at the point of entry) a margin of 22.
+ *
+ * This is a colour test, so it is blind to a NEUTRAL subject on a NEUTRAL
+ * backdrop - a silver enclosure on grey. See the Timeline case in
+ * __tests__/knockout.test.ts, which pins that limit.
+ */
+const BG_GRAD_MAX_SAT = 48;
 /** Border transparency above this share means the image is already a silhouette. */
 const ALREADY_CUTOUT_SHARE = 0.3;
 /** A knockout that eats more than this share of the frame leaked into the subject. */
@@ -132,10 +173,21 @@ export function knockOutBackground(
   const lum = (i: number) =>
     0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2];
 
-  /** j continues a smooth, light gradient from already-background i. */
+  /** Colourfulness: 0 is a perfectly neutral grey. */
+  const sat = (i: number) =>
+    Math.max(px[i * 4], px[i * 4 + 1], px[i * 4 + 2]) -
+    Math.min(px[i * 4], px[i * 4 + 1], px[i * 4 + 2]);
+
+  /** The most colour a chained pixel may carry, set by this image's backdrop. */
+  const maxSat = Math.max(r, g, b) - Math.min(r, g, b) + BG_GRAD_MAX_SAT;
+
+  /** Can the fill spread ONTO j at all - light enough and neutral enough. */
+  const chainable = (j: number) =>
+    px[j * 4 + 3] >= OPAQUE && lum(j) >= BG_GRAD_MIN_LUM && sat(j) <= maxSat;
+
+  /** j continues a smooth, light, neutral gradient from already-background i. */
   const chains = (i: number, j: number) =>
-    px[j * 4 + 3] >= OPAQUE &&
-    lum(j) >= BG_GRAD_MIN_LUM &&
+    chainable(j) &&
     Math.abs(px[j * 4] - px[i * 4]) <= BG_GRAD_TOL &&
     Math.abs(px[j * 4 + 1] - px[i * 4 + 1]) <= BG_GRAD_TOL &&
     Math.abs(px[j * 4 + 2] - px[i * 4 + 2]) <= BG_GRAD_TOL;
@@ -144,7 +196,7 @@ export function knockOutBackground(
   const stack = new Int32Array(W * H);
   let top = 0;
   for (const i of border) {
-    if (!visited[i] && (isBg(i) || (useGradient && px[i * 4 + 3] >= OPAQUE && lum(i) >= BG_GRAD_MIN_LUM))) {
+    if (!visited[i] && (isBg(i) || (useGradient && chainable(i)))) {
       visited[i] = 1;
       stack[top++] = i;
     }
