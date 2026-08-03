@@ -165,9 +165,41 @@ const PEDAL_OVERRIDES = {
    * the owner saw, and it is under the pedal because that is where the drop
    * shadow is.
    *
-   * Separating it needs a different KIND of signal (edge magnitude, or a real
-   * matting algorithm), not another constant.
-   * `src/lib/images/__tests__/knockout.test.ts` pins this limit with a
+   * EDGE MAGNITUDE WAS TRIED TOO (2026-08-03) and is also blind here. The
+   * idea was sound - a backdrop is smooth, an outline is not, and the fill
+   * turned out not to CROSS the pedal's edge but to walk ALONG its shoulder:
+   *
+   *   backdrop, right side    255 -> 227 over 120px      ~0.5 /px
+   *   drop shadow, bottom     255 -> 131 over 110px      1.3-2.3 /px
+   *   pedal's right edge      227 -> 109 in one step     91 /px
+   *
+   * Gating chaining on steepness <= 25 closed that path. The fill simply
+   * entered somewhere else: at x=632 the pedal's own SILVER TOP FACE (L216)
+   * meets the white backdrop (L243) with no bevel between them, and every
+   * pixel along the new entry path measures steepness 2-9. Where the
+   * enclosure is bright silver there is no boundary in the image data at all.
+   * The gate also cost BigSky (top band 96.1 -> 89.0), so it was reverted.
+   *
+   * That is all three local channels measured and refused:
+   *   COLOUR      0.0% of the absorbed pixels are saturated
+   *   BRIGHTNESS  the pedal spans L[89,231], which CONTAINS the shadow's
+   *               L[137,219]; sweeping the floor 90..190 either leaves the
+   *               shadow or eats the top face (top band 16-73%)
+   *   GRADIENT    the entry path is smooth, steepness 2-9
+   *
+   * Cropping the residue was tried as well: the bright-neutral rows are
+   * contiguous from the edges (top 11, bottom 33, left 17, right 33), but
+   * cropping them leaves all four corners STILL backdrop (lum 145-164) - the
+   * shadow is a gradient, so the boundary just moves - and it would crop
+   * lines from 36 of the 62 pedals that are already right.
+   *
+   * A better SOURCE is the remaining route, and there is not one: Strymon's
+   * only other top-down is a 1600x714 crop on a GREY backdrop (aspect 2.24
+   * against a 1.275 footprint), and the three Andertons gallery originals are
+   * angled - the closest by aspect (1.033x) has a visibly diagonal silhouette.
+   *
+   * So this needs real matting (trimap/learned alpha), not another constant.
+   * `src/lib/images/__tests__/knockout.test.ts` pins the limit with a
    * fixture, so if it ever becomes separable that test fails and says so.
    */
   'Strymon Timeline': { mode: 'skip' },

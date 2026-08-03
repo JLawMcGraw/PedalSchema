@@ -91,9 +91,56 @@ survives. Measured on the output edge: 218, 216, 209, 199, 179, 177, 137, all
 neutral. That is the grey oval, and it is *under* the pedal because that is
 where the drop shadow is.
 
-Separating it needs a different KIND of signal — edge magnitude, or a real
-matting algorithm — not another constant.
-`src/lib/images/__tests__/knockout.test.ts` pins this limit with a fixture, so
+### Edge magnitude was then tried, and is also blind
+
+The idea was sound and the diagnosis it produced is worth keeping: the fill
+does not **cross** the pedal's edge — `BG_GRAD_TOL` already forbids that — it
+walks **along the shoulder** of the edge, which descends smoothly in the
+direction parallel to it (185 → 165 → 127 → 93 going up the right side) and
+steps off the bottom of that ridge onto the face. Per-pixel walks inward from
+the frame edge:
+
+```
+backdrop, right side    255 -> 227 over 120px      ~0.5 /px
+drop shadow, bottom     255 -> 131 over 110px      1.3-2.3 /px
+pedal's right edge      227 -> 109 in ONE step     91  /px
+pedal's bottom edge     162 -> 60                  34-54 /px
+```
+
+Gating chaining on steepness ≤ 25 closed that path. The fill entered somewhere
+else: at x=632 the Timeline's own **silver top face (L216) meets the white
+backdrop (L243) with no bevel**, and every pixel on the new entry path measures
+steepness 2–9. Where the enclosure is bright silver there is no boundary in the
+image data at all. The gate also cost BigSky (top band 96.1 → 89.0), so it was
+reverted.
+
+### All three local channels, measured and refused
+
+| channel | measurement |
+|---|---|
+| COLOUR | 0.0% of the 1,243,441 absorbed pixels are saturated |
+| BRIGHTNESS | pedal spans L[89,231], which **contains** the shadow's L[137,219]; sweeping the floor 90→190 either leaves the shadow or eats the top face (top band 16–73%) |
+| GRADIENT | entry path is smooth, steepness 2–9 |
+
+Cropping the residue instead of separating it was also tried. The
+bright-neutral rows *are* contiguous from the edges (top 11, bottom 33, left
+17, right 33), but cropping them leaves all four corners **still** backdrop
+(lum 145–164) — the shadow is a gradient, so the boundary just moves — and it
+would crop lines from **36 of the 62** pedals that are already right (Polytune
+3 alone loses 77 top rows).
+
+### A better source is the remaining route, and there is not one
+
+- Strymon's only other top-down is `timeline_topdowncrop_1600.jpg`: 1600x714 on
+  a **grey** backdrop, aspect 2.24 against a 1.275 footprint.
+- The three Andertons gallery originals are all angled. The closest by aspect
+  (1.033× footprint, 0/4 backdrop corners) has a visibly **diagonal**
+  silhouette — a beauty shot whose proportions merely coincide.
+- Reverb, Perfect Circuit and Sweetwater refuse automated fetches (HTTP 403),
+  and a dealer photo would drop provenance to `unknown` besides.
+
+So this needs real matting — a trimap or learned alpha — not another constant.
+`src/lib/images/__tests__/knockout.test.ts` pins the limit with a fixture, so
 if it ever becomes separable that test fails and says so.
 
 ---

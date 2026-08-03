@@ -66,15 +66,44 @@ would have been built on assumed numbers that the corpus contradicts.
   0-5). That is what the board verifier checks.
 
 ### Why Timeline cannot be fixed this way
-Of the **1,243,441** pixels its fill absorbs, **621 (0.0%)** are saturated. A
-silver enclosure on a neutral studio ramp IS the same colour as its own
-backdrop. The plan's stated mechanism was also wrong: `BG_GRAD_MIN_LUM` does
-not halt the chain: the gradient pass runs away into the pedal, gets rejected
-as `subject-eaten`, and the STRICT fallback is what leaves the shadow (output
-edge measures 218, 216, 209, 199, 179, 177, 137, all neutral). It is under the
-pedal because that is where the drop shadow is. Needs a different KIND of
-signal - edge magnitude or real matting - not another constant. A fixture pins
-the limit and will fail if that ever changes.
+The plan's stated mechanism was wrong: `BG_GRAD_MIN_LUM` does not halt the
+chain. The gradient pass runs away into the pedal, gets rejected as
+`subject-eaten`, and the STRICT fallback is what leaves the shadow (output edge
+measures 218, 216, 209, 199, 179, 177, 137, all neutral). It is under the pedal
+because that is where the drop shadow is.
+
+**All three local channels were then measured, and all three are blind:**
+
+| channel | measurement |
+|---|---|
+| COLOUR | 0.0% of the 1,243,441 absorbed pixels are saturated |
+| BRIGHTNESS | pedal spans L[89,231], which CONTAINS the shadow's L[137,219]; sweeping the floor 90->190 either leaves the shadow or eats the top face (top band 16-73%) |
+| GRADIENT | the fill's entry path measures steepness 2-9 |
+
+The edge-magnitude attempt produced the best diagnosis of the session even
+though it failed: the fill never CROSSES the pedal's edge (`BG_GRAD_TOL`
+already forbids a 91-per-pixel step) - it walks ALONG the edge's shoulder,
+which descends smoothly parallel to itself, and steps off the bottom of that
+ridge onto the face. Gating on steepness <= 25 closed that path, and the fill
+entered elsewhere: at x=632 the silver top face (L216) meets the white backdrop
+(L243) with no bevel, steepness 2-9. Where the enclosure is bright silver there
+is no boundary in the image data. It also cost BigSky (top 96.1 -> 89.0), so it
+was reverted.
+
+Cropping the residue instead of separating it also fails: the bright-neutral
+rows are contiguous from the edges (t11 b33 l17 r33), but cropping them leaves
+all four corners STILL backdrop (lum 145-164) - the shadow is a gradient, so
+the boundary just moves - and it would crop lines from 36 of the 62 pedals that
+are already right.
+
+A better SOURCE is the remaining route and there is not one: Strymon's other
+top-down is 1600x714 on GREY (aspect 2.24 vs a 1.275 footprint); the three
+Andertons originals are angled, the closest by aspect having a visibly diagonal
+silhouette; Reverb/Perfect Circuit/Sweetwater refuse automated fetches, and a
+dealer photo drops provenance to `unknown` besides.
+
+Needs real matting (trimap or learned alpha), not another constant. A fixture
+pins the limit and will fail if that ever changes.
 
 ### Verification
 - 293 tests pass (+3), 1 skipped; tsc clean; production build ok; `src/`
@@ -89,7 +118,9 @@ the limit and will fail if that ever changes.
       Overwrites live images, so it wants a deliberate go-ahead. Re-take the
       fingerprint afterwards or the gate loses its reference point.
 - [ ] Timeline, Big Muff, Klon still render as rects, for three different
-      reasons (algorithm, source, licence).
+      reasons (algorithm, source, licence). Timeline is now closed as far as
+      thresholding can take it - reopen only with real matting or a genuinely
+      different photograph, not another constant.
 - [ ] The `assignLanes` cliff is fixed but never instrumented.
 - [ ] `complexRouting` should be re-tuned; P1.5 left it alone.
 - [ ] 10 jack layouts unresearched; Marshall JCM2000 DSL has no photo.
