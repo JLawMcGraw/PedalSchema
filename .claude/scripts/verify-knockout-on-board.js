@@ -27,7 +27,14 @@ const { loadEnv, login, openEditor, BASE_URL } = require('./lib/twin');
 loadEnv();
 
 /** The pedals this run is about, by the name shown in the library. */
-const TARGETS = ['DM-2W', 'BigSky'];
+const TARGETS = ['DM-2W', 'BigSky', 'Timeline'];
+
+/**
+ * Pedals whose own enclosure is bright and neutral, so the corner test cannot
+ * tell subject from studio backdrop. Only the bottom corners are judged for
+ * these - see the note at the check itself.
+ */
+const NEUTRAL_ENCLOSURE = ['Timeline'];
 
 const sat = (r, g, b) => Math.max(r, g, b) - Math.min(r, g, b);
 const dist = (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2]));
@@ -187,11 +194,28 @@ async function main() {
         '  corners: ' +
           corners.map((c) => `${c.label} rgb=${c.rgb} lum=${c.lum} sat=${c.sat}${c.backdrop ? ' BACKDROP' : ''}`).join('  ')
       );
-      const residue = corners.filter((c) => c.backdrop);
+      // A pedal whose ENCLOSURE is itself bright and neutral defeats this
+      // test, because "bright and neutral" then describes the subject as well
+      // as the backdrop. That is a property of the pedal, declared here the
+      // way scraper/mirror-pedal-images.js declares its per-pedal exceptions.
+      //
+      // For those, assert the narrower thing that still catches the defect
+      // actually reported: a drop shadow falls UNDER a pedal, so the bottom
+      // corners are where a retained one shows. On the Timeline those went
+      // lum 195/197 (backdrop) -> 63/68 (enclosure) across the fix, while its
+      // top corners read ~160 both before and after because the top of that
+      // enclosure is genuinely light grey.
+      const neutralEnclosure = NEUTRAL_ENCLOSURE.some((n) => nameGuess.includes(n));
+      const judged = neutralEnclosure ? corners.filter((c) => c.label.startsWith('bottom')) : corners;
+      const residue = judged.filter((c) => c.backdrop);
       check(
-        'no corner shows a bright neutral studio backdrop (no grey box)',
+        neutralEnclosure
+          ? 'no BOTTOM corner shows a retained drop shadow (grey enclosure: top corners not diagnostic)'
+          : 'no corner shows a bright neutral studio backdrop (no grey box)',
         residue.length === 0,
-        residue.length ? residue.map((c) => `${c.label} lum=${c.lum} sat=${c.sat}`).join(', ') : 'all 4 clean'
+        residue.length
+          ? residue.map((c) => `${c.label} lum=${c.lum} sat=${c.sat}`).join(', ')
+          : `all ${judged.length} clean`
       );
 
       // 2. The top of the face must be as present as the middle.

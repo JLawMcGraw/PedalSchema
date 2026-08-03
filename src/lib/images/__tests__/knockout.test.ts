@@ -175,17 +175,21 @@ describe('knockOutBackground', () => {
     // in and the centre guard is what stops it, which sends the pipeline to
     // the strict pass and leaves the backdrop's dark end.
     //
-    // On the real Timeline all three local channels were measured and all
+    // On the real Timeline all three LOCAL channels were measured and all
     // three are blind: COLOUR (0.0% of the 1,243,441 absorbed pixels are
     // saturated), BRIGHTNESS (the pedal spans L[89,231], which contains the
     // shadow's L[137,219]) and GRADIENT (the fill's entry path measures
     // steepness 2-9, because where the silver top face meets the white
-    // backdrop there is no bevel between them). Separating it needs real
-    // matting, not another constant - see PEDAL_OVERRIDES in
-    // scraper/mirror-pedal-images.js for the full record.
+    // backdrop there is no bevel between them).
     //
-    // If this test ever fails, the knockout got better - re-run
-    // .claude/scripts/knockout-targets.js and lift the override.
+    // The real Timeline IS now cut out, but not by fixing this function - by
+    // stopping asking it the question. `mode: 'rect'` in
+    // scraper/mirror-pedal-images.js finds the pedal's OUTLINE from gradient
+    // projections over whole rows and columns, and clears outside it; the
+    // drop shadow then never has to be classified at all. This assertion
+    // therefore stays true and should: the flood fill alone still cannot
+    // separate neutral from neutral, and anything that reaches for a new
+    // constant here should see that first.
     const { status } = knockOutBackground(neutralPedalOnNeutralRamp());
 
     expect(status).toBe('subject-eaten');

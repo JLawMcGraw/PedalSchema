@@ -127,6 +127,10 @@ const PRODUCT_PAGES = {
  *            background remover fixes a photo shot from the side)
  *   mode     'skip'      never mirror; render the clean category rect
  *            'no-trim'   knock the background out but do not crop to it
+ *            'rect'      ALSO clear everything outside the detected outline
+ *                        (detectOutlineRect). For a photo whose drop shadow
+ *                        no local test can separate from the pedal. Only
+ *                        valid for a rectangular pedal shot square-on.
  *
  * Prefer fixing `sources` when a better photo exists: the goal is a clean
  * top-down cut-out, so a correct source beats any amount of post-processing.
@@ -198,11 +202,34 @@ const PEDAL_OVERRIDES = {
    * against a 1.275 footprint), and the three Andertons gallery originals are
    * angled - the closest by aspect (1.033x) has a visibly diagonal silhouette.
    *
-   * So this needs real matting (trimap/learned alpha), not another constant.
-   * `src/lib/images/__tests__/knockout.test.ts` pins the limit with a
-   * fixture, so if it ever becomes separable that test fails and says so.
+   * WHAT FINALLY WORKED is not a better local test but a GLOBAL one. Every
+   * attempt above asks "is this pixel background?", and at x=632 the image
+   * simply does not contain the answer. Asking instead "where is the pedal's
+   * outline?" pools the evidence along each whole edge, where the soft patch
+   * is a small minority of a line that is strong everywhere else:
+   *
+   *   columns  x=120 (62.9) ... x=1483 (46.9)     <- the sides
+   *   rows     y=104 (73.8) ... y=1079 (32.8)     <- top and bottom
+   *   everything in between              <= 18.3
+   *
+   * The drop shadow lies entirely OUTSIDE that outline, so it never has to be
+   * classified at all - which is the whole trick, because classifying it is
+   * the thing that cannot be done. mode:'rect' clears outside the outline
+   * after the normal knockout has taken the white corner slivers.
+   *
+   * Result: 1414x1049 (95.3% opaque, grey shadow band retained) becomes
+   * 1368x980, a clean filled rectangle, aspect 1.396 against a TRUE footprint
+   * of 6.75x5.1 = 1.324 (ratio 1.055).
+   *
+   * KNOWN RESIDUAL, stated because it cannot be measured away: the bottom
+   * edge sits at y=1080 and the pedal's own bright front bevel runs y~1065
+   * -1080, so the last ~1.8% of the height is bevel-or-shadow and the
+   * measurements cannot tell which. The corner test in
+   * verify-knockout-on-board.js also cannot adjudicate this pedal, because a
+   * neutral grey enclosure is exactly what "bright and neutral" describes.
+   * This one wants an eye on the board.
    */
-  'Strymon Timeline': { mode: 'skip' },
+  'Strymon Timeline': { mode: 'rect' },
 };
 
 /** Entries matching this are fetched as images directly, not scraped for og:image */
@@ -465,7 +492,169 @@ async function knockOutBackground(buf, useGradient = true) {
   };
 }
 
-async function trimBackground(buf) {
+/**
+ * Find the subject's outline by GLOBAL edge evidence rather than locally.
+ *
+ * The flood fill is a local test: it decides pixel by pixel, so one soft spot
+ * on the perimeter lets it through. On the Timeline that is exactly what
+ * happens - at x=632 the silver top face (L216) meets the white backdrop
+ * (L243) with no bevel, so no local test of colour, brightness or steepness
+ * sees a boundary there.
+ *
+ * Summing |dL/dx| down a whole column, and |dL/dy| across a whole row, pools
+ * the evidence along the entire edge instead. The soft patch is then a small
+ * minority of a line that is strong everywhere else. Measured on the Timeline:
+ *
+ *   columns  x=120 (62.9)  ...  x=1483 (46.9)      <- the pedal's sides
+ *   rows     y=104 (73.8)  ...  y=1079 (32.8)      <- its top and bottom
+ *   everything in between                <= 18.3
+ *
+ * Only meaningful for a pedal that IS a rectangle seen square-on, which is
+ * why it is opt-in per pedal (`mode: 'rect'`) and not the default.
+ */
+const OUTLINE_MIN_EDGE = 12;
+
+async function detectOutlineRect(buf) {
+  const { data: px, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width: W, height: H, channels: C } = info;
+  const L = (x, y) => {
+    const i = (y * W + x) * C;
+    return 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+  };
+
+  const colEdge = new Float64Array(W);
+  for (let x = 1; x < W - 1; x++) {
+    let s = 0;
+    for (let y = 0; y < H; y++) s += Math.abs(L(x + 1, y) - L(x - 1, y));
+    colEdge[x] = s / H;
+  }
+  const rowEdge = new Float64Array(H);
+  for (let y = 1; y < H - 1; y++) {
+    let s = 0;
+    for (let x = 0; x < W; x++) s += Math.abs(L(x, y + 1) - L(x, y - 1));
+    rowEdge[y] = s / W;
+  }
+
+  // The OUTERMOST line strong enough to be an outline, from each side inward
+  let x0 = 0, x1 = W - 1, y0 = 0, y1 = H - 1;
+  for (let x = 1; x < W / 2; x++) if (colEdge[x] > OUTLINE_MIN_EDGE) { x0 = x; break; }
+  for (let x = W - 2; x > W / 2; x--) if (colEdge[x] > OUTLINE_MIN_EDGE) { x1 = x; break; }
+  for (let y = 1; y < H / 2; y++) if (rowEdge[y] > OUTLINE_MIN_EDGE) { y0 = y; break; }
+  for (let y = H - 2; y > H / 2; y--) if (rowEdge[y] > OUTLINE_MIN_EDGE) { y1 = y; break; }
+
+  // A drop shadow falls UNDER the pedal, and between the two there is usually
+  // a rim of light wrapping the front edge. That rim has a strong edge on its
+  // OUTER side, so the scan above stops there and keeps the rim - which reads
+  // on the board as a grey line under the pedal. Measured on the Timeline,
+  // row medians and |dL/dy| walking up from the shadow:
+  //
+  //   y 1083..1104   lum 128-147, edge 0.5-4.4   the shadow, smooth
+  //   y 1080         lum 120,     edge 33.6      <- the scan stops here
+  //   y 1062..1077   lum 140-158, edge 2.9-15.9  the rim: bright and NEUTRAL
+  //   y 1062         lum  88,     edge 28.4      the pedal's real bottom
+  //   y <=1059       lum 49-62                   pedal body
+  //
+  // So walk further in while the row stays bright and neutral. The pedal's
+  // own dark bottom edge stops it. Only the BOTTOM is treated this way -
+  // that is where shadows fall, and at the TOP the outermost edge is the
+  // pedal's own dark bevel, which must be kept.
+  const RIM_MAX = Math.round(H * 0.04); // bound the damage if nothing stops it
+  const rowMedian = (y) => {
+    const v = [];
+    for (let x = x0; x <= x1; x += 4) {
+      const i = (y * W + x) * C;
+      v.push([L(x, y), Math.max(px[i], px[i + 1], px[i + 2]) - Math.min(px[i], px[i + 1], px[i + 2])]);
+    }
+    v.sort((a, b) => a[0] - b[0]);
+    const mid = v[v.length >> 1];
+    return { lum: mid[0], sat: v.map((q) => q[1]).sort((a, b) => a - b)[v.length >> 1] };
+  };
+  for (let k = 0; k < RIM_MAX && y1 > y0 + 8; k++) {
+    const m = rowMedian(y1);
+    if (!(m.lum > 110 && m.sat < 30)) break;
+    y1--;
+  }
+
+  return { x0, x1, y0, y1, W, H };
+}
+
+/**
+ * Drop opaque islands that are retained BACKDROP rather than subject.
+ *
+ * A cut-out should be one piece. When it is not, the extra pieces are of two
+ * kinds and only one is damage: a pedal split by a thin slice the fill ate
+ * through it (the halves are large and pedal-coloured, and must be KEPT), or
+ * scraps of backdrop the fill could not reach (small, bright and neutral).
+ *
+ * Measured on the catalogue 2026-08-03, the two are far apart:
+ *
+ *   DD-7    blob 0 344331 lum 128   blob 1 151763 lum  83   <- both the pedal
+ *           blob 2  29126 lum 195 sat 28                    <- backdrop scraps
+ *   GEB-7   blob 0  34623 lum 116   blob 1  16614 lum  87   <- both the pedal
+ *           blobs 2,3 of 4 and 2 px, lum 202-203            <- scraps
+ *
+ * So: drop an island only if it is a small fraction of the main blob AND
+ * looks like backdrop. Nothing that could be a pedal half is touched.
+ */
+const STRAY_MAX_SHARE = 0.1;
+const STRAY_MIN_LUM = 150;
+const STRAY_MAX_SAT = 40;
+
+async function dropStrayBackground(buf) {
+  const { data: px, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width: W, height: H, channels: C } = info;
+  const label = new Int32Array(W * H).fill(-1);
+  const stack = new Int32Array(W * H);
+  const blobs = [];
+  for (let s = 0; s < W * H; s++) {
+    if (label[s] !== -1 || px[s * C + 3] <= 200) continue;
+    const id = blobs.length;
+    let top = 0, n = 0, sl = 0, ss = 0;
+    stack[top++] = s;
+    label[s] = id;
+    while (top > 0) {
+      const i = stack[--top];
+      n++;
+      const r = px[i * C], g = px[i * C + 1], b = px[i * C + 2];
+      sl += 0.299 * r + 0.587 * g + 0.114 * b;
+      ss += Math.max(r, g, b) - Math.min(r, g, b);
+      const x = i % W;
+      for (const j of [i - 1, i + 1, i - W, i + W]) {
+        if (j < 0 || j >= W * H) continue;
+        if ((j === i - 1 && x === 0) || (j === i + 1 && x === W - 1)) continue;
+        if (label[j] === -1 && px[j * C + 3] > 200) { label[j] = id; stack[top++] = j; }
+      }
+    }
+    blobs.push({ id, n, lum: sl / n, sat: ss / n });
+  }
+  if (blobs.length < 2) return { buf, dropped: 0, blobs: blobs.length };
+  const main = blobs.reduce((a, b) => (b.n > a.n ? b : a));
+  const doomed = new Set(
+    blobs
+      .filter((b) => b.id !== main.id && b.n < main.n * STRAY_MAX_SHARE && b.lum > STRAY_MIN_LUM && b.sat < STRAY_MAX_SAT)
+      .map((b) => b.id)
+  );
+  if (!doomed.size) return { buf, dropped: 0, blobs: blobs.length };
+  let cleared = 0;
+  for (let i = 0; i < W * H; i++) {
+    if (doomed.has(label[i])) { px[i * C + 3] = 0; cleared++; }
+  }
+  return {
+    buf: await sharp(px, { raw: { width: W, height: H, channels: C } }).png().toBuffer(),
+    dropped: cleared,
+    blobs: blobs.length,
+  };
+}
+
+/**
+ * @param {Buffer} buf
+ * @param {{ rect?: boolean }} [opts] rect: clear everything outside the
+ *   detected outline as well. For a photo whose drop shadow no local test can
+ *   separate from the pedal - the shadow lies OUTSIDE the outline, so knowing
+ *   where the outline is settles it without having to classify a single
+ *   shadow pixel.
+ */
+async function trimBackground(buf, opts = {}) {
   try {
     const meta = await sharp(buf).metadata();
     let cut = await knockOutBackground(buf);
@@ -484,6 +673,25 @@ async function trimBackground(buf) {
       cut = await knockOutBackground(buf, false);
     }
     if (!cut.ok) return { buf, type: null, trimmed: false, rejected: cut.status };
+    if (opts.rect) {
+      // The knockout has already taken the backdrop it CAN identify (which
+      // includes the white slivers at the pedal's rounded corners). What is
+      // left outside the outline is the part it cannot: the drop shadow.
+      const r = await detectOutlineRect(cut.buf);
+      const { data: px, info } = await sharp(cut.buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const { width: W, height: H, channels: C } = info;
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          if (x < r.x0 || x > r.x1 || y < r.y0 || y > r.y1) px[(y * W + x) * C + 3] = 0;
+        }
+      }
+      cut = { ...cut, buf: await sharp(px, { raw: { width: W, height: H, channels: C } }).png().toBuffer() };
+    }
+    // Backdrop the fill could not reach survives as islands around the pedal,
+    // which render as speckle on the board. Safe for everything: an island has
+    // to be small AND backdrop-coloured to go.
+    const swept = await dropStrayBackground(cut.buf);
+    cut = { ...cut, buf: swept.buf };
     const trimmed = await sharp(cut.buf).trim({ threshold: 25 }).png().toBuffer({ resolveWithObject: true });
     const { width, height } = trimmed.info;
     // Sanity: a real trim keeps most of the subject
@@ -506,10 +714,10 @@ async function trimBackground(buf) {
 const ASPECT_MIN = 0.65;
 const ASPECT_MAX = 1.5;
 
-async function acceptCandidate(url, physicalAspect) {
+async function acceptCandidate(url, physicalAspect, opts = {}) {
   const img = await fetchImage(url);
   if (!img) return null;
-  const processed = await trimBackground(img.buf);
+  const processed = await trimBackground(img.buf, opts);
   if (!processed.trimmed) return null;
   const [w, h] = processed.dims;
   const ratio = (w / h) / physicalAspect;
@@ -628,9 +836,12 @@ async function main() {
     }
 
     const physicalAspect = pedal.width_inches / pedal.depth_inches;
+    // `rect` also cuts to the detected outline - only for pedals whose photo
+    // carries a drop shadow the knockout cannot separate. See PEDAL_OVERRIDES.
+    const candidateOpts = { rect: override.mode === 'rect' };
     let hit = null;
     for (const url of candidatesFor(pedal)) {
-      hit = await acceptCandidate(url, physicalAspect);
+      hit = await acceptCandidate(url, physicalAspect, candidateOpts);
       if (hit) break;
     }
     // Last resort for BOSS: the product page's og:image is authoritative
@@ -650,7 +861,7 @@ async function main() {
               .replace('/main/', '/gallery/')
               .replace(/(_\d+)?_main\.jpg$/, '_top_gal.jpg');
             for (const url of [topSibling, og]) {
-              hit = await acceptCandidate(url, physicalAspect);
+              hit = await acceptCandidate(url, physicalAspect, candidateOpts);
               if (hit) break;
             }
           }
@@ -663,7 +874,7 @@ async function main() {
       for (const src of sources) {
         const url = IMAGE_URL_RE.test(src) ? src : await ogImageOf(src);
         if (!url) continue;
-        hit = await acceptCandidate(url, physicalAspect);
+        hit = await acceptCandidate(url, physicalAspect, candidateOpts);
         if (hit) break;
       }
     }
@@ -743,9 +954,11 @@ async function main() {
 module.exports = {
   BROWSER_UA,
   IMAGE_URL_RE,
+  PEDAL_OVERRIDES,
   ogImageOf,
   fetchImage,
   knockOutBackground,
+  detectOutlineRect,
   trimBackground,
   acceptCandidate,
   provenanceFor,

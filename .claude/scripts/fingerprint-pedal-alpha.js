@@ -47,6 +47,47 @@ function coverage(px, W, C, x0, x1, y0, y1) {
   return total ? opaque / total : 0;
 }
 
+/**
+ * Connected components of opaque pixels.
+ *
+ * Every other number here is an AGGREGATE, and aggregates cannot see a
+ * cut-out that has come apart: the DD-7 sat on the board in 83 pieces -
+ * speckles of retained backdrop scattered round the pedal - while posting
+ * perfectly ordinary opaque, clear and band figures. The owner spotted it by
+ * eye. That is the second time an eye beat the measurements, so this is the
+ * measurement that had to be added.
+ *
+ * A clean cut-out is ONE blob. Two can be legitimate (a pedal split by a thin
+ * eaten slice), so `stray` - the share of the subject outside its main blob -
+ * is the number to watch rather than the count alone.
+ */
+function components(px, W, H, C) {
+  const seen = new Uint8Array(W * H);
+  const stack = new Int32Array(W * H);
+  const sizes = [];
+  for (let s = 0; s < W * H; s++) {
+    if (seen[s] || px[s * C + 3] <= OPAQUE_A) continue;
+    let top = 0;
+    let n = 0;
+    stack[top++] = s;
+    seen[s] = 1;
+    while (top > 0) {
+      const i = stack[--top];
+      n++;
+      const x = i % W;
+      for (const j of [i - 1, i + 1, i - W, i + W]) {
+        if (j < 0 || j >= W * H) continue;
+        if ((j === i - 1 && x === 0) || (j === i + 1 && x === W - 1)) continue;
+        if (!seen[j] && px[j * C + 3] > OPAQUE_A) { seen[j] = 1; stack[top++] = j; }
+      }
+    }
+    sizes.push(n);
+  }
+  sizes.sort((a, b) => b - a);
+  const opaque = sizes.reduce((a, b) => a + b, 0);
+  return { regions: sizes.length, stray: opaque ? +((opaque - sizes[0]) / opaque).toFixed(4) : 0 };
+}
+
 async function measure(buf) {
   const { data: px, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width: W, height: H, channels: C } = info;
@@ -82,6 +123,7 @@ async function measure(buf) {
     // real cut-out clears at least some of them. Four opaque corners is the
     // signature of a backdrop that survived.
     corners: [A(0, 0), A(W - 1, 0), A(0, H - 1), A(W - 1, H - 1)],
+    ...components(px, W, H, C),
   };
 }
 
@@ -167,6 +209,10 @@ function compare(base, now) {
       if (Math.abs(a[k] - b[k]) > DRIFT) {
         deltas.push(`${k} ${(100 * a[k]).toFixed(1)}% -> ${(100 * b[k]).toFixed(1)}%`);
       }
+    }
+    // Fragmentation: the aggregates above are blind to a cut-out in pieces
+    if (a.stray !== undefined && Math.abs((a.stray ?? 0) - (b.stray ?? 0)) > DRIFT) {
+      deltas.push(`stray ${(100 * a.stray).toFixed(1)}% -> ${(100 * b.stray).toFixed(1)}%`);
     }
     for (const k of Object.keys(a.bands)) {
       if (Math.abs(a.bands[k] - b.bands[k]) > DRIFT) {

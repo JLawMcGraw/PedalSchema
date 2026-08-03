@@ -21,7 +21,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 require('dotenv').config({ path: '.env.local' });
 
-const { trimBackground, fetchImage } = require('./../../scraper/mirror-pedal-images.js');
+const { trimBackground, fetchImage, PEDAL_OVERRIDES } = require('./../../scraper/mirror-pedal-images.js');
 
 const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const BASELINE = path.join(__dirname, '../docs/knockout-fingerprint.json');
@@ -108,7 +108,12 @@ async function main() {
 
     const buf = await sourceBytes(key, p.image_source_url);
     if (!buf) { unfetchable.push(key); continue; }
-    const processed = await trimBackground(buf);
+    // Re-run under the SAME per-pedal options the mirror would use. Without
+    // this the harness reproduces a pipeline nobody runs, and reports every
+    // overridden pedal as a regression against its own stored bytes.
+    const processed = await trimBackground(buf, {
+      rect: PEDAL_OVERRIDES[key]?.mode === 'rect',
+    });
     if (!processed.trimmed) {
       moved.push(`${key}: pipeline now REJECTS its own source (${processed.rejected ?? 'trim failed'})`);
       checked++;
