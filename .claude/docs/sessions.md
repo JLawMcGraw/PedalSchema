@@ -4,6 +4,98 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-03 - The knockout learns colour; two of three photos come back
+
+Built the 8/2 plan. DM-2W and BigSky are mirrored and correct on the board;
+Timeline is provably out of reach and stays a rect. The plan's core idea was
+right and **two of its three proposals were refuted by measurement** - both
+would have been built on assumed numbers that the corpus contradicts.
+
+### Done
+- [x] **`BG_GRAD_MAX_SAT`** in both `knockout.ts` and `mirror-pedal-images.js`.
+      Chaining now requires a pixel be no more than 48 saturation points more
+      colourful than the image's own border average. Backdrops are NEUTRAL;
+      the features being eaten are not.
+- [x] **DM-2W top band 27.8% -> 88.7%** - where every other BOSS compact
+      already sits (83-90). **BigSky trim 877x703 -> 833x599**; the 104 lost
+      rows are the grey box. Both mirrored, provenance recorded.
+- [x] Four scripts: `fingerprint-pedal-alpha.js` (the 62-pedal baseline),
+      `knockout-regression.js` (re-runs the pipeline over origin photos,
+      writes nothing), `knockout-targets.js`, `verify-knockout-on-board.js`.
+- [x] Plan doc rewritten as a record of what was refuted.
+- [ ] **The other 62 are not re-mirrored.** Six would improve; that is a bulk
+      overwrite of live catalogue images and is the owner's call.
+
+### Technical decisions
+1. **The targets did not choose the constant - the corpus did.** Both are
+   fixed anywhere in 16..120, so tuning against them would have picked a
+   number arbitrarily. Swept against the 62 instead, and the count of pedals
+   that move is NOT monotonic: 16..32 moves 7-11 (DD-7 loses 11.7pp, both MXR
+   silhouettes resize), 40..64 moves 4-6 by <=5pp each, **72..80 collapses
+   BF-3** (left 55.5 -> 21.6), 96+ is quiet but BigSky decays. 48 is
+   mid-plateau, 24 clear of the cliff. A "fewest movers" objective would have
+   picked 96 and quietly given back most of the BigSky fix.
+2. **"Moved" is not "worse", and the difference is measurable.** Six pedals
+   moved. Asking what changed hands settled it: BF-3 and PH-3 flipped
+   subject-eaten -> knocked-out and shed 60,052 / 12,071 px at mean saturation
+   2, luminance 251 - white backdrop they had silently kept. The other four
+   newly KEEP 193-318 px that are 88.6-100% coloured. No pedal pixel newly
+   removed, no backdrop pixel newly kept.
+3. **Validate the harness before trusting a clean result.** The regression
+   script was first run against the OLD algorithm, where it reproduced all 62
+   fingerprints exactly. Without that, "no pedal moved" is indistinguishable
+   from a script that does nothing. Same for the board detector - proven to
+   flag Timeline 4/4 and pre-fix BigSky 1/4 before being trusted.
+4. **A plan's proposed guards are hypotheses.** Both extra guards died on
+   contact with the baseline (see below). Recording the fingerprint FIRST is
+   what killed them - had the guards been written first, they would have
+   shipped and started rejecting healthy pedals.
+
+### The two refuted proposals
+- **Band-vs-middle erosion guard.** Proposed: reject when a 10% edge band
+  falls below ~40% of the middle. Measured healthy minima: Holy Grail right
+  **15%**, Ditto 22/23, Polytune 33/33, Cry Baby 33. Damaged DM-2W top:
+  **27.4%**. The distributions OVERLAP - there is no separating threshold, and
+  40% would have rejected four pedals that look right.
+- **Four-opaque-corners guard.** Both failing pedals measured `corners
+  0,0,0,0` - the trim crops to the alpha bbox and removes the corners before
+  anything can look. Two healthy pedals (XS-100, Conspiracy Theory) genuinely
+  have an opaque corner. It misses the failures and flags the healthy.
+  What DOES work is the same neutral-vs-coloured idea: a surviving backdrop
+  is BRIGHT and NEUTRAL (Timeline's residue: luminance 176-197 at saturation
+  0-5). That is what the board verifier checks.
+
+### Why Timeline cannot be fixed this way
+Of the **1,243,441** pixels its fill absorbs, **621 (0.0%)** are saturated. A
+silver enclosure on a neutral studio ramp IS the same colour as its own
+backdrop. The plan's stated mechanism was also wrong: `BG_GRAD_MIN_LUM` does
+not halt the chain: the gradient pass runs away into the pedal, gets rejected
+as `subject-eaten`, and the STRICT fallback is what leaves the shadow (output
+edge measures 218, 216, 209, 199, 179, 177, 137, all neutral). It is under the
+pedal because that is where the drop shadow is. Needs a different KIND of
+signal - edge magnitude or real matting - not another constant. A fixture pins
+the limit and will fail if that ever changes.
+
+### Verification
+- 293 tests pass (+3), 1 skipped; tsc clean; production build ok; `src/`
+  eslint 0 errors.
+- Regression harness: 62/62 reproduce baseline on the old algorithm; 6 move on
+  the new one, all six shown to be improvements.
+- Board: `verify-knockout-on-board.js` ALL CHECKS PASS. DM-2W's top renders
+  rgb=184,44,77 sat=140 - the red plate is really there, on the canvas.
+
+### Next tasks
+- [ ] **Re-mirror the other 62 (`FORCE=1`)** to collect the six improvements.
+      Overwrites live images, so it wants a deliberate go-ahead. Re-take the
+      fingerprint afterwards or the gate loses its reference point.
+- [ ] Timeline, Big Muff, Klon still render as rects, for three different
+      reasons (algorithm, source, licence).
+- [ ] The `assignLanes` cliff is fixed but never instrumented.
+- [ ] `complexRouting` should be re-tuned; P1.5 left it alone.
+- [ ] 10 jack layouts unresearched; Marshall JCM2000 DSL has no photo.
+
+---
+
 ## Session: 2026-08-02 - One router, a dead Optimize button, and the supply side
 
 Cleared the 8/2 plan end to end. 30 commits, merged to main. Three things
