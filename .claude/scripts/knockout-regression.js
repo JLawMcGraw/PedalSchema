@@ -113,6 +113,8 @@ async function main() {
     // overridden pedal as a regression against its own stored bytes.
     const processed = await trimBackground(buf, {
       rect: PEDAL_OVERRIDES[key]?.mode === 'rect',
+      outline: PEDAL_OVERRIDES[key]?.mode === 'outline',
+      close: PEDAL_OVERRIDES[key]?.close === true,
     });
     if (!processed.trimmed) {
       moved.push(`${key}: pipeline now REJECTS its own source (${processed.rejected ?? 'trim failed'})`);

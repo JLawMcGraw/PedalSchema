@@ -27,7 +27,7 @@ const { loadEnv, login, openEditor, BASE_URL } = require('./lib/twin');
 loadEnv();
 
 /** The pedals this run is about, by the name shown in the library. */
-const TARGETS = ['DM-2W', 'BigSky', 'Timeline'];
+const TARGETS = ['DM-2W', 'BigSky', 'Timeline', 'DD-7', 'GEB-7'];
 
 /**
  * Pedals whose own enclosure is bright and neutral, so the corner test cannot
@@ -57,10 +57,18 @@ async function main() {
     const already = (await page.evaluate(() => window.__getPedalSchemaSnapshot())).pedals.map((p) => p.name);
     for (const name of TARGETS) {
       if (already.some((n) => n.includes(name))) continue;
+      // Search first: the library is long, and a pedal that is merely scrolled
+      // out of view silently fails to be added - which showed up as "expected
+      // 6 target images, found 5" rather than as anything obviously wrong.
+      const search = page.locator('input[placeholder="Search pedals..."]').first();
+      await search.fill(name);
+      await page.waitForTimeout(400);
       const row = page.locator(`button:has-text("${name}"), [role="button"]:has-text("${name}")`).first();
       await row.scrollIntoViewIfNeeded();
       await row.click();
       await page.waitForTimeout(500);
+      await search.fill('');
+      await page.waitForTimeout(200);
     }
     await page.waitForTimeout(1500);
 
@@ -119,8 +127,13 @@ async function main() {
       return { images: out, canvas: { x: rect.x, y: rect.y, w: rect.width, h: rect.height } };
     }, TARGETS);
 
-    if (dom.images.length !== TARGETS.length) {
-      console.log(`\nFAIL: expected ${TARGETS.length} target images on the canvas, found ${dom.images.length}`);
+    const missing = TARGETS.filter((t) => !dom.images.some((im) => im.name.includes(t)));
+    if (missing.length) {
+      console.log(
+        `\nFAIL: ${missing.join(', ')} did not reach the canvas, so ${missing.length === 1 ? 'it is' : 'they are'} ` +
+          `UNVERIFIED here. Usually the board is full and the placement was refused. ` +
+          `Their alpha is still checked by knockout-regression.js against the fingerprint.`
+      );
       failed++;
     }
 
@@ -184,15 +197,26 @@ async function main() {
       // this - the greys retained under the pedal ran 218,218,218 ->
       // 199,199,199 -> 177,177,177: luminance 177-218 at saturation 0. No
       // pedal colour and no part of this dark board looks like that.
+      // ...and "bright and neutral" is not enough on its own, because some
+      // pedals ARE bright and neutral: the DD-7 is cream (mid 236,219,199)
+      // and the GEB-7 grey (mid 178,179,181), so their corners tripped this
+      // while being perfectly good pedal. A corner that matches the pedal's
+      // OWN mid-body colour is subject, whatever its luminance.
+      //
+      // The test still fires where it must - the pre-fix Timeline had bottom
+      // corners at lum 195/197 against a mid of ~95, and pre-fix BigSky the
+      // same - so this narrows the check without disarming it.
+      const midBody = patch(x + w / 2, y + h / 2, Math.max(2, Math.round(h * 0.03)));
       for (const c of corners) {
         c.delta = dist(c.rgb, boardRef);
         c.lum = Math.round(0.299 * c.rgb[0] + 0.587 * c.rgb[1] + 0.114 * c.rgb[2]);
         c.sat = sat(...c.rgb);
-        c.backdrop = c.lum > 120 && c.sat < 30;
+        c.fromBody = dist(c.rgb, midBody);
+        c.backdrop = c.lum > 120 && c.sat < 30 && c.fromBody > 24;
       }
       console.log(
         '  corners: ' +
-          corners.map((c) => `${c.label} rgb=${c.rgb} lum=${c.lum} sat=${c.sat}${c.backdrop ? ' BACKDROP' : ''}`).join('  ')
+          corners.map((c) => `${c.label} rgb=${c.rgb} lum=${c.lum} sat=${c.sat} d(body)=${c.fromBody}${c.backdrop ? ' BACKDROP' : ''}`).join('  ')
       );
       // A pedal whose ENCLOSURE is itself bright and neutral defeats this
       // test, because "bright and neutral" then describes the subject as well
@@ -227,6 +251,18 @@ async function main() {
         dist(topStrip, boardRef) > 24,
         `top differs from board by ${dist(topStrip, boardRef)}`
       );
+
+      // A "no row of the pedal is see-through" check belongs here in spirit -
+      // that is how the DD-7 was reported, the fill having eaten a slice clean
+      // across it - but it CANNOT be done from a screenshot. The board is
+      // rgb(23,23,23) and a dark pedal pixel is indistinguishable from it once
+      // composited: written that way, the check claimed 26 see-through rows on
+      // the DM-2W, whose stored alpha has none.
+      //
+      // Transparency is exactly measurable in the stored PNG, so it is
+      // measured there instead: `stray` in .claude/docs/knockout-fingerprint.json
+      // is the share of the subject outside its main blob, and any slice
+      // across a pedal necessarily splits it in two. DD-7 went 30.6% -> 0%.
     }
 
     console.log(`\n${'='.repeat(70)}`);

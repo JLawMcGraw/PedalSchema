@@ -131,6 +131,16 @@ const PRODUCT_PAGES = {
  *                        (detectOutlineRect). For a photo whose drop shadow
  *                        no local test can separate from the pedal. Only
  *                        valid for a rectangular pedal shot square-on.
+ *            'outline'   clear outside the detected outline AND restore
+ *                        anything the fill took INSIDE it, leaving only the
+ *                        corners to the fill. The answer for a NEUTRAL pedal
+ *                        on a neutral backdrop, where no pixel test can
+ *                        separate the body from what it is standing on.
+ *   close    re-opaque transparent gaps BETWEEN opaque pixels in a column
+ *            (closeVerticalGaps), for a pedal the fill has eaten a slice
+ *            across. Opt-in because it fills any concavity in the outline:
+ *            applied to the whole catalogue it moves 26 pedals, squaring off
+ *            the Holy Grail (right band 14.8 -> 40.5) among others.
  *
  * Prefer fixing `sources` when a better photo exists: the goal is a clean
  * top-down cut-out, so a correct source beats any amount of post-processing.
@@ -139,6 +149,44 @@ const PEDAL_OVERRIDES = {
   // og:image and the -1 gallery shot are both angled three-quarter views.
   // Needs a genuine head-on source; until one is found, the rect is honest.
   'Electro-Harmonix Big Muff Pi': { mode: 'skip' },
+
+  /*
+   * These three arrived on the board in pieces, because the fill ate a thin
+   * slice clean across each of them - a highlight whose colour matched the
+   * backdrop and which reached the frame edge, letting the flood walk in
+   * along it. On a dark board the slice reads as the board showing THROUGH
+   * the pedal, which is how the DD-7 was reported: "colour messed up at the
+   * top". Measured on the stored DD-7, three sampled rows around y=312-336
+   * came back 0.0% opaque; 34 rows were fully transparent in all.
+   *
+   * Both are NEUTRAL pedals - the DD-7 white, the GEB-7 grey - photographed
+   * on a neutral backdrop, which is the one situation no pixel test can
+   * resolve: the body is the same colour as what it stands on. The fill ate
+   * slices out of each, and on the DD-7 it took the white top edge outright;
+   * a first attempt at closing the slices then let the stray sweep delete
+   * that isolated strip as if it were backdrop.
+   *
+   * mode:'outline' settles it by not asking about the interior at all.
+   *
+   *                    before                      after outline
+   *   DD-7    2 regions 30.6% stray, no white top    1 region 0%, top 94% at L214-228
+   *   GEB-7   2 regions 32.4% stray                  1 region 0%, top 94% at L207-226
+   */
+  'BOSS DD-7': { mode: 'outline' },
+  'BOSS GEB-7': { mode: 'outline' },
+
+  /*
+   * Small Clone is a SIDE-ON photo, so no matting of any kind can help it -
+   * the same problem as the Big Muff above, and it is skipped for the same
+   * reason. It was briefly grouped with the neutral-pedal cases because its
+   * cut-out was in 9 pieces; that was a symptom of the wrong photograph, not
+   * of the knockout, and it should not be cited as evidence about colour.
+   *
+   * Note what did NOT catch it: the footprint-aspect gate passed it at
+   * 0.99x, because a side-on shot of this pedal happens to have credible
+   * proportions. Aspect alone cannot tell a face-on photo from a side-on one.
+   */
+  'Electro-Harmonix Small Clone': { mode: 'skip' },
   /*
    * BigSky and DM-2W were skipped here until 2026-08-03. BG_GRAD_MAX_SAT (see
    * knockOutBackground below) fixed both, and they are now mirrored normally:
@@ -513,6 +561,9 @@ async function knockOutBackground(buf, useGradient = true) {
  * why it is opt-in per pedal (`mode: 'rect'`) and not the default.
  */
 const OUTLINE_MIN_EDGE = 12;
+/** Band just inside the outline still left to the fill, so the slivers of
+ *  backdrop at a pedal's rounded corners are still cleared. */
+const OUTLINE_CORNER_MARGIN = 0.03;
 
 async function detectOutlineRect(buf) {
   const { data: px, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -647,8 +698,49 @@ async function dropStrayBackground(buf) {
 }
 
 /**
+ * Re-opaque transparent pixels that lie BETWEEN opaque ones in their column.
+ *
+ * The fill can eat a thin slice clean across a pedal: a horizontal highlight
+ * whose colour matches the backdrop and which reaches the frame edge, so the
+ * flood walks in along it. Measured on the DD-7, three sampled rows around
+ * y=312-336 came back 0.0% opaque - a transparent stripe across the upper
+ * third, which on a dark board reads as the board showing through the pedal.
+ *
+ * Nothing is invented: the knockout only ever zeroed alpha, and PNG keeps the
+ * RGB of transparent pixels, so restoring alpha restores the original
+ * photograph exactly.
+ *
+ * Column-wise and only BETWEEN existing opaque pixels, so it can only fill
+ * enclosed gaps - it never extends the silhouette past its own top or bottom.
+ * Opt-in per pedal all the same, because a pedal with a genuine notch in its
+ * outline would have it filled.
+ */
+async function closeVerticalGaps(buf) {
+  const { data: px, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width: W, height: H, channels: C } = info;
+  let filled = 0;
+  for (let x = 0; x < W; x++) {
+    let first = -1;
+    let last = -1;
+    for (let y = 0; y < H; y++) {
+      if (px[(y * W + x) * C + 3] > 200) { if (first < 0) first = y; last = y; }
+    }
+    if (first < 0) continue;
+    for (let y = first; y <= last; y++) {
+      const i = (y * W + x) * C;
+      if (px[i + 3] <= 200) { px[i + 3] = 255; filled++; }
+    }
+  }
+  if (!filled) return { buf, filled: 0 };
+  return {
+    buf: await sharp(px, { raw: { width: W, height: H, channels: C } }).png().toBuffer(),
+    filled,
+  };
+}
+
+/**
  * @param {Buffer} buf
- * @param {{ rect?: boolean }} [opts] rect: clear everything outside the
+ * @param {{ rect?: boolean, close?: boolean }} [opts] rect: clear everything outside the
  *   detected outline as well. For a photo whose drop shadow no local test can
  *   separate from the pedal - the shadow lies OUTSIDE the outline, so knowing
  *   where the outline is settles it without having to classify a single
@@ -673,6 +765,42 @@ async function trimBackground(buf, opts = {}) {
       cut = await knockOutBackground(buf, false);
     }
     if (!cut.ok) return { buf, type: null, trimmed: false, rejected: cut.status };
+    if (opts.outline) {
+      // A NEUTRAL pedal on a NEUTRAL backdrop cannot be separated pixel by
+      // pixel - that is the one finding this whole exercise keeps arriving
+      // at. White DD-7, grey GEB-7, light Small Clone and silver Timeline all
+      // fail the same way: the fill walks into the body because the body is
+      // the same colour as what it is standing on.
+      //
+      // The outline, though, is still recoverable globally (detectOutlineRect
+      // pools gradient along whole rows and columns). So stop asking the fill
+      // to be right about the interior at all: clear outside the outline, and
+      // RESTORE anything the fill took inside it. Alpha was only zeroed and
+      // PNG keeps the RGB of transparent pixels, so the photograph returns
+      // exactly - white top edges included.
+      //
+      // A thin margin just inside the outline is left to the fill, so the
+      // slivers of backdrop at a pedal's rounded corners still go.
+      const r = await detectOutlineRect(cut.buf);
+      const { data: px, info } = await sharp(cut.buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const { width: W, height: H, channels: C } = info;
+      const margin = Math.max(2, Math.round(Math.min(r.x1 - r.x0, r.y1 - r.y0) * OUTLINE_CORNER_MARGIN));
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const i = (y * W + x) * C;
+          const outside = x < r.x0 || x > r.x1 || y < r.y0 || y > r.y1;
+          if (outside) { px[i + 3] = 0; continue; }
+          // Left to the fill only at the CORNERS - near an edge in BOTH axes.
+          // Applying the margin along whole edges instead cost the GEB-7 its
+          // top: rows 0-2 came back 2-11% opaque, because a white edge inside
+          // that band is still the fill's to eat, which is the whole bug.
+          const nearX = x < r.x0 + margin || x > r.x1 - margin;
+          const nearY = y < r.y0 + margin || y > r.y1 - margin;
+          if (!(nearX && nearY) && px[i + 3] <= 200) px[i + 3] = 255;
+        }
+      }
+      cut = { ...cut, buf: await sharp(px, { raw: { width: W, height: H, channels: C } }).png().toBuffer() };
+    }
     if (opts.rect) {
       // The knockout has already taken the backdrop it CAN identify (which
       // includes the white slivers at the pedal's rounded corners). What is
@@ -686,6 +814,22 @@ async function trimBackground(buf, opts = {}) {
         }
       }
       cut = { ...cut, buf: await sharp(px, { raw: { width: W, height: H, channels: C } }).png().toBuffer() };
+    }
+    // ORDER MATTERS, and getting it wrong cost the DD-7 its white top edge.
+    //
+    // The fill ate a white slice across that pedal just below its top edge,
+    // which left the strip above the slice as an ISLAND - and the island is
+    // bright (lum 216-237), neutral, and small next to the body, which is
+    // precisely the description of retained backdrop. The sweep deleted
+    // 29,429 px of pedal, and closing afterwards could not restore what was
+    // already gone.
+    //
+    // Closing first rejoins the strip to the body, so by the time the sweep
+    // runs there is nothing there to misjudge: it then drops 0 px from the
+    // DD-7 instead of 29,429.
+    if (opts.close) {
+      const closed = await closeVerticalGaps(cut.buf);
+      cut = { ...cut, buf: closed.buf };
     }
     // Backdrop the fill could not reach survives as islands around the pedal,
     // which render as speckle on the board. Safe for everything: an island has
@@ -838,7 +982,11 @@ async function main() {
     const physicalAspect = pedal.width_inches / pedal.depth_inches;
     // `rect` also cuts to the detected outline - only for pedals whose photo
     // carries a drop shadow the knockout cannot separate. See PEDAL_OVERRIDES.
-    const candidateOpts = { rect: override.mode === 'rect' };
+    const candidateOpts = {
+      rect: override.mode === 'rect',
+      outline: override.mode === 'outline',
+      close: override.close === true,
+    };
     let hit = null;
     for (const url of candidatesFor(pedal)) {
       hit = await acceptCandidate(url, physicalAspect, candidateOpts);
@@ -959,6 +1107,8 @@ module.exports = {
   fetchImage,
   knockOutBackground,
   detectOutlineRect,
+  closeVerticalGaps,
+  dropStrayBackground,
   trimBackground,
   acceptCandidate,
   provenanceFor,
