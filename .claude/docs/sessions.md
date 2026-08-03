@@ -4,6 +4,102 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-02 - One router, a dead Optimize button, and the supply side
+
+Cleared the 8/2 plan end to end. 30 commits, merged to main. Three things
+mattered more than the roadmap items themselves: the plan's diagnosis was
+wrong twice and measurement caught it both times, Optimize was completely
+dead for part of the day while every test stayed green, and judging a
+knocked-out photo by looking at it does not work.
+
+### Done
+- [x] **Node 20.12 -> 24.18.** Vite 8 needs >=20.19; the suite could not run
+      at all. Every gate in the plan was a vitest gate, so this blocked
+      everything.
+- [x] **P1.5 - one router.** The optimizer scored with the per-cable cascade
+      while the canvas drew with the batch corridor model. Unified behind
+      `routeCablePaths`; `router-parity.test.ts` pins them together.
+- [x] **assignLanes degrades per corridor** instead of un-laning the whole
+      board. Classic Jr went from 1 of 11 cables lane-served to 10 of 11.
+- [x] **The layout search alternates order and rotation** until neither
+      improves. It ran each stage once, so it could not reach a layout its
+      own cost function preferred by 33.56.
+- [x] **A factorial heap crash**, found while writing a P5 fixture:
+      enumerateChainOrders built EVERY permutation before the cap discarded
+      them. 12 pedals = 479,001,600 arrays, out of heap. Now 48ms.
+- [x] P4 LANE_TOLERANCE ownership, P5 placementDegraded surfaced, P2 says
+      which constraint bound, P3 dashes perimeter cables (half scope - see
+      below).
+- [x] **Group 4 - the power panel plans wiring.** Supplies, per-output
+      ratings, assignment, UI. Five system supplies from manufacturer specs.
+- [x] Three jack layouts resolved (50 -> 53 confirmed); Vox AC30 photo
+      375x302 -> 621x388.
+- [x] Delete/Backspace removes the selected pedal.
+- [ ] **Photo knockout** - plan written, not built. See
+      `.claude/docs/knockout-fix-plan.md`.
+
+### Technical decisions
+1. **Two wrong diagnoses, both killed by measurement.** The cable-length
+   regression was blamed first on the assignLanes cliff, then on
+   CROSSING_PENALTY_INCHES. Fixing the cliff moved 63.70in -> 62.60in;
+   sweeping the penalty 2/4/6/8 changed nothing at all. Scoring the old
+   layout with the new cost function showed it winning by 33.56 - a SEARCH
+   failure, not a weighting one. Both wrong theories would have meant tuning
+   a global constant to compensate for a local bug.
+2. **A cost-function change can expose a search defect**, and the two are
+   easy to confuse. The experiment that settles it - score the old answer
+   with the new function - takes five minutes and should come first.
+3. **AC is not a voltage.** The CS12's output 12 is 9Vac. Stored as plain
+   voltage 9 it would have matched any 9V DC pedal and been reported as
+   within rating. Outputs carry `is_ac`, checked before any number
+   comparison.
+4. **A switchable output derates.** Zuma outputs 8-9 give 500mA at 9V but
+   250mA at 18V, so voltage and rating travel together in `alternate_modes`.
+   A bare voltage list reported twice the real headroom.
+5. **P3 shipped at half scope on purpose.** Perimeter cables are dashed; the
+   tooltip is not built. It needs pointer events on a stroke under draggable
+   pedals, and NO board produces a drawn perimeter route, so there was
+   nothing to test against.
+
+### Architecture notes
+**The engine runs in a Web Worker, and that is a standing constraint.**
+Bundlers fold `typeof window` to a literal in a client bundle and a Worker
+IS a client bundle, so such a guard vanishes there. P1.5 pulled
+`cables/route-cables.ts` into the worker's import graph and its DEBUG_PATHS
+guard detonated at module evaluation - before `self.onmessage` existed, so
+no handler, no reply, no catchable error, and Optimize spun forever.
+
+`engine/debug-flag.ts` exists because this bit once before. Now
+`__tests__/worker-safety.test.ts` walks the worker's actual IMPORT GRAPH and
+fails on the pattern, and `.claude/scripts/verify-optimize.js` proves the
+real thing runs.
+
+**Every gate was blind to it.** 269 tests, a byte-identical fingerprint, 9
+parity cases and a clean tsc, all green while the feature was dead - because
+they all run the engine in Node where `window` really is undefined. Anything
+that adds an import edge into `layout/` must be verified in a browser.
+
+**Do not judge a knocked-out photo by opening the PNG.** A viewer composites
+transparency against a light background and hides a retained grey backdrop
+and a softly-eroded edge. Two photos were called clean that way and the
+owner looking at the board proved otherwise. Measure the alpha channel, then
+confirm in the app.
+
+### Next tasks
+- [ ] **Photo knockout** - `.claude/docs/knockout-fix-plan.md`. Both failures
+      trace to one cause: brightness cannot tell subject from backdrop, but
+      backdrops are NEUTRAL and pedal features are COLOURED. Add a saturation
+      test to `chains()`. Gate on the 62 pedals that currently look right.
+- [ ] The `assignLanes` cliff is fixed but never instrumented - nobody counts
+      how often eviction fires.
+- [ ] `complexRouting` should be re-tuned; P1.5 deliberately left it alone.
+- [ ] 10 jack layouts still unresearched. Manufacturers do not publish sides;
+      the remaining route is photographic evidence, not more manual reading.
+- [ ] Marshall JCM2000 DSL still has no photo. Commons is exhausted and the
+      licence was never the problem - the photos were.
+
+---
+
 ## Session: 2026-08-01 - Rotation rework: the veto is gone
 
 Built the rework designed on 2026-07-31 (below). The optimizer can now turn
