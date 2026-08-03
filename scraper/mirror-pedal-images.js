@@ -74,7 +74,13 @@ const PRODUCT_PAGES = {
     'https://www.ehx.com/wp-content/uploads/2020/10/HolyGrailNeo_-1.jpg',
     'https://www.ehx.com/products/holy-grail-neo/',
   ],
-  'Strymon Timeline': ['https://www.strymon.net/product/timeline/'],
+  // The PRODUCT PAGE's og:image is the grey-gradient studio shot the knockout
+  // cannot separate from its own drop shadow. Strymon also publishes a full
+  // top-down on WHITE, which is what we actually want - pin it directly.
+  'Strymon Timeline': [
+    'https://www.strymon.net/wp-content/uploads/2015/09/timeline_topdown_1600.jpg',
+    'https://www.strymon.net/product/timeline/',
+  ],
   'Strymon Flint': ['https://www.strymon.net/product/flint/'],
   // Dunlop is BigCommerce; its og:image is usually the head-on product shot.
   // If one comes back angled, pin the gallery TOPP file directly, as Cry Baby
@@ -86,7 +92,14 @@ const PRODUCT_PAGES = {
   // Direct file: the product PAGE fetch is refused (HTTP 425 to some clients),
   // but the image itself serves fine with a browser UA.
   'PastFX Chorus Ensemble Deluxe': ['https://www.pastfx.com/images/New_Deluxe_Chorus.jpg'],
-  'Strymon BigSky': ['https://www.strymon.net/product/bigsky/'],
+  // BigSky has no white-background full top-down: strymon.net publishes only
+  // the gradient one (the *_topdowncrop_ file is a cropped hero, so its
+  // footprint would be wrong). Tried anyway - see the override below for what
+  // the pipeline made of it.
+  'Strymon BigSky': [
+    'https://www.strymon.net/wp-content/uploads/2016/02/bigsky_topdown_grad2_1600-1024x1024-1.jpeg',
+    'https://www.strymon.net/product/bigsky/',
+  ],
   'TC Electronic Polytune 3': [
     'https://web.archive.org/web/20211010004401im_/https://mediadl.musictribe.com/media/PLM/data/images/products/P0CM0/2000Wx2000H/POLYTUNE-3_P0CM0_Top_XL.png',
   ],
@@ -94,6 +107,12 @@ const PRODUCT_PAGES = {
     'https://web.archive.org/web/20230208191559im_/https://mediadl.musictribe.com/media/PLM/data/images/products/P0DD4/2000Wx2000H/DITTO-LOOPER_P0DD4_Top_XL.png',
   ],
   'Pro Co RAT 2': ['https://actentertainment.com/rat-2-distortion-pedal/'],
+  // The BOSS candidate pattern finds a shot whose flood fill eats the red top
+  // plate. Roland's gallery carries a proper TOP view under a different path
+  // (the same _gal.jpg family the Katana amp uses).
+  'BOSS DM-2W': [
+    'https://static.roland.com/assets/images/products/gallery/dm-2w_top_gal.jpg',
+  ],
 };
 
 /**
@@ -119,12 +138,41 @@ const PEDAL_OVERRIDES = {
   // Silver/grey pedal, grey gradient backdrop, soft drop shadow beneath.
   // The fill cannot separate pedal from shadow (both neutral, and the pedal
   // is LIGHTER than some of the backdrop), leaving a grey oval under it.
-  'Strymon Timeline': { mode: 'skip' },
+  
+  /*
+   * ALL THREE RETRIED 2026-08-02 with better sources, and all three still
+   * fail. Measured on the mirrored output rather than eyeballed - looking at
+   * the PNG in a viewer composites it on white and hides precisely these
+   * defects:
+   *
+   *              opaque  clear   top10%  mid    bottom
+   *   Timeline    95.3%   4.7%    80.7   96.4    97.1
+   *   BigSky      94.2%   5.8%    86.5   94.9    88.8
+   *   DM-2W       80.4%  19.6%    27.4   97.2    57.0
+   *
+   * Timeline and BigSky come back ~95% OPAQUE. A real cut-out of a rounded
+   * pedal leaves far more clear area than that; the grey backdrop survived as
+   * opaque pixels, which renders on the board as a pedal sitting in a grey
+   * box. DM-2W's top band is 27% covered against 97% mid - the red plate is
+   * 70% eaten.
+   *
+   * NOTE THE PIPELINE ACCEPTED ALL THREE. The aspect gate only checks
+   * proportions and the centre-20% guard only checks the middle is not
+   * hollow, so neither can see "background retained" or "one end eroded".
+   * Those are the two checks worth adding before the next attempt.
+   *
+   * Sources are left pinned in PRODUCT_PAGES above: they ARE the best photos
+   * these manufacturers publish, and the next person should start from a
+   * better matting algorithm rather than another image hunt.
+   */
   'Strymon BigSky': { mode: 'skip' },
-  // The fill eats the red top plate (top-20% band goes 0% -> 46% transparent).
-  // The _top_main.jpg alternative erodes less (12%) but is only 183x330 and
-  // still not clean, so the rect is the honest choice until matting lands.
+  'Strymon Timeline': { mode: 'skip' },
   'BOSS DM-2W': { mode: 'skip' },
+  // The fill eats the red top plate. Retried 2026-08-02 against Roland's
+  // gallery TOP view (dm-2w_top_gal.jpg, pinned in PRODUCT_PAGES) - a better
+  // photo, same failure: measured top-10% alpha coverage 27.4% against 97.2%
+  // in the middle. The plate is 70% gone.
+  
 };
 
 /** Entries matching this are fetched as images directly, not scraped for og:image */
