@@ -144,6 +144,11 @@ const PRODUCT_PAGES = {
  *   strict   skip gradient-chaining and use only the strict border-colour
  *            match, for a pedal whose soft top edge the chain walks down
  *            and eats. Costs the ability to follow a backdrop that ramps.
+ *   bgTol    tighten (or loosen) BG_TOL for this pedal only. For a pedal
+ *            whose own colour sits almost on top of its backdrop: the GEB-7
+ *            is grey at L207-233 against a white backdrop of L242, so the
+ *            default 35 swallows its top edge. 18 keeps it (top rows 1-7%
+ *            -> 83-89%) while still clearing the backdrop.
  *   close    re-opaque transparent gaps BETWEEN opaque pixels in a column
  *            (closeVerticalGaps), for a pedal the fill has eaten a slice
  *            across. Opt-in because it fills any concavity in the outline:
@@ -195,8 +200,8 @@ const PEDAL_OVERRIDES = {
    * down the ramp. GEB-7 needs nothing there by contrast: its rows 0-5 are
    * L208-232 against a border average of 237, i.e. genuinely the backdrop.
    */
-  'BOSS DD-7': { close: true },
-  'BOSS GEB-7': { close: true },
+  'BOSS DD-7': { strict: true, close: true },
+  'BOSS GEB-7': { close: true, bgTol: 18 },
   'BOSS IR-2': { strict: true },
 
   /*
@@ -458,7 +463,7 @@ const MAX_CENTRE_KNOCK_SHARE = 0.02;
  *   Gradient-following is what lets a fill walk out of a soft backdrop and
  *   into a pedal's own light areas, so the caller retries without it.
  */
-async function knockOutBackground(buf, useGradient = true) {
+async function knockOutBackground(buf, useGradient = true, bgTol = BG_TOL) {
   const { data: px, info } = await sharp(buf)
     .ensureAlpha()
     .raw()
@@ -485,9 +490,9 @@ async function knockOutBackground(buf, useGradient = true) {
 
   const isBg = (i) =>
     px[i * C + 3] >= 20 &&
-    Math.abs(px[i * C] - r) <= BG_TOL &&
-    Math.abs(px[i * C + 1] - g) <= BG_TOL &&
-    Math.abs(px[i * C + 2] - b) <= BG_TOL;
+    Math.abs(px[i * C] - r) <= bgTol &&
+    Math.abs(px[i * C + 1] - g) <= bgTol &&
+    Math.abs(px[i * C + 2] - b) <= bgTol;
 
   const lum = (i) => 0.299 * px[i * C] + 0.587 * px[i * C + 1] + 0.114 * px[i * C + 2];
 
@@ -588,6 +593,10 @@ const OUTLINE_MIN_EDGE = 12;
 /** Band just inside the outline still left to the fill, so the slivers of
  *  backdrop at a pedal's rounded corners are still cleared. */
 const OUTLINE_CORNER_MARGIN = 0.03;
+/** Longest transparent run, as a share of height, that closeVerticalGaps will
+ *  fill. Long runs are not eaten slices - they are the space between a scrap
+ *  of background and the pedal, and filling them paints a bar down the side. */
+const CLOSE_MAX_GAP = 0.06;
 
 async function detectOutlineRect(buf) {
   const { data: px, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -739,20 +748,31 @@ async function dropStrayBackground(buf) {
  * Opt-in per pedal all the same, because a pedal with a genuine notch in its
  * outline would have it filled.
  */
-async function closeVerticalGaps(buf) {
+async function closeVerticalGaps(buf, maxGapFrac = CLOSE_MAX_GAP) {
   const { data: px, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width: W, height: H, channels: C } = info;
+  const maxGap = Math.max(4, Math.round(H * maxGapFrac));
   let filled = 0;
   for (let x = 0; x < W; x++) {
-    let first = -1;
-    let last = -1;
+    // Fill RUN BY RUN, and only short runs. A slice eaten across a pedal is
+    // thin - the DD-7's was 34 rows of 1050 - whereas a scrap of background
+    // high in a margin column sits hundreds of rows above the pedal, and
+    // filling between the two paints a solid bar of background down the side.
+    // That bar is what appeared on the DD-7's right edge: column 553 went
+    // from 15% opaque to 95%.
+    let runStart = -1;
+    let seenOpaque = false;
     for (let y = 0; y < H; y++) {
-      if (px[(y * W + x) * C + 3] > 200) { if (first < 0) first = y; last = y; }
-    }
-    if (first < 0) continue;
-    for (let y = first; y <= last; y++) {
       const i = (y * W + x) * C;
-      if (px[i + 3] <= 200) { px[i + 3] = 255; filled++; }
+      if (px[i + 3] > 200) {
+        if (seenOpaque && runStart >= 0 && y - runStart <= maxGap) {
+          for (let k = runStart; k < y; k++) { px[(k * W + x) * C + 3] = 255; filled++; }
+        }
+        seenOpaque = true;
+        runStart = -1;
+      } else if (seenOpaque && runStart < 0) {
+        runStart = y;
+      }
     }
   }
   if (!filled) return { buf, filled: 0 };
@@ -779,7 +799,9 @@ async function trimBackground(buf, opts = {}) {
     // rows 0-4 measure L106-163 against a border average of 214, so they are
     // 51+ away from the backdrop and a strict match never touches them.
     // Top rows go 0-5% opaque -> 85-89%.
-    let cut = opts.strict ? await knockOutBackground(buf, false) : await knockOutBackground(buf);
+    let cut = opts.strict
+      ? await knockOutBackground(buf, false, opts.bgTol)
+      : await knockOutBackground(buf, true, opts.bgTol);
     // A failed knockout must REJECT the candidate, never fall through. Trimming
     // an image that still has its background crops to the background's own
     // bounding box, so the pedal would render inside a white rectangle - the
@@ -792,7 +814,7 @@ async function trimBackground(buf, opts = {}) {
     // centre penetration from ~50-59% to 0% on most of them, recovering the
     // photo instead of falling back to a rect.
     if (!cut.ok && cut.status === 'subject-eaten') {
-      cut = await knockOutBackground(buf, false);
+      cut = await knockOutBackground(buf, false, opts.bgTol);
     }
     if (!cut.ok) return { buf, type: null, trimmed: false, rejected: cut.status };
     if (opts.outline) {
@@ -845,27 +867,29 @@ async function trimBackground(buf, opts = {}) {
       }
       cut = { ...cut, buf: await sharp(px, { raw: { width: W, height: H, channels: C } }).png().toBuffer() };
     }
-    // ORDER MATTERS, and getting it wrong cost the DD-7 its white top edge.
+    // ORDER: sweep, THEN close. Both orders were tried and the difference is
+    // instructive.
     //
-    // The fill ate a white slice across that pedal just below its top edge,
-    // which left the strip above the slice as an ISLAND - and the island is
-    // bright (lum 216-237), neutral, and small next to the body, which is
-    // precisely the description of retained backdrop. The sweep deleted
-    // 29,429 px of pedal, and closing afterwards could not restore what was
-    // already gone.
+    // Closing first looks tempting, because the DD-7's white top strip was
+    // cut off from the body by an eaten slice and the sweep then deleted it
+    // as an island - bright, neutral and small beside the body, which is
+    // exactly the description of retained backdrop. But closing first joins
+    // background scraps in the margin columns to the pedal below them, and
+    // paints a solid bar of background down the side: the DD-7's column 553
+    // went from 15% opaque to 95%, seen on the board as a white block beside
+    // the pedal.
     //
-    // Closing first rejoins the strip to the body, so by the time the sweep
-    // runs there is nothing there to misjudge: it then drops 0 px from the
-    // DD-7 instead of 29,429.
+    // The real cause was upstream. The strip was only ever isolated because
+    // the GRADIENT pass ate the slice; under `strict` it is never eaten, so
+    // it stays part of the main blob and the sweep cannot mistake it. With
+    // that fixed the original order is right, and gives a DD-7 in one piece
+    // with its top intact (rows 82-84%) and clean margins (9,8,6%).
+    const swept = await dropStrayBackground(cut.buf);
+    cut = { ...cut, buf: swept.buf };
     if (opts.close) {
       const closed = await closeVerticalGaps(cut.buf);
       cut = { ...cut, buf: closed.buf };
     }
-    // Backdrop the fill could not reach survives as islands around the pedal,
-    // which render as speckle on the board. Safe for everything: an island has
-    // to be small AND backdrop-coloured to go.
-    const swept = await dropStrayBackground(cut.buf);
-    cut = { ...cut, buf: swept.buf };
     const trimmed = await sharp(cut.buf).trim({ threshold: 25 }).png().toBuffer({ resolveWithObject: true });
     const { width, height } = trimmed.info;
     // Sanity: a real trim keeps most of the subject
@@ -1017,6 +1041,7 @@ async function main() {
       outline: override.mode === 'outline',
       close: override.close === true,
       strict: override.strict === true,
+      bgTol: override.bgTol,
     };
     let hit = null;
     for (const url of candidatesFor(pedal)) {
