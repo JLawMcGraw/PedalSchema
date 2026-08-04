@@ -1,5 +1,5 @@
 {
-  "takenAt": "2026-08-04T01:26:23.861Z",
+  "takenAt": "2026-08-04T01:42:25.018Z",
   "pedalsInDb": 67,
   "withImages": 64,
   "measured": 64,
@@ -1105,16 +1105,16 @@
       "stray": 0
     },
     "Electro-Harmonix Holy Grail": {
-      "w": 480,
-      "h": 819,
-      "opaque": 0.7617,
+      "w": 461,
+      "h": 687,
+      "opaque": 0.7753,
       "partial": 0,
-      "clear": 0.2383,
+      "clear": 0.2247,
       "bands": {
-        "top": 0.7428,
-        "bottom": 0.4639,
-        "left": 0.9242,
-        "right": 0.1477,
+        "top": 0.7503,
+        "bottom": 0.7387,
+        "left": 0.0553,
+        "right": 0.0652,
         "middle": 1
       },
       "corners": [
@@ -1123,8 +1123,8 @@
         0,
         0
       ],
-      "regions": 10,
-      "stray": 0.0265
+      "regions": 3,
+      "stray": 0.0155
     },
     "Ibanez TS9 Tube Screamer": {
       "w": 424,

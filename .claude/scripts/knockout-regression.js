@@ -73,9 +73,17 @@ async function measure(buf) {
   };
 }
 
-/** Cached download, so an iteration loop over the corpus costs no network. */
+/**
+ * Cached download, so an iteration loop over the corpus costs no network.
+ *
+ * Keyed by URL, not by pedal. Keying by pedal meant that repointing one at a
+ * better photo compared the NEW pipeline against the OLD source still sitting
+ * in the cache - which reported the Holy Grail as a regression when nothing
+ * about it had regressed.
+ */
 async function sourceBytes(key, url) {
-  const file = path.join(CACHE, key.replace(/\W+/g, '_'));
+  const stamp = require('node:crypto').createHash('sha1').update(url).digest('hex').slice(0, 10);
+  const file = path.join(CACHE, `${key.replace(/\W+/g, '_')}__${stamp}`);
   if (fs.existsSync(file)) return fs.readFileSync(file);
   const img = await fetchImage(url);
   if (!img) return null;

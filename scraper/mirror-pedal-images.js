@@ -70,7 +70,14 @@ const PRODUCT_PAGES = {
     'https://www.ehx.com/wp-content/uploads/2020/10/clone-1.jpg',
     'https://www.ehx.com/products/small-clone/',
   ],
+  // EHX photographs this range at a three-quarter angle - every file on their
+  // own product page shows the left side of the enclosure, HolyGrailNeo_-1
+  // included. Andertons shoot it square-on. Verified by eye before pinning,
+  // because the automated gates cannot tell: the side-on Small Clone passed
+  // the footprint check at 0.99x and a silhouette stays rectangular whichever
+  // face you photograph.
   'Electro-Harmonix Holy Grail': [
+    'https://cdn11.bigcommerce.com/s-4hc0jwsnnq/images/stencil/original/products/14681/53555/92763-tmp526B__44720.1715113298.jpg?c=1',
     'https://www.ehx.com/wp-content/uploads/2020/10/HolyGrailNeo_-1.jpg',
     'https://www.ehx.com/products/holy-grail-neo/',
   ],
@@ -995,7 +1002,7 @@ async function acceptCandidate(url, physicalAspect, opts = {}) {
  * proprietary product photos require a takedown path, not a credit line.
  */
 const MANUFACTURER_HOSTS = [
-  'roland.com', 'boss.info', 'ibanez.com', 'jimdunlop.com', 'bigcommerce.com',
+  'roland.com', 'boss.info', 'ibanez.com', 'jimdunlop.com',
   'ehx.com', 'actentertainment.com', 'musictribe.com', 'tcelectronic.com',
   'strymon.net', 'pastfx.com',
   // Amps and boards (2026-08-01)
@@ -1014,6 +1021,9 @@ const MANUFACTURER_HOSTS = [
  * product photography, found on the manufacturer's own product page) and
  * blunts the takedown path that the provenance columns exist to support.
  */
+/** BigCommerce stores that ARE the manufacturer's own shop, by store id. */
+const MANUFACTURER_BIGCOMMERCE_STORES = ['s-n26aknlnlm']; // Jim Dunlop / MXR / Way Huge
+
 const ASSET_CDN_HOSTS = ['ctfassets.net', 'shopify.com', 'shopifycdn.com', 'cloudinary.com'];
 
 /**
@@ -1043,6 +1053,18 @@ function provenanceFor(sourceUrl, viaPageUrl) {
   if (host.endsWith('wikimedia.org')) {
     // Per-file terms vary; record that a human must resolve them before use
     return { license: 'wikimedia-see-file-page', attribution: null };
+  }
+  // BigCommerce is a PLATFORM, and its store id says whose shop it is. Dunlop
+  // run their own store there (s-n26aknlnlm), so those files really are the
+  // manufacturer's. Andertons are a retailer on the same CDN, and recording
+  // their photography as `manufacturer-proprietary` would overstate what we
+  // know in the one field the takedown path depends on.
+  if (host.endsWith('bigcommerce.com')) {
+    const store = sourceUrl.match(/bigcommerce\.com\/(s-[a-z0-9]+)\//i)?.[1];
+    return {
+      license: MANUFACTURER_BIGCOMMERCE_STORES.includes(store) ? 'manufacturer-proprietary' : 'retailer-proprietary',
+      attribution: null,
+    };
   }
   if (MANUFACTURER_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) {
     return { license: 'manufacturer-proprietary', attribution: null };
