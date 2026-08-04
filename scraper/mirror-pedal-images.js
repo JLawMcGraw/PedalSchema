@@ -200,7 +200,7 @@ const PEDAL_OVERRIDES = {
    * down the ramp. GEB-7 needs nothing there by contrast: its rows 0-5 are
    * L208-232 against a border average of 237, i.e. genuinely the backdrop.
    */
-  'BOSS DD-7': { strict: true, close: true },
+  'BOSS DD-7': { close: true, edgeTrim: true },
   'BOSS GEB-7': { close: true, bgTol: 18 },
   'BOSS IR-2': { strict: true },
 
@@ -790,6 +790,64 @@ async function closeVerticalGaps(buf, maxGapFrac = CLOSE_MAX_GAP) {
  *   where the outline is settles it without having to classify a single
  *   shadow pixel.
  */
+/**
+ * Crop edge columns/rows that are mostly retained BACKGROUND.
+ *
+ * The blob sweep cannot help here: on the DD-7 the pedal's top strip and the
+ * background down both margins are ONE connected component (29,126 px,
+ * x 0..591, y 0..807), so dropping it loses the strip and keeping it keeps
+ * the margins. Geometry separates what connectivity cannot - a margin column
+ * is sparse and bright, a pedal column is dense.
+ *
+ * A line is background when it is BOTH thinly covered and what covering it
+ * has is bright and neutral. Measured on the DD-7's right margin: coverage
+ * 34%, 33%, 18% of bright neutral pixels, against ~85% dense mixed coverage
+ * through the pedal itself.
+ */
+const EDGE_MIN_COVER = 0.5;
+
+async function trimBackgroundEdges(buf) {
+  const { data: px, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width: W, height: H, channels: C } = info;
+
+  // COVERAGE, not colour. Colour was tried first and is worthless for exactly
+  // the pedals that need this: the DD-7's body is white, so its dense pedal
+  // columns measure 95-100% "bright and neutral" - the same as its background.
+  // How MUCH of a line is opaque separates them without ambiguity: ~94% right
+  // through the pedal, falling to 34% and then 26% across the right margin.
+  const cover = (fixed, horizontal) => {
+    const n = horizontal ? W : H;
+    let opaque = 0;
+    for (let k = 0; k < n; k++) {
+      const x = horizontal ? k : fixed;
+      const y = horizontal ? fixed : k;
+      if (px[(y * W + x) * C + 3] > 200) opaque++;
+    }
+    return opaque / n;
+  };
+
+  let maxCol = 0;
+  for (let x = 0; x < W; x++) maxCol = Math.max(maxCol, cover(x, false));
+  let maxRow = 0;
+  for (let y = 0; y < H; y++) maxRow = Math.max(maxRow, cover(y, true));
+
+  const lineIsBackdrop = (fixed, horizontal) =>
+    cover(fixed, horizontal) < (horizontal ? maxRow : maxCol) * EDGE_MIN_COVER;
+
+  let x0 = 0, x1 = W - 1, y0 = 0, y1 = H - 1;
+  while (x0 < x1 && lineIsBackdrop(x0, false)) x0++;
+  while (x1 > x0 && lineIsBackdrop(x1, false)) x1--;
+  while (y0 < y1 && lineIsBackdrop(y0, true)) y0++;
+  while (y1 > y0 && lineIsBackdrop(y1, true)) y1--;
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (x < x0 || x > x1 || y < y0 || y > y1) px[(y * W + x) * C + 3] = 0;
+    }
+  }
+  return sharp(px, { raw: { width: W, height: H, channels: C } }).png().toBuffer();
+}
+
 async function trimBackground(buf, opts = {}) {
   try {
     const meta = await sharp(buf).metadata();
@@ -884,11 +942,14 @@ async function trimBackground(buf, opts = {}) {
     // it stays part of the main blob and the sweep cannot mistake it. With
     // that fixed the original order is right, and gives a DD-7 in one piece
     // with its top intact (rows 82-84%) and clean margins (9,8,6%).
-    const swept = await dropStrayBackground(cut.buf);
-    cut = { ...cut, buf: swept.buf };
     if (opts.close) {
       const closed = await closeVerticalGaps(cut.buf);
       cut = { ...cut, buf: closed.buf };
+    }
+    const swept = await dropStrayBackground(cut.buf);
+    cut = { ...cut, buf: swept.buf };
+    if (opts.edgeTrim) {
+      cut = { ...cut, buf: await trimBackgroundEdges(cut.buf) };
     }
     const trimmed = await sharp(cut.buf).trim({ threshold: 25 }).png().toBuffer({ resolveWithObject: true });
     const { width, height } = trimmed.info;
@@ -1042,6 +1103,7 @@ async function main() {
       close: override.close === true,
       strict: override.strict === true,
       bgTol: override.bgTol,
+      edgeTrim: override.edgeTrim === true,
     };
     let hit = null;
     for (const url of candidatesFor(pedal)) {
@@ -1165,6 +1227,7 @@ module.exports = {
   detectOutlineRect,
   closeVerticalGaps,
   dropStrayBackground,
+  trimBackgroundEdges,
   trimBackground,
   acceptCandidate,
   provenanceFor,

@@ -117,6 +117,7 @@ async function main() {
       close: PEDAL_OVERRIDES[key]?.close === true,
       strict: PEDAL_OVERRIDES[key]?.strict === true,
       bgTol: PEDAL_OVERRIDES[key]?.bgTol,
+      edgeTrim: PEDAL_OVERRIDES[key]?.edgeTrim === true,
     });
     if (!processed.trimmed) {
       moved.push(`${key}: pipeline now REJECTS its own source (${processed.rejected ?? 'trim failed'})`);
