@@ -1,5 +1,5 @@
 {
-  "takenAt": "2026-08-03T23:57:34.361Z",
+  "takenAt": "2026-08-04T00:10:32.033Z",
   "pedalsInDb": 67,
   "withImages": 64,
   "measured": 64,
@@ -225,16 +225,16 @@
       "stray": 0
     },
     "BOSS DD-7": {
-      "w": 566,
-      "h": 987,
-      "opaque": 0.9982,
+      "w": 592,
+      "h": 1050,
+      "opaque": 0.8944,
       "partial": 0,
-      "clear": 0.0018,
+      "clear": 0.1056,
       "bands": {
-        "top": 0.9899,
-        "bottom": 0.9925,
-        "left": 0.9927,
-        "right": 0.9897,
+        "top": 0.8788,
+        "bottom": 0.5971,
+        "left": 0.5738,
+        "right": 0.6295,
         "middle": 1
       },
       "corners": [
@@ -379,16 +379,16 @@
       "stray": 0
     },
     "BOSS GEB-7": {
-      "w": 171,
-      "h": 315,
-      "opaque": 0.9982,
+      "w": 184,
+      "h": 327,
+      "opaque": 0.8717,
       "partial": 0,
-      "clear": 0.0018,
+      "clear": 0.1283,
       "bands": {
-        "top": 0.9914,
-        "bottom": 0.9908,
-        "left": 0.991,
-        "right": 0.991,
+        "top": 0.8039,
+        "bottom": 0.5781,
+        "left": 0.5219,
+        "right": 0.5438,
         "middle": 1
       },
       "corners": [
@@ -424,15 +424,15 @@
     },
     "BOSS IR-2": {
       "w": 186,
-      "h": 328,
-      "opaque": 0.8733,
+      "h": 330,
+      "opaque": 0.8893,
       "partial": 0,
-      "clear": 0.1267,
+      "clear": 0.1107,
       "bands": {
-        "top": 0.7939,
-        "bottom": 0.5689,
-        "left": 0.5526,
-        "right": 0.5574,
+        "top": 0.8856,
+        "bottom": 0.5863,
+        "left": 0.5968,
+        "right": 0.5769,
         "middle": 1
       },
       "corners": [
@@ -441,8 +441,8 @@
         0,
         0
       ],
-      "regions": 2,
-      "stray": 0.0003
+      "regions": 1,
+      "stray": 0
     },
     "BOSS IR-200": {
       "w": 779,

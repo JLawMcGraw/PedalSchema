@@ -27,7 +27,7 @@ const { loadEnv, login, openEditor, BASE_URL } = require('./lib/twin');
 loadEnv();
 
 /** The pedals this run is about, by the name shown in the library. */
-const TARGETS = ['DM-2W', 'BigSky', 'Timeline', 'DD-7', 'GEB-7'];
+const TARGETS = ['DM-2W', 'BigSky', 'Timeline', 'DD-7', 'GEB-7', 'IR-2'];
 
 /**
  * Pedals whose own enclosure is bright and neutral, so the corner test cannot
@@ -243,13 +243,38 @@ async function main() {
       );
 
       // 2. The top of the face must be as present as the middle.
-      const midStrip = patch(x + w / 2, y + h / 2, Math.max(2, Math.round(h * 0.03)));
-      const topStrip = patch(x + w / 2, y + h * 0.07, Math.max(2, Math.round(h * 0.03)));
-      console.log(`  mid rgb=${midStrip} sat=${sat(...midStrip)}   top rgb=${topStrip} sat=${sat(...topStrip)}`);
+      //
+      // Read from the served PNG's ALPHA, not from the composited screenshot.
+      // Colour cannot answer this: the board is rgb(23,23,23) and the IR-2's
+      // upper body measures L25-26, so an intact dark pedal reads as
+      // "board showing through" - this check failed IR-2 with a difference of
+      // 3 while its stored top rows were 85-89% opaque. Erosion is exactly
+      // what alpha records, so ask alpha.
+      const png = Buffer.from(await (await fetch(im.href)).arrayBuffer());
+      const { data: ap, info: ai } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const band = (y0, y1) => {
+        let o = 0;
+        let t = 0;
+        for (let yy = y0; yy < y1; yy++) {
+          for (let xx = 0; xx < ai.width; xx++) {
+            t++;
+            if (ap[(yy * ai.width + xx) * ai.channels + 3] > 200) o++;
+          }
+        }
+        return t ? o / t : 0;
+      };
+      const topBand = band(0, Math.round(ai.height * 0.1));
+      const midBand = band(Math.round(ai.height * 0.45), Math.round(ai.height * 0.55));
+      console.log(
+        `  served PNG ${ai.width}x${ai.height}  top-band opaque ${(100 * topBand).toFixed(1)}%  mid-band ${(100 * midBand).toFixed(1)}%`
+      );
+      // A healthy BOSS compact measures top 83-90 against a middle of 100.
+      // The DM-2W's eaten plate measured 27.8 against 100, so half the middle
+      // separates the two cases with room to spare.
       check(
-        'top of the face is pedal, not board showing through an eroded edge',
-        dist(topStrip, boardRef) > 24,
-        `top differs from board by ${dist(topStrip, boardRef)}`
+        'top of the face is intact, not eaten back (alpha of the served PNG)',
+        topBand > midBand * 0.5,
+        `top ${(100 * topBand).toFixed(1)}% vs mid ${(100 * midBand).toFixed(1)}%`
       );
 
       // A "no row of the pedal is see-through" check belongs here in spirit -

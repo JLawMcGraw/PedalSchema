@@ -132,10 +132,18 @@ const PRODUCT_PAGES = {
  *                        no local test can separate from the pedal. Only
  *                        valid for a rectangular pedal shot square-on.
  *            'outline'   clear outside the detected outline AND restore
- *                        anything the fill took INSIDE it, leaving only the
- *                        corners to the fill. The answer for a NEUTRAL pedal
- *                        on a neutral backdrop, where no pixel test can
- *                        separate the body from what it is standing on.
+ *                        anything the fill took INSIDE it. USE WITH CARE and
+ *                        currently used by nothing: restoring the whole
+ *                        rectangle squares off a pedal whose sides taper,
+ *                        filling the taper with background. Tried on the
+ *                        DD-7, whose edge columns ramp 20:23% 40:64% 60:93%,
+ *                        and it turned x=22..60 solid white - visible
+ *                        immediately as a white block beside the pedal.
+ *                        Prefer `close`, which only fills gaps BETWEEN
+ *                        opaque pixels and so cannot alter the silhouette.
+ *   strict   skip gradient-chaining and use only the strict border-colour
+ *            match, for a pedal whose soft top edge the chain walks down
+ *            and eats. Costs the ability to follow a backdrop that ramps.
  *   close    re-opaque transparent gaps BETWEEN opaque pixels in a column
  *            (closeVerticalGaps), for a pedal the fill has eaten a slice
  *            across. Opt-in because it fills any concavity in the outline:
@@ -166,14 +174,30 @@ const PEDAL_OVERRIDES = {
    * a first attempt at closing the slices then let the stray sweep delete
    * that isolated strip as if it were backdrop.
    *
-   * mode:'outline' settles it by not asking about the interior at all.
+   * `close` is the right tool and mode:'outline' was NOT. Outline restores
+   * everything inside the detected rectangle, which squares off a pedal's
+   * tapered sides with background - measured on the DD-7, whose edge columns
+   * ramp 20:23% 40:64% 60:93%, so the restore turned x=22..60 solid white.
+   * The owner saw it immediately: "a white square background which extends
+   * left and right". Column closing touches only gaps BETWEEN opaque pixels,
+   * so the silhouette keeps its shape (DD-7 edge columns stay 1,3,11%).
    *
-   *                    before                      after outline
-   *   DD-7    2 regions 30.6% stray, no white top    1 region 0%, top 94% at L214-228
-   *   GEB-7   2 regions 32.4% stray                  1 region 0%, top 94% at L207-226
+   *                    before                      after close
+   *   DD-7    2 regions 30.6% stray, no white top    1 region 0%, white rows
+   *                                                  8-14 back at 87-88%
+   *   GEB-7   2 regions 32.4% stray                  1 region 0%
+   *   IR-2    2 regions, top edge eaten              1 region, rows 2-4 30-33%
+   *
+   * IR-2 is only PARTLY recovered and that is honest: its top edge was eaten
+   * with nothing above it, and closing fills gaps, never extends a silhouette.
+   * Its rows 0-4 measure L106-163 against a border average of 214 - 51 below,
+   * so they are pedal, not backdrop, and the chain reached them by walking
+   * down the ramp. GEB-7 needs nothing there by contrast: its rows 0-5 are
+   * L208-232 against a border average of 237, i.e. genuinely the backdrop.
    */
-  'BOSS DD-7': { mode: 'outline' },
-  'BOSS GEB-7': { mode: 'outline' },
+  'BOSS DD-7': { close: true },
+  'BOSS GEB-7': { close: true },
+  'BOSS IR-2': { strict: true },
 
   /*
    * Small Clone is a SIDE-ON photo, so no matting of any kind can help it -
@@ -749,7 +773,13 @@ async function closeVerticalGaps(buf) {
 async function trimBackground(buf, opts = {}) {
   try {
     const meta = await sharp(buf).metadata();
-    let cut = await knockOutBackground(buf);
+    // Gradient-chaining is what walks a fill down a soft edge and into a
+    // pedal. Where that costs more than it earns, skip straight to the strict
+    // border-colour match. On the IR-2 the chain ate the top edge outright -
+    // rows 0-4 measure L106-163 against a border average of 214, so they are
+    // 51+ away from the backdrop and a strict match never touches them.
+    // Top rows go 0-5% opaque -> 85-89%.
+    let cut = opts.strict ? await knockOutBackground(buf, false) : await knockOutBackground(buf);
     // A failed knockout must REJECT the candidate, never fall through. Trimming
     // an image that still has its background crops to the background's own
     // bounding box, so the pedal would render inside a white rectangle - the
@@ -986,6 +1016,7 @@ async function main() {
       rect: override.mode === 'rect',
       outline: override.mode === 'outline',
       close: override.close === true,
+      strict: override.strict === true,
     };
     let hit = null;
     for (const url of candidatesFor(pedal)) {
