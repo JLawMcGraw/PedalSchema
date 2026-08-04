@@ -113,14 +113,73 @@ pins the limit and will fail if that ever changes.
 - Board: `verify-knockout-on-board.js` ALL CHECKS PASS. DM-2W's top renders
   rgb=184,44,77 sat=140 - the red plate is really there, on the canvas.
 
+## 2026-08-03, later: the neutral-pedal round trips
+
+The catalogue WAS re-mirrored (65, then 64 after Small Clone was pulled).
+Everything below came out of the owner looking at the board and reporting
+what the measurements could not see. Five more commits: 3190ecd, 140c95f,
+5652a2e, 46fc9b1, 8251c78, ed3a578.
+
+**Timeline is fixed.** Not by a better local test - all three local channels
+are blind on it - but by asking a different question. `detectOutlineRect`
+pools gradient along whole rows and columns, so the outline survives the
+soft patch at x=632 that defeats every per-pixel test. Clear outside it and
+the drop shadow never has to be classified at all. `mode:'rect'`.
+
+**The whole remaining defect class was one thing: a NEUTRAL pedal on a
+NEUTRAL backdrop.** White DD-7, grey GEB-7, dark-on-white IR-2, silver
+Timeline. The owner spotted the pattern before I did. There is no principled
+general answer, only per-photo settings, and the escape hatches now number
+six: `skip`, `rect`, `outline`, `close`, `strict`, `bgTol`, `edgeTrim`.
+
+### What each pedal needed, and why they differ
+- **DD-7** `close + edgeTrim`. Its top strip and the background down both
+  margins are ONE connected component (29,126 px, x 0..591, y 0..807), so no
+  blob rule can keep one and drop the other. Coverage can: ~94% through the
+  pedal, 34% then 26% across the margin.
+- **GEB-7** `close + bgTol:18`. Its frame corners are L242 and its grey top
+  edge L207-233 - inside the default BG_TOL of 35, so the plain colour match
+  ate it. Chaining and closing were never going to matter.
+- **IR-2** `strict`. Rows 0-4 are L106-163 against a border average of 214,
+  so a strict match never touches them; only the CHAIN walked down the ramp.
+- **Small Clone** `skip`. A side-on photograph - never a knockout problem.
+
+### Things that were tried and are wrong
+- `mode:'outline'` (restore everything inside the outline) squares off a
+  pedal whose sides taper - it turned the DD-7's x=22..60 solid white. Kept
+  in the code, used by nothing, failure documented.
+- Closing BEFORE the stray sweep joins margin scraps to the pedal and paints
+  a bar down the side (DD-7 column 553: 15% -> 95%).
+- Colour tests for the edge trim. The DD-7's body is white, so its dense
+  pedal columns measure 95-100% "bright and neutral" - same as its own
+  background.
+
+### Two of my own instruments were unsound
+Both because a screenshot cannot measure transparency. A "no see-through
+row" check claimed 26 bad rows on the DM-2W, which has none - the board is
+rgb(23,23,23) and IR-2's body is L25-26. And the corner test flagged the
+DD-7 and GEB-7, whose corners match their own bodies. The erosion check now
+reads the served PNG's ALPHA (top band vs middle band); the corner test now
+also requires a corner to differ from the pedal's own mid-body colour.
+`regions`/`stray` were added to the fingerprint after the DD-7 sat on the
+board in 83 pieces with perfectly ordinary aggregate numbers.
+
 ### Next tasks
-- [ ] **Re-mirror the other 62 (`FORCE=1`)** to collect the six improvements.
-      Overwrites live images, so it wants a deliberate go-ahead. Re-take the
-      fingerprint afterwards or the gate loses its reference point.
-- [ ] Timeline, Big Muff, Klon still render as rects, for three different
-      reasons (algorithm, source, licence). Timeline is now closed as far as
-      thresholding can take it - reopen only with real matting or a genuinely
-      different photograph, not another constant.
+- [ ] **Photos for Big Muff Pi and Small Clone.** Both need a HEAD-ON source
+      and neither has one: EHX shoot the whole range at three-quarters, and
+      Andertons' Small Clone shows the side face too. Holy Grail was solved
+      this way (Andertons, pinned). **Sweetwater cannot be scraped** - 403 to
+      a plain fetch, and a human-verification interstitial to a real
+      Chromium. Save one by hand and it can go through /pedals/new.
+- [ ] No automated gate can judge head-on vs side-on. The footprint gate
+      passed the side-on Small Clone at 0.99x, and a fill/edge-straightness
+      heuristic scores the angled Big Muff at fill 93%, topSlope 1.4%. This
+      one needs an eye.
+- [ ] Timeline and BigSky are 6.5in wide in the DB; Strymon say 6.75. Left
+      alone because changing dimensions moves saved board layouts.
+- [ ] Klon stays a rect (licence). Holy Grail 1.6% stray, RV-200 2.1% -
+      both minor.
+- [ ] `mode:'outline'` is dead weight - delete it if nothing adopts it.
 - [ ] The `assignLanes` cliff is fixed but never instrumented.
 - [ ] `complexRouting` should be re-tuned; P1.5 left it alone.
 - [ ] 10 jack layouts unresearched; Marshall JCM2000 DSL has no photo.
