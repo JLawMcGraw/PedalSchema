@@ -164,7 +164,8 @@ describe.skipIf(!DUMP)('saved board fingerprint', () => {
       emit('');
       emit('DRAWN CABLES  (what the user sees)');
       for (const rc of derived.routedCables) {
-        emit(`  ${rc.strategy.padEnd(16)} valid=${String(rc.valid).padEnd(5)} ` +
+        emit(`  ${rc.strategy.padEnd(16)} ${(rc.laneOutcome ?? '-').padEnd(17)} ` +
+          `valid=${String(rc.valid).padEnd(5)} ` +
           `${String(rc.path.length).padStart(3)}pts  ` +
           rc.path.map((p) => `(${Math.round(p.x)},${Math.round(p.y)})`).join(' '));
       }

@@ -93,8 +93,19 @@ export type LaneOutcome =
   | 'shortcut'
   /** Seated in a lane and the realized geometry validated. */
   | 'lane-routed'
-  /** An endpoint's standoff attaches to no corridor at all. */
-  | 'unattached'
+  /**
+   * A standoff attaches to no corridor. Split by WHICH end, because that is the
+   * whole diagnostic value: 6 of these on the `test` board looked alike and had
+   * at least two different causes.
+   *
+   * Note a standoff OUTSIDE the board is legitimate and must attach: a pedal
+   * with rear-edge jacks sits flush against the back rail and its plugs hang
+   * over the edge, which is what people actually build. The corridor model
+   * covers that deliberately (`minY - 40`, and the external columns).
+   */
+  | 'unattached-from'
+  | 'unattached-to'
+  | 'unattached-both'
   /** Corridors exist at both ends but no sequence connects them. */
   | 'no-corridor-path'
   /** Corridor over capacity - this cable lost its seat. THE CLIFF. */
@@ -537,7 +548,10 @@ export function routeCablesWithLanes(
     const goalC = attachCorridor(corridors, toStub);
     if (startC < 0 || goalC < 0) {
       planned.push(null);
-      outcomes[index] = 'unattached';
+      outcomes[index] =
+        startC < 0 && goalC < 0 ? 'unattached-both'
+        : startC < 0 ? 'unattached-from'
+        : 'unattached-to';
       return;
     }
 

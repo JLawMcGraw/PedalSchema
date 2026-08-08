@@ -121,6 +121,7 @@ function routeAroundBoard(
   s: Point,
   t: Point,
   boardBounds: BoardBounds | null,
+  /** Judges a candidate RING as the fully assembled path it will become. */
   isClear: (core: Point[]) => boolean
 ): Point[] | null {
   if (!boardBounds) return null;
@@ -130,14 +131,32 @@ function routeAroundBoard(
   const oT = minY - PERIMETER_OFFSET;
   const oB = maxY + PERIMETER_OFFSET;
 
-  /** Nearest edge, and the point straight out from it. */
-  const exit = (p: Point): { side: number; point: Point } => {
+  /**
+   * EVERY edge this endpoint could leave by, nearest first - not just the
+   * nearest one.
+   *
+   * Taking only the nearest edge is what made this strategy useless in the
+   * situation it exists for. Leaving by an edge means a straight run from the
+   * endpoint out past the board, and on a FULL board that run is very likely
+   * blocked - the board being full is the premise. Measured on the `test`
+   * board: a source at (734,269) has its nearest edge 269px away (top), and the
+   * straight shot up crosses a back-row pedal occupying x[716,832]. Both ring
+   * directions inherit that one blocked stub, so both were rejected and the
+   * cable fell through to `fallback-invalid` - a red diagonal across the board,
+   * which is precisely the drawing this strategy was added to replace.
+   *
+   * Nearest first only sets the preference; the shortest CLEAR candidate wins
+   * below, so an ordinary cable still leaves by the sensible edge.
+   */
+  const exits = (p: Point): Array<{ side: number; point: Point }> => {
     const d = [p.x - minX, minY === maxY ? Infinity : p.y - minY, maxX - p.x, maxY - p.y];
-    const side = d.indexOf(Math.min(...d)); // 0 left, 1 top, 2 right, 3 bottom
-    const point = [
+    const points = [
       { x: oL, y: p.y }, { x: p.x, y: oT }, { x: oR, y: p.y }, { x: p.x, y: oB },
-    ][side];
-    return { side, point };
+    ];
+    return [0, 1, 2, 3]
+      .filter((side) => Number.isFinite(d[side]))
+      .sort((a, b) => d[a] - d[b] || a - b)
+      .map((side) => ({ side, point: points[side] }));
   };
 
   const corners = [
@@ -147,32 +166,47 @@ function routeAroundBoard(
     { x: oL, y: oB }, // between bottom(3) and left(0)
   ];
 
-  const from = exit(s);
-  const to = exit(t);
-
-  const candidates: Point[][] = [];
-  for (const dir of [1, -1]) {
-    const ring: Point[] = [from.point];
-    // Step side by side around the ring, collecting the corner between each
-    // pair, until the entry side is reached.
-    let side = from.side;
-    for (let step = 0; step < 4 && side !== to.side; step++) {
-      // Going forward (dir=1) the corner AFTER side `side` is corners[side];
-      // going backward it is the corner before it.
-      ring.push(corners[dir === 1 ? side : (side + 3) % 4]);
-      side = (side + dir + 4) % 4;
-    }
-    ring.push(to.point);
-    candidates.push(ring);
-  }
-
   const length = (pts: Point[]): number =>
     pts.slice(1).reduce((sum, p, i) => sum + dist(pts[i], p), 0);
 
+  // Every (exit edge x entry edge x direction) combination - at most 32, each
+  // a handful of segments. Cheap, and this is the last rung of the cascade.
+  const candidates: Array<{ core: Point[]; len: number; rank: number }> = [];
+  const fromExits = exits(s);
+  const toExits = exits(t);
+
+  fromExits.forEach((from, fi) => {
+    toExits.forEach((to, ti) => {
+      for (const dir of [1, -1]) {
+        const ring: Point[] = [from.point];
+        // Step side by side around the ring, collecting the corner between each
+        // pair, until the entry side is reached.
+        let side = from.side;
+        for (let step = 0; step < 4 && side !== to.side; step++) {
+          // Going forward (dir=1) the corner AFTER side `side` is corners[side];
+          // going backward it is the corner before it.
+          ring.push(corners[dir === 1 ? side : (side + 3) % 4]);
+          side = (side + dir + 4) % 4;
+        }
+        ring.push(to.point);
+        // rank keeps ties deterministic: config-matrix asserts determinism and
+        // idempotence, and sorting on length alone leaves mirror-image rings
+        // (dir 1 vs -1 between opposite edges) exactly equal.
+        candidates.push({
+          core: ring,
+          len: length([s, ...ring, t]),
+          rank: (fi * 4 + ti) * 2 + (dir === 1 ? 0 : 1),
+        });
+      }
+    });
+  });
+
   return (
     candidates
-      .filter((core) => isClear([s, ...core, t]))
-      .sort((a, b) => length(a) - length(b))[0] ?? null
+      // isClear judges the ring as the assembled path it will become - see the
+      // call site. Passing the bare core is what keeps the two in step.
+      .filter((c) => isClear(c.core))
+      .sort((a, b) => a.len - b.len || a.rank - b.rank)[0]?.core ?? null
   );
 }
 
@@ -452,13 +486,23 @@ function routeCablePath(
   // because a cable lying beside the board is a real cable but not the one
   // anybody wants - every on-board route above is preferable. See
   // routeAroundBoard for why a full board leaves no on-board option at all.
-  const around = routeAroundBoard(s, t, boardBounds, (full) =>
-    isPathClear(full, boxes, { fromBoxIdx, toBoxIdx })
+  //
+  // The predicate judges the ring as the FULLY ASSEMBLED path it will become -
+  // standoffs included - so selection and final validation see identical
+  // geometry with identical segment indices. They did not before: the ring was
+  // checked as [standoff, ...ring, standoff] and then returned as
+  // [jack, ...ring, jack], so the exit stub was stub-EXEMPT while being chosen
+  // and non-exempt when validated, and the standoffs were dropped from the
+  // path entirely. That let a route be selected and then reported invalid -
+  // the same "two policies" bug the facing-jack shortcut had.
+  const perimeterPath = (core: Point[]): Point[] => assemble([s, ...core, t]);
+  const around = routeAroundBoard(s, t, boardBounds, (core) =>
+    isPathClear(perimeterPath(core), boxes, { fromBoxIdx, toBoxIdx })
   );
   if (around) {
     // Deliberately NOT run through candidateOk: this path is off-board by
     // construction, which is the one thing candidateOk forbids.
-    return { path: assemble(around), strategy: 'perimeter' };
+    return { path: perimeterPath(around), strategy: 'perimeter' };
   }
 
   // Fallback: return invalid direct path (will be marked red by renderer)
