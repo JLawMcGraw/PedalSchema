@@ -66,13 +66,19 @@ import { rotationSteps } from '../geometry/rotation';
  * These are placed in the EMPTY BANDS of the real catalogue, so no pedal sits
  * near a line and a small data correction cannot flip one:
  *
- *   widths ... 3.5, 3.98, 4.0 | 4.5 | 4.8, 5.5, 5.79, 6.5, 6.69, 10.04
+ *   widths ... 3.5, 3.98, 4.0 | 4.5 | 4.8, 5.5, 5.79, 6.69, 6.75, 10.04
  *   depths ... 5.43, 5.5, 5.6 | 6.5 | 7.3, 7.52, 7.56, 9.06, 10.0
  *
  * What that buys: the 3.98in 200-series and the 5.6in-deep RAT stay unlocked
- * and can be turned to shorten a cable run; the 6.5in Strymons, the 5.5in
+ * and can be turned to shorten a cable run; the 6.75in Strymons, the 5.5in
  * fuzzes and the 10in SY-300 arrive locked, because "big enough that you would
  * mind it sitting sideways" is what the default is actually guessing at.
+ *
+ * The Strymons read 6.5in until 2026-08-08, when both were corrected to
+ * Strymon's published 6.75in (migration 20260808000001). That is the "small
+ * data correction cannot flip one" claim above being tested rather than
+ * asserted: the value moved and the verdict did not, because 4.5 sits nowhere
+ * near it.
  */
 export const MAX_ROTATABLE_WIDTH_INCHES = 4.5;
 export const MAX_ROTATABLE_DEPTH_INCHES = 6.5;
