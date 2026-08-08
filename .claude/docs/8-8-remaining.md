@@ -21,7 +21,65 @@ saved boards        J$ Home 9 on Classic Jr    test 22 on Classic Pro
 
 ---
 
-## R1 — One cable is drawn red on the `test` board
+## R1 — PARTLY DONE 2026-08-08. Two bugs fixed; the cable itself is unroutable
+
+R2 was built first, and naming the failing endpoint immediately killed the
+leading theory: the red cable is `unattached-FROM`, so the failing end is the
+NS-2's left output, **not** the EQ-200's rear jack.
+
+**Two real, pre-existing bugs were found and fixed** on the way, neither of
+which changes either saved board (fingerprint byte-identical - they are latent):
+
+1. **`routeAroundBoard` only ever tried the NEAREST edge.** Leaving by an edge
+   means a straight run out past the board, and on a full board that run is
+   likely blocked - the board being full is the strategy's whole premise. Both
+   ring directions inherited the one blocked stub, so the strategy built to
+   rescue full boards could not rescue one. Now tries all four exits x four
+   entries x two directions, shortest clear wins, ties broken deterministically.
+2. **The perimeter rung selected against one path and returned another.** It
+   judged the ring as `[standoff, ...ring, standoff]` and returned
+   `[jack, ...ring, jack]` - the standoffs dropped entirely, and since
+   `findPathViolations` exempts the source box on segment 0 only, the exit stub
+   was stub-exempt while being chosen and non-exempt when validated. A route
+   could be selected and then reported invalid. This surfaced the moment fix 1
+   widened the candidate set, breaking the phase-6 test - which is the test
+   earning its keep. Same "two policies" bug the facing-jack shortcut carries a
+   comment about.
+
+**The cable itself is still red, and now we know why.** Measured in the
+optimized frame, the NS-2's standoff at (734,269) is sealed on all four sides:
+
+```
+top     BLOCKED by DC-2W  [x716-831]
+bottom  BLOCKED by OC-5   [x615-730]   margin ends 738, standoff at 734
+right   BLOCKED by FZ-1W, MT-2W
+left    BLOCKED by BigSky, IR-2
+```
+
+No straight run to the board edge exists, so no perimeter ring can. **The
+bottom exit misses by 4px.** This is the phase-6 full-board case: the router is
+right to refuse, and what is wrong is the drawing (a diagonal through pedals)
+and the silence, not the refusal.
+
+### What would actually close it, in increasing order of cost
+
+1. **Say so.** The board is too full to wire this cable; the app draws a red
+   diagonal and explains nothing. This is the `8-2-next.md` P2 item ("say WHY a
+   board will not fit") pointed at a cable rather than a placement, and it is
+   honest rather than clever.
+2. **Draw the refusal better.** A `fallback-invalid` cable is currently a
+   straight line through five pedal bodies - a drawing of a cable that cannot
+   exist. Phase 6 made exactly this argument when adding `perimeter`.
+3. **Reach the edge by pathfinding, then go around.** The general fix: instead
+   of requiring a straight shot from the standoff to the edge, A\* to the
+   nearest board edge and start the ring there. Bigger, and it earns its cost
+   only if a second board ever needs it - no `config-matrix` fixture does.
+
+**Do not** widen `PERIMETER_OFFSET` or shrink `OBSTACLE_MARGIN` to recover the
+4px. That is tuning a global constant to paper over one board's geometry, which
+this project has recorded going wrong twice.
+
+### Original analysis
 
 **The only user-visible defect left, and the only correctness item on this
 list.** Everything else is data or is blocked.
@@ -101,19 +159,27 @@ CROSSING_PENALTY_INCHES, and both were wrong. Instrument first - which is R2.
      distinguishes these without any further argument.
 3. Only then decide between a routing fix and a placement fix.
 
-### The placement question underneath it, worth separating
+### The placement question underneath it - REFUTED by the owner, 2026-08-08
 
-Even once routed, **a pedal with rear-edge jacks flush against the back rail has
-nowhere for a plug to go** - physically, not just in the model. A straight jack
-plug needs roughly an inch behind the pedal. The placer does not know this:
-`deriveRowBands` reasons about pedal depth and corridors, not about what a jack
-on the rear edge demands behind it.
+This section proposed that **a pedal with rear-edge jacks flush against the back
+rail has nowhere for a plug to go**, and that the placer should reserve
+clearance behind it.
 
-That affects EQ-200, Timeline, BigSky and the Fuzz Face (newly confirmed with
-rear-edge jacks in D). **This is a separate item from R1 and should not be
-smuggled into it** - R1 is "the router draws a red diagonal", this is "the
-layout is physically unbuildable". Fixing the second might mask the first
-without anyone learning what the first was.
+**That is wrong, and the owner said so.** A pedal with rear-edge jacks can sit
+right up against the back rail: the plug hangs over the edge, outside the board,
+which is what people actually build. So EQ-200, Timeline, BigSky and the Fuzz
+Face at y=0 are all legal placements and nothing needs reserving.
+
+Two consequences worth keeping:
+
+- The corridor model extending past the board (`minY - 40`, and the external
+  columns) is **correct by design**, not incidental. A standoff outside the
+  board is a normal thing that must attach.
+- The eight signal jacks projecting standoffs to y=-10 on `test` are a red
+  herring, and the measurement confirmed it independently: the EQ-200's rear
+  standoff attaches fine, and the failing end was the other one.
+
+A domain fact that only the owner had. Recorded so it is not re-proposed.
 
 **Verification for R1.** Fingerprint before/after; `routingFailures` on `test`
 must reach 0 with `cableLength` not blowing out to compensate. `config-matrix`
