@@ -4,6 +4,126 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-08 - A plan, then all of it; and two beliefs that did not survive being measured
+
+Wrote `.claude/docs/8-8-plan.md` grounded in measurements taken while writing
+it, then executed it. A1, A2, B, C done; D closed five of ten; E is blocked on
+a human. 306 tests (from 293), tsc clean, config-matrix 66/66 by trial ID,
+browser gate passing, knockout regression 64/64 unmoved.
+
+**Two of the things that got fixed were things nobody had noticed, and both
+were found by re-deriving a proxy rather than trusting it.**
+
+### `complexRouting` was charging the cables that routed BEST
+`routing-cost.ts` declared the penalty as "channel/perimeter/A* instead of
+simple L-path" and implemented it as `path.length > 3`. Those were the same
+statement until P1.5 unified the routers. Measured on both saved boards: **21 of
+33 cables charged, 15 of them `lane-router`** - the tidy loom the corridor model
+exists to build, which is four points before anything has gone wrong. Both L
+strategies were charged too, the very thing the comment excludes by name. Not
+one of channel/perimeter/astar appears anywhere in the corpus.
+
+It was **100 of J$ Home's 167.52 total - 59.7%, larger than the cable length
+the optimizer exists to minimise.**
+
+Now asks `isComplexRoute(strategy)`. Result matched the prediction exactly:
+100 -> 0 and 110 -> 0, **zero non-score lines changed in the fingerprint**, and
+each total fell by precisely the removed penalty. Nothing moved because the term
+was inert - constant at 10->10 and 11->11. It discriminates now (J$ Home
+`10 -> 0`), which is what a cost term is for.
+
+**The lesson: a proxy is a claim about the world at the moment it is written.**
+P1.5 changed what "more than three points" means and nothing re-derived it.
+
+### The `assignLanes` cliff never fires
+Carried on the roadmap since 8/2 as "fixed but never instrumented". Built the
+instrument - `LaneRouteResult` now carries per-cable outcomes and per-corridor
+pressure, because `assignLanes` had been computing the eviction set and throwing
+it away - and the answer is **zero evictions on both saved boards**. Every
+fallback on `test` is `unattached`: an endpoint whose standoff reaches no
+corridor at all. Future work on fallbacks belongs at corridor ATTACHMENT, not
+lane capacity, which is the opposite of where the roadmap pointed.
+
+The tally reconciles exactly with the independent strategy counts
+(`lane-routed 12 + shortcut 15 = 27 = the lane-router count`), which is what
+proves an instrument rather than merely running it. That reconciliation is now
+a permanent assertion, replacing a self-described "conservative proxy" in
+`lane-router.test.ts` that counted paths differing from a no-lane run.
+
+### I made the null-is-not-zero mistake, in my own instrument
+Asked whether correcting the Strymon widths would move a saved board, I reported
+**0 affected rows**. It was 2 - both are on `test`. The query selected
+`position_x/position_y/rotation`, which do not exist (`x_inches/y_inches/
+rotation_degrees`), and read `data` without checking `error`, so
+`rows?.length ?? 0` printed **a failed query as a measured zero**. Exactly the
+tri-state trap this project already documents for `currentMa`, applied to the
+product code and then rebuilt inside the tool checking it.
+
+**What caught it was the fingerprint gate predicting byte-identical and being
+allowed to be wrong.** A gate is worth more when you are willing to have it
+falsify you than when it agrees.
+
+The correction stands (owner's call, published spec): both Strymons 6.5 -> 6.75
+wide and **1.6 -> 2.7 tall** - the height was wrong too, an error two-thirds
+larger than the width one on record. Every displaced pedal moved exactly 0.25in;
+the saved `test` layout goes 623.39 -> 758.88 with one more unroutable cable,
+and Optimize recovers it completely (622.11 against 622.07). Bounded and
+self-healing.
+
+### Jack layouts 10 -> 5, by inverting the source hierarchy
+The manuals are still a dead end and this re-confirmed it rather than assuming:
+the M101 PDF names both jacks and never says which side. **A manufacturer's
+top-down product photograph is BETTER evidence than a manual's rear-panel
+drawing** - the drawing is seen from behind, so its left and right are flipped,
+which is the mirroring trap; a top-down photo cannot be flipped, and these
+enclosures are silkscreened with the jack names beside the barrels.
+
+  MXR Phase 90 / Dyna Comp / Carbon Copy   OUTPUT left, INPUT right
+  Dunlop Cry Baby GCB95                    AMPLIFIER left, INSTRUMENT right
+  Dunlop Fuzz Face                         IN and OUT both on the REAR edge
+
+**The Fuzz Face is why it was worth doing**: it contradicts the default twice -
+rear edge rather than sides, and IN left of OUT, reversed from every compact in
+the catalogue. A fallback would have been wrong about the edge and then the
+side. It is now the 12th rotation candidate.
+
+**The Cry Baby needed two sources and would have been a guess with one.** Its
+walls are moulded AMPLIFIER and INSTRUMENT, but telling a treadle's toe from its
+heel in a top-down photo is the spatial call that gets made backwards - and
+backwards means a mirrored entry. Dunlop's documentation independently places
+output left, fixing orientation without that judgement.
+
+### Also
+- `mode:'outline'` deleted; the prose explaining its failure kept. 64 pedals
+  re-run through `knockout-regression.js`, none moved.
+- **The Holy Grail row is wrong in two ways.** Its adopted photo is a HOLY GRAIL
+  **NEO**, a different product, so its layout is not this row's to borrow. And
+  the catalogue's 3.5 x 4.7in matches neither the original (~2.75 x 4.75) nor
+  the Neo (~2.76 x 4.53) - the width is off by 0.75in, three times the Strymon
+  error. Recorded, not acted on: unlike Strymon, these are secondary sources.
+
+### Next tasks
+- [ ] **Photos for Big Muff Pi and Small Clone.** Unchanged and still the only
+      hard blocker: both need a HEAD-ON source, EHX shoot at three-quarters,
+      Sweetwater 403s a fetch and shows a human-verification wall to real
+      Chromium. **Save one by hand and it goes through /pedals/new.** No
+      automated gate can judge head-on vs side-on - the footprint gate passed
+      the side-on Small Clone at 0.99x.
+- [ ] **Re-Optimize the `test` board** so it drops the extra unroutable cable
+      from the Strymon correction. A click; Optimize overwrites a hand-arranged
+      board, so it is the owner's to make.
+- [ ] **The Holy Grail row** - get an ehx.com specification and decide which
+      product it is meant to be. Then its jacks can be researched.
+- [ ] **A measurement-provenance column.** Two dimension errors in two days,
+      both found while looking at something else, both in rows whose `notes`
+      were null. The table has provenance for images and jacks, none for
+      measurements.
+- [ ] Fallback work belongs at corridor ATTACHMENT now, not lane capacity.
+- [ ] RAT 2 / Klon jack layouts: no photo shows their jacks; Klon also
+      licence-blocked.
+
+---
+
 ## Session: 2026-08-03 - The knockout learns colour; two of three photos come back
 
 Built the 8/2 plan. DM-2W and BigSky are mirrored and correct on the board;

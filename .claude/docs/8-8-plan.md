@@ -1,5 +1,14 @@
 # What to do next (2026-08-08)
 
+> **STATUS: A1, A2, B, C executed the same day; D closed five of ten.** Only E
+> remains, and it is blocked on a human saving two photographs. See § Outcome at
+> the foot of the file.
+>
+> Two things in this document were WRONG when written and are corrected in
+> place: section B's blast radius (a failed query printed as a measured zero),
+> and the roadmap's assumption that the `assignLanes` cliff was worth chasing
+> (it never fires).
+
 Successor to `8-2-next.md`, written after the knockout work closed. Same
 convention as its predecessors: ordered by what it costs to be wrong, and every
 claim tied to a measurement taken **while writing this file**, not to the
@@ -106,7 +115,36 @@ label and the arithmetic disagree about what is being counted.
 
 ---
 
-## A1 — Charge `complexRouting` on strategy, not on point count
+## A1 — DONE 2026-08-08. Charge `complexRouting` on strategy, not point count
+
+**The prediction held exactly.** `complexRouting` 100 -> 0 on J$ Home and
+110 -> 0 on `test`, and **zero non-score lines changed in the fingerprint** -
+every placement and every cable path byte-identical. Each total fell by
+precisely the removed penalty:
+
+```
+J$ Home   167.52 - 100 = 67.52    observed 67.52
+test      622.11 - 110 = 512.11   observed 512.11
+```
+
+Nothing moved because the term was **inert** - constant at 10->10 and 11->11,
+as measured before the change. It now discriminates: J$ Home reads `10 -> 0`,
+one genuinely complex cable in the saved layout and none after optimizing.
+A dimension that never varied between candidates now varies with layout quality,
+which is what a cost term is for.
+
+`isComplexRoute` lives in `cables/routing-strategies.ts`, next to the cascade it
+partitions, and is written as the small SIMPLE set rather than its complement so
+a future rung defaults to CHARGED - new rungs get added at the desperate end.
+`fallback-invalid` is deliberately excluded: `routingFailures` already charges
+it twice `CABLE_COLLISION_PENALTY_INCHES`, and one defect should not appear as
+two dimensions in a score that is meant to add up.
+
+Gates: 306 tests (+13), tsc clean, config-matrix 66/66 by trial ID,
+`verify-optimize.js` PASSES in the browser (mandatory - all three changed files
+are in the worker's import graph).
+
+### Original analysis
 
 `rp.strategy` is already in scope one line below the penalty
 (`routing-cost.ts:252` pushes it into `cableDetails`). The router reports what
@@ -151,7 +189,42 @@ and the change should not land.
 
 ---
 
-## A2 — Eviction is unobservable, and there are three causes wearing one face
+## A2 — DONE 2026-08-08. And the cliff turns out never to fire
+
+`LaneRouteResult` now carries per-cable `outcomes` and per-corridor `pressure`;
+`RoutedPath` carries `laneOutcome`, so the reason travels with the cable to the
+renderer and the fingerprint. Fingerprint geometry byte-identical - purely
+additive, as predicted.
+
+**First measurement, and it answers the question the session log had been
+asking since 8/2:**
+
+| board | lane-routed | shortcut | unattached | **evicted** |
+|---|---|---|---|---|
+| J$ Home | 8 | 2 | 0 | **0** |
+| test | 4 | 13 | 6 | **0** |
+
+**The `assignLanes` cliff fires zero times on both saved boards.** Every
+fallback on `test` is `unattached` - endpoints whose standoff attaches to no
+corridor - not capacity. So the 8/2 per-corridor fix is holding, and any future
+work on fallbacks should target corridor ATTACHMENT rather than lane capacity.
+That is the opposite of where the roadmap was pointing.
+
+The tally reconciles exactly with the independent strategy counts, which is what
+proves the instrument rather than just running it:
+
+```
+lane-routed 12 + shortcut 15 = 27 = the 'lane-router' strategy count
+unattached 6 = l-horizontal 4 + l-vertical 1 + fallback-invalid 1
+```
+
+That reconciliation is now a permanent assertion. `lane-router.test.ts` had a
+self-described *"conservative proxy"* - count the cables whose path differs from
+the no-lane run - because nothing recorded which router served a cable. It
+counts exactly now and asserts strategy and outcome agree, so if they ever
+disagree one of them is lying and every count built on either is wrong.
+
+### Original analysis
 
 The session log carries this as *"the `assignLanes` cliff is fixed but never
 instrumented"*. Reading the code, it is worse than un-counted: three distinct
@@ -299,7 +372,17 @@ hand-arranged board.
 
 ---
 
-## C — Delete `mode:'outline'`
+## C — DONE 2026-08-08. Deleted `mode:'outline'`
+
+The branch, `OUTLINE_CORNER_MARGIN`, and the option wiring are gone; the prose
+explaining *why* it failed stays, because that is the part with value.
+`detectOutlineRect` stays too - `rect` uses it, and it is what fixed Timeline.
+
+Verified with `knockout-regression.js`, which re-runs the pipeline over every
+pedal's origin image and writes nothing: **64 pedals, none moved**, before and
+after. Exactly as predicted for a path nothing was using.
+
+### Original analysis
 
 Confirmed dead, not assumed dead. `PEDAL_OVERRIDES`
 (`scraper/mirror-pedal-images.js:168`) contains exactly three entries:
@@ -325,7 +408,82 @@ all 64 pedals must be byte-identical, because nothing was using the path.
 
 ---
 
-## D — Ten jack layouts (research, unblocked, parallelizable)
+## D — Jack layouts: DONE for five of ten, 2026-08-08
+
+Outstanding **10 -> 5**, confirmed 53 -> 58, contract violations still 0.
+
+The manuals remain a dead end and this re-confirmed it rather than assuming it:
+the M101 PDF names INPUT and OUTPUT and never says which side, exactly as
+recorded on 2026-07-31. This environment also has no PDF renderer, so a
+diagram-only manual cannot even be looked at.
+
+**What worked was inverting the source hierarchy.** A manufacturer's TOP-DOWN
+product photograph is *better* evidence than a manual's rear-panel drawing, for
+the reason the file's own readme gives: the drawing is seen from behind the
+pedal, so its left and right are flipped. A top-down photograph cannot be
+flipped, and these enclosures are silkscreened or moulded with the jack names
+beside the barrels. 8/1 recorded "a product photo is jack research" as a
+by-product; this applied it deliberately.
+
+```
+MXR Phase 90 / Dyna Comp / Carbon Copy   OUTPUT left, INPUT right
+Dunlop Cry Baby GCB95                    AMPLIFIER left, INSTRUMENT right
+Dunlop Fuzz Face                         IN and OUT both on the REAR edge
+```
+
+**The Fuzz Face is why this was worth doing.** It contradicts the default
+assumption twice: both jacks on the rear edge rather than the sides, and the
+lateral order reversed - IN left of centre, OUT right - where every compact in
+the catalogue has input right and output left. The fallback would have been
+wrong about the edge and then wrong about the side. It is now the 12th rotation
+candidate, though at 5.5in wide it arrives rotation-locked by default.
+
+**The Cry Baby needed two sources and would have been a guess with one.** Its
+side walls are moulded AMPLIFIER and INSTRUMENT, but telling a treadle's toe
+from its heel in a top-down photo is exactly the spatial call that gets made
+backwards - and backwards here means a mirrored entry, the failure the whole
+file is built to avoid. Dunlop's GCB95 documentation independently places
+output left and input right, fixing the orientation without relying on that
+judgement.
+
+DC jacks are omitted throughout rather than guessed: they sit on rear edges a
+top-down photograph does not show. A missing row is a smaller lie than an
+invented edge.
+
+Fingerprint byte-identical - **verified, not assumed**, after section B's
+lesson. None of the five is on either saved board.
+
+### The five still outstanding, and why each is stuck
+
+| pedal | blocker |
+|---|---|
+| Big Muff Pi | no photograph at all (also item E) |
+| Small Clone | no photograph at all (also item E) |
+| Klon Centaur | no photograph; licence-blocked besides |
+| Pro Co RAT 2 | has a top-down photo, but **it shows no jacks and no labels** |
+| Holy Grail | its adopted photo is a **HOLY GRAIL NEO** - see below |
+
+### A data problem found while doing this: the Holy Grail row
+
+The head-on photograph adopted on 8/3 is captioned **HOLY GRAIL NEO**, which is
+a different product from the catalogue's "Holy Grail". So its jack layout is not
+this row's to borrow, and the entry was left unresearched rather than filled
+from the wrong pedal.
+
+The dimensions look wrong too. Published figures put the original at ~2.75 x
+4.75in and the Neo at ~2.76 x 4.53in; **the catalogue says 3.5 x 4.7**, matching
+neither - and the width is off by three quarters of an inch, three times the
+Strymon error corrected in section B.
+
+Not acted on, deliberately: unlike the Strymons, where strymon.net publishes an
+unambiguous figure on the product page, these numbers come from secondary
+sources. It needs an ehx.com specification and a decision about which product
+the row is meant to be. **Recorded here rather than fixed** - and note this is
+the second dimension error found in two days by looking at something else,
+which is an argument for the measurement-provenance column the pedals table
+does not have.
+
+## D (original scope) — Ten jack layouts (research, unblocked, parallelizable)
 
 ```
 catalogue            67
@@ -443,3 +601,48 @@ And the one that runs nothing in Node — needs `npm run dev` up:
 ```
 node .claude/scripts/verify-optimize.js
 ```
+
+---
+
+## Outcome — 2026-08-08
+
+A1, A2, B and C landed; D closed five of ten. Suite **306 green** (from 293),
+tsc clean, config-matrix 66/66 by trial ID, browser gate passing, knockout
+regression 64/64 unmoved.
+
+### The two things this document got wrong
+
+**1. Section B's blast radius.** Reported as zero affected rows; it was two, and
+both Strymons are on the `test` board. The query selected columns that do not
+exist, `error` went unchecked, and `rows?.length ?? 0` printed a failed query as
+a measured zero — the same null-is-not-zero trap the power budget documents for
+`currentMa`, built into the instrument instead of the product. **The fingerprint
+gate caught it by predicting byte-identical and being allowed to be wrong.**
+
+**2. The cliff was the wrong thing to be worried about.** The roadmap had
+carried "instrument the `assignLanes` cliff" since 8/2 on the premise that
+uncounted evictions were a latent risk. Instrumented, the count is **zero on
+both saved boards**, and every fallback on `test` is `unattached` — an endpoint
+that reaches no corridor at all. The 8/2 per-corridor fix is holding. Future
+work on fallbacks belongs at corridor ATTACHMENT, not lane capacity.
+
+### The pattern across both
+
+Both were resolved by building the measurement *before* trusting the belief, and
+in both cases the measurement contradicted a plausible story that had been
+sitting unchallenged for a week. Note also that A1's whole finding —
+`complexRouting` charging the corridor loom — existed only because P1.5 changed
+what "more than three points" means, and nothing re-derived the proxy afterwards.
+**A proxy is a claim about the world at the moment it is written.**
+
+### Cheapest available follow-ups
+
+- **The Holy Grail row** carries a photo of a different product (Neo) and a width
+  that matches neither variant. Needs an ehx.com specification and a decision
+  about which product the row is. See § D.
+- **The `test` board wants re-Optimizing** so its saved layout drops the extra
+  unroutable cable the Strymon correction introduced. A click, and the owner's
+  to make.
+- **A measurement-provenance column.** Two dimension errors surfaced in two days,
+  both while looking at something else, both in rows whose `notes` were null.
+  The table has provenance for images and for jacks and none for measurements.
