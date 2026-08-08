@@ -20,7 +20,7 @@ import { generateObstacles, type ObstacleSet } from '../obstacles';
 import { routeCableWithObstacles, type RoutingStrategy } from './routing-strategies';
 import { getExternalEndpointPx, getPedalJackPx, type ExternalEndpointType } from './endpoints';
 import { isPathValid, type ValidationResult } from './validation';
-import { routeCablesWithLanes, type LaneRouteRequest } from '../lanes';
+import { routeCablesWithLanes, type LaneRouteRequest, type LaneOutcome } from '../lanes';
 import { isDebugEnabled } from '../debug-flag';
 
 /**
@@ -42,6 +42,19 @@ export interface RoutedPath {
    * than by re-tracing the cascade by hand.
    */
   strategy: RoutingStrategy | 'lane-router';
+  /**
+   * What the corridor router did with this cable, which `strategy` cannot say.
+   *
+   * `strategy` reports the rung that eventually SUCCEEDED, so every corridor
+   * failure looks the same from outside: the cable simply arrives carrying
+   * 'l-horizontal' or 'channel' with no record of what it was refused first.
+   * Four unrelated causes collapsed that way, and one of them - 'evicted' - is
+   * the `assignLanes` cliff, the only one that indicates a crowded board rather
+   * than an ordinary one.
+   *
+   * Undefined when the lane router did not run (`laneRouter: false`).
+   */
+  laneOutcome?: LaneOutcome;
   /** Whether the path clears all obstacles */
   valid: boolean;
   /** Populated only when invalid */
@@ -308,8 +321,11 @@ export function routeCablePaths(
 
   // Corridor-graph routing first (when enabled); nulls fall back below
   let lanePaths: Array<Point[] | null> = requests.map(() => null);
+  let laneOutcomes: LaneOutcome[] | null = null;
   if (laneRouter) {
-    lanePaths = routeCablesWithLanes(requests, obstacles).paths;
+    const laneResult = routeCablesWithLanes(requests, obstacles);
+    lanePaths = laneResult.paths;
+    laneOutcomes = laneResult.diagnostics.outcomes;
   }
 
   const results: RoutedPath[] = [];
@@ -321,6 +337,7 @@ export function routeCablePaths(
       results.push({
         path: lanePath,
         strategy: 'lane-router',
+        laneOutcome: laneOutcomes?.[index],
         valid: true,
         fromPedalId: req.fromPedalId,
         toPedalId: req.toPedalId,
@@ -339,6 +356,7 @@ export function routeCablePaths(
     results.push({
       path: result.path,
       strategy: result.strategy,
+      laneOutcome: laneOutcomes?.[index],
       valid: result.valid,
       validation: result.validation,
       fromPedalId: req.fromPedalId,

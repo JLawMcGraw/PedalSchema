@@ -82,17 +82,28 @@ describe('lane router acceptance', () => {
         detectCableCrossings(rcs.map((rc) => ({ id: rc.cable.id, points: rc.path }))).length;
       expect(crossings(withLanes)).toBeLessThanOrEqual(crossings(without) + 1);
 
-      // Adoption bookkeeping: a lane-routed cable differs from fallback in
-      // that separateParallelRuns kept it fixed; approximate adoption by
-      // orthogonality + validity (fallback A* paths are also orthogonal, so
-      // count via the internal marker: identical to the without-run means
-      // likely fallback). Conservative proxy: count paths that differ.
+      // Adoption bookkeeping. This used to be a "conservative proxy" - count
+      // the cables whose path differs from the no-lane run - because nothing
+      // recorded which router actually served a cable. `laneOutcome` does, so
+      // count it exactly instead of inferring it.
       totalCables += withLanes.length;
-      withLanes.forEach((rc, i) => {
-        const other = without[i];
-        const same = JSON.stringify(rc.path) === JSON.stringify(other.path);
-        if (!same) laneRouted++;
-      });
+      for (const rc of withLanes) {
+        if (rc.laneOutcome === 'lane-routed' || rc.laneOutcome === 'shortcut') laneRouted++;
+        // Every cable must carry an outcome when the lane router ran at all.
+        expect(rc.laneOutcome, `no laneOutcome on ${rc.cable.id}`).toBeDefined();
+      }
+
+      // The reconciliation that keeps the diagnostic honest: a cable reports
+      // strategy 'lane-router' exactly when its outcome was a corridor success.
+      // If these two ever disagree, one of them is lying and every count built
+      // on either is wrong.
+      for (const rc of withLanes) {
+        const servedByCorridor = rc.laneOutcome === 'lane-routed' || rc.laneOutcome === 'shortcut';
+        expect(
+          rc.strategy === 'lane-router',
+          `${rc.cable.id}: strategy=${rc.strategy} but outcome=${rc.laneOutcome}`
+        ).toBe(servedByCorridor);
+      }
     });
   }
 

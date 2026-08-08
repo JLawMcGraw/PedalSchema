@@ -23,6 +23,7 @@ import {
 import { generateObstacles } from '../obstacles';
 import { deriveRowBands, type RowFit } from './rows';
 import { routeCablePaths } from '../cables/route-cables';
+import { isComplexRoute } from '../cables/routing-strategies';
 import type { LaneRouteRequest } from '../lanes';
 import {
   deriveSignalTopology,
@@ -48,7 +49,11 @@ const SPACING_PENALTY_INCHES = 15;
 // Penalty when a cable would have to go through a pedal (in inches)
 const CABLE_COLLISION_PENALTY_INCHES = 50;
 
-// Penalty when cable needs complex routing (channel/perimeter/A*) instead of simple L-path
+// Penalty when a cable needs complex routing (channel/perimeter/A*) instead of
+// the corridor loom or a simple L. WHICH cables those are is decided by
+// isComplexRoute in cables/routing-strategies.ts, next to the cascade it
+// partitions - not by a point-count proxy here, which is how this penalty came
+// to charge 15 of the 27 cables the corridor router served correctly.
 const COMPLEX_ROUTING_PENALTY_INCHES = 10;
 
 // Penalty for signal flow violations within a row (chain should read in one
@@ -238,7 +243,12 @@ export function calculateRoutingCost(
     const routedDist = calculatePathLength(path) / scale;
     const directDist = dist(fromPos, toPos) / scale;
 
-    if (path.length > 3) {
+    // Ask the router what it DID, rather than counting the vertices it emitted.
+    // `path.length > 3` meant "not a simple L" until P1.5 unified the routers;
+    // afterwards it charged the corridor loom, which is four points by
+    // construction, and both L strategies, which are 4-5 with their standoffs.
+    // See isComplexRoute for the measurement that killed it.
+    if (isComplexRoute(rp.strategy)) {
       complexRoutingPenalty += COMPLEX_ROUTING_PENALTY_INCHES;
       complexRoutingCount++;
     }

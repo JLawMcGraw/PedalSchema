@@ -79,9 +79,57 @@ export interface LaneRouteRequest {
   toPedalId: string | null;
 }
 
+/**
+ * Why a cable did or did not get a corridor route.
+ *
+ * A null path used to mean any of four unrelated things, and downstream they
+ * collapsed further: route-cables sees only `lanePath === null` and records
+ * whichever fallback rung succeeded. So the strategy tally could say a cable
+ * fell back but never why - and `evicted` is exactly the why that matters,
+ * because it is the `assignLanes` cliff.
+ */
+export type LaneOutcome =
+  /** Facing-jack shortcut: connected directly, never entered the corridor graph. */
+  | 'shortcut'
+  /** Seated in a lane and the realized geometry validated. */
+  | 'lane-routed'
+  /** An endpoint's standoff attaches to no corridor at all. */
+  | 'unattached'
+  /** Corridors exist at both ends but no sequence connects them. */
+  | 'no-corridor-path'
+  /** Corridor over capacity - this cable lost its seat. THE CLIFF. */
+  | 'evicted'
+  /** A lane was seated; the realized path then hit a pedal. */
+  | 'validation-failed';
+
+/** A corridor that was asked to seat more cables than it can hold. */
+export interface CorridorPressure {
+  corridorId: number;
+  /** Lanes the corridor can seat at MIN_LANE_SPACING. */
+  capacity: number;
+  /** Cables that wanted to traverse it, before any eviction. */
+  demanded: number;
+  /** How many were evicted to bring demand within capacity. */
+  evicted: number;
+}
+
+export interface LaneDiagnostics {
+  /** One per request, in request order. */
+  outcomes: LaneOutcome[];
+  /** Over-capacity corridors only. Empty means the cliff never fired. */
+  pressure: CorridorPressure[];
+  /** Cables evicted for capacity. Not the same as cables that fell back. */
+  evictedCount: number;
+}
+
 export interface LaneRouteResult {
   /** Routed paths in request order; null = corridor routing unavailable, caller falls back */
   paths: Array<Point[] | null>;
+  /**
+   * Why each cable landed where it did, plus which corridors are over
+   * subscribed. Purely observational - nothing here changes geometry.
+   */
+  diagnostics: LaneDiagnostics;
 }
 
 // ---------------------------------------------------------------------------
@@ -333,10 +381,23 @@ function corridorCapacity(corridor: Corridor): number {
  * config-matrix asserts determinism and idempotence, and a Set iteration order
  * would quietly violate both.
  *
- * @returns cable indices that could not be seated and must fall back
+ * @returns the cable indices that could not be seated and must fall back, plus
+ *          the corridors that were over capacity. The pressure record is what
+ *          makes the cliff observable: an eviction count alone says the board
+ *          is crowded, while pressure says WHERE, which is the difference
+ *          between a symptom and a diagnosis.
  */
-function assignLanes(corridors: Corridor[], traversals: Traversal[]): Set<number> {
+function assignLanes(
+  corridors: Corridor[],
+  traversals: Traversal[]
+): { evicted: Set<number>; pressure: CorridorPressure[] } {
   const evicted = new Set<number>();
+  /** Demand per corridor BEFORE any eviction, so pressure is not self-erasing. */
+  const initialDemand = new Map<number, number>();
+  for (const t of traversals) {
+    initialDemand.set(t.corridorId, (initialDemand.get(t.corridorId) ?? 0) + 1);
+  }
+  const evictedFrom = new Map<number, number>();
 
   const groupRemaining = (): Map<number, Traversal[]> => {
     const byCorridor = new Map<number, Traversal[]>();
@@ -367,6 +428,7 @@ function assignLanes(corridors: Corridor[], traversals: Traversal[]): Set<number
       return lenA !== lenB ? lenA - lenB : a.cableIndex - b.cableIndex;
     })[0];
     evicted.add(victim.cableIndex);
+    evictedFrom.set(worst.corridorId, (evictedFrom.get(worst.corridorId) ?? 0) + 1);
   }
 
   for (const [corridorId, list] of groupRemaining()) {
@@ -390,7 +452,25 @@ function assignLanes(corridors: Corridor[], traversals: Traversal[]): Set<number
     });
   }
 
-  return evicted;
+  // Only corridors that were genuinely over subscribed. Reported against
+  // INITIAL demand: evicting a cable removes it from every corridor it crossed,
+  // so measuring afterwards would show a corridor at capacity and hide that it
+  // was the one that caused the eviction.
+  const pressure: CorridorPressure[] = [];
+  for (const corridorId of [...initialDemand.keys()].sort((a, b) => a - b)) {
+    const demanded = initialDemand.get(corridorId)!;
+    const capacity = corridorCapacity(corridors[corridorId]);
+    if (demanded > capacity) {
+      pressure.push({
+        corridorId,
+        capacity,
+        demanded,
+        evicted: evictedFrom.get(corridorId) ?? 0,
+      });
+    }
+  }
+
+  return { evicted, pressure };
 }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +498,9 @@ export function routeCablesWithLanes(
   const paths: Array<Point[] | null> = requests.map(() => null);
   const planned: Array<PlannedRoute | null> = [];
   const traversals: Traversal[] = [];
+  // Every cable ends up with exactly one of these. Seeded pessimistically so a
+  // path that is never reached cannot be silently reported as a success.
+  const outcomes: LaneOutcome[] = requests.map(() => 'no-corridor-path');
 
   // --- Plan corridor sequences ------------------------------------------------
   requests.forEach((req, index) => {
@@ -445,6 +528,7 @@ export function routeCablesWithLanes(
       if (isPathClear(direct, obstacles.boxes, endpointBoxes(requests[index], obstacles))) {
         planned.push(null);
         paths[index] = direct;
+        outcomes[index] = 'shortcut';
         return;
       }
     }
@@ -453,12 +537,14 @@ export function routeCablesWithLanes(
     const goalC = attachCorridor(corridors, toStub);
     if (startC < 0 || goalC < 0) {
       planned.push(null);
+      outcomes[index] = 'unattached';
       return;
     }
 
     const seq = findCorridorPath(corridors, startC, goalC, fromStub, toStub);
     if (!seq) {
       planned.push(null);
+      outcomes[index] = 'no-corridor-path';
       return;
     }
 
@@ -486,7 +572,8 @@ export function routeCablesWithLanes(
 
   // Cables the corridors could not seat. They fall back individually; the rest
   // keep their lanes. This used to be all-or-nothing for the whole board.
-  const evicted = assignLanes(corridors, traversals);
+  const { evicted, pressure } = assignLanes(corridors, traversals);
+  for (const index of evicted) outcomes[index] = 'evicted';
 
   // --- Realize geometry --------------------------------------------------------
   planned.forEach((plan, index) => {
@@ -562,10 +649,16 @@ export function routeCablesWithLanes(
     // Shared validation policy (stub exemptions at the ends)
     if (isPathClear(path, obstacles.boxes, endpointBoxes(requests[index], obstacles))) {
       paths[index] = path;
+      outcomes[index] = 'lane-routed';
+    } else {
+      outcomes[index] = 'validation-failed';
     }
   });
 
-  return { paths };
+  return {
+    paths,
+    diagnostics: { outcomes, pressure, evictedCount: evicted.size },
+  };
 }
 
 function dedupe(path: Point[]): Point[] {

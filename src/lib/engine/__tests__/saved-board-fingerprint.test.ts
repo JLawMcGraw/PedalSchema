@@ -169,6 +169,21 @@ describe.skipIf(!DUMP)('saved board fingerprint', () => {
           rc.path.map((p) => `(${Math.round(p.x)},${Math.round(p.y)})`).join(' '));
       }
 
+      // Why the corridor router did or did not serve each cable. `strategy`
+      // above names the rung that SUCCEEDED, so every corridor refusal looks
+      // alike there; this is the only place 'evicted' - the assignLanes cliff -
+      // is distinguishable from an ordinary unplannable cable.
+      emit('');
+      const outcomeTally = new Map<string, number>();
+      for (const rc of derived.routedCables) {
+        const key = rc.laneOutcome ?? '(lane router off)';
+        outcomeTally.set(key, (outcomeTally.get(key) ?? 0) + 1);
+      }
+      emit('LANE OUTCOMES  (why the corridor router served it, or did not)');
+      for (const key of [...outcomeTally.keys()].sort()) {
+        emit(`  ${key.padEnd(18)} ${String(outcomeTally.get(key)).padStart(3)}`);
+      }
+
       emit('');
       emit(`COUNTS  scored=${cost?.cableDetails.length ?? 0} drawn=${derived.routedCables.length}` +
         `  (a mismatch is the endpoint-drop asymmetry)`);

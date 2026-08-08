@@ -209,6 +209,49 @@ export const ROUTING_STRATEGIES = [
 export type RoutingStrategy = (typeof ROUTING_STRATEGIES)[number];
 
 /**
+ * Strategies that are a GOOD result - the cable took an ordinary shape.
+ *
+ * Listed as the small set rather than its complement on purpose: a strategy
+ * added to the cascade later gets added at the desperate end (that is why a new
+ * rung is ever needed), so an unrecognised one should default to complex. The
+ * inverse list would default it to free and quietly stop charging for the exact
+ * case the penalty exists to notice.
+ *
+ * 'lane-router' is not in ROUTING_STRATEGIES - it is not a rung of the cascade
+ * but the corridor model that runs before it - and it is the outcome the whole
+ * router is built to produce, so it heads the list.
+ */
+const SIMPLE_ROUTES = new Set<string>([
+  'lane-router',   // the corridor loom - the result P1.5 exists to get
+  'facing',        // two standoffs meeting; there is no route to speak of
+  'direct',        // a straight line
+  'l-horizontal',  // one corner
+  'l-vertical',    // one corner
+]);
+
+/**
+ * Whether a cable's route should be charged COMPLEX_ROUTING_PENALTY_INCHES.
+ *
+ * This replaces `path.length > 3` in routing-cost.ts, which was the same
+ * statement before P1.5 and stopped being one after it. Measured on both saved
+ * boards on 2026-08-08, the point-count test charged 21 of 33 cables and 15 of
+ * those were 'lane-router' - the tidy loom the corridor model exists to build,
+ * which is four points before anything has gone wrong. Both L strategies were
+ * charged too, though the penalty's own comment names the "simple L-path" as
+ * the thing it is NOT about. A manhattanized L with a standoff at each end is
+ * 4-5 points.
+ *
+ * 'fallback-invalid' is deliberately NOT complex: an unroutable cable is
+ * already charged twice CABLE_COLLISION_PENALTY_INCHES by `routingFailures`,
+ * and charging it here as well would make one defect show up as two dimensions
+ * in a score explanation that is supposed to add up.
+ */
+export function isComplexRoute(strategy: RoutingStrategy | 'lane-router'): boolean {
+  if (strategy === 'fallback-invalid') return false; // routingFailures owns this
+  return !SIMPLE_ROUTES.has(strategy);
+}
+
+/**
  * Result of cable routing with validation info
  */
 export interface CableRouteResult {
