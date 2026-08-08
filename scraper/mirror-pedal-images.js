@@ -138,16 +138,16 @@ const PRODUCT_PAGES = {
  *                        (detectOutlineRect). For a photo whose drop shadow
  *                        no local test can separate from the pedal. Only
  *                        valid for a rectangular pedal shot square-on.
- *            'outline'   clear outside the detected outline AND restore
- *                        anything the fill took INSIDE it. USE WITH CARE and
- *                        currently used by nothing: restoring the whole
- *                        rectangle squares off a pedal whose sides taper,
- *                        filling the taper with background. Tried on the
- *                        DD-7, whose edge columns ramp 20:23% 40:64% 60:93%,
- *                        and it turned x=22..60 solid white - visible
- *                        immediately as a white block beside the pedal.
- *                        Prefer `close`, which only fills gaps BETWEEN
- *                        opaque pixels and so cannot alter the silhouette.
+ *
+ * There was also an 'outline' mode - clear outside the detected outline and
+ * RESTORE anything the fill took inside it. It was deleted on 2026-08-08 after
+ * being adopted by nothing. Recorded so it is not reinvented: restoring the
+ * whole rectangle squares off a pedal whose sides taper, filling the taper with
+ * background. Tried on the DD-7, whose edge columns ramp 20:23% 40:64% 60:93%,
+ * it turned x=22..60 solid white - a white block beside the pedal, visible
+ * immediately. `close` is the right tool, because it only fills gaps BETWEEN
+ * opaque pixels and so cannot alter the silhouette.
+ *
  *   strict   skip gradient-chaining and use only the strict border-colour
  *            match, for a pedal whose soft top edge the chain walks down
  *            and eats. Costs the ability to follow a backdrop that ramps.
@@ -597,9 +597,6 @@ async function knockOutBackground(buf, useGradient = true, bgTol = BG_TOL) {
  * why it is opt-in per pedal (`mode: 'rect'`) and not the default.
  */
 const OUTLINE_MIN_EDGE = 12;
-/** Band just inside the outline still left to the fill, so the slivers of
- *  backdrop at a pedal's rounded corners are still cleared. */
-const OUTLINE_CORNER_MARGIN = 0.03;
 /** Longest transparent run, as a share of height, that closeVerticalGaps will
  *  fill. Long runs are not eaten slices - they are the space between a scrap
  *  of background and the pedal, and filling them paints a bar down the side. */
@@ -882,42 +879,6 @@ async function trimBackground(buf, opts = {}) {
       cut = await knockOutBackground(buf, false, opts.bgTol);
     }
     if (!cut.ok) return { buf, type: null, trimmed: false, rejected: cut.status };
-    if (opts.outline) {
-      // A NEUTRAL pedal on a NEUTRAL backdrop cannot be separated pixel by
-      // pixel - that is the one finding this whole exercise keeps arriving
-      // at. White DD-7, grey GEB-7, light Small Clone and silver Timeline all
-      // fail the same way: the fill walks into the body because the body is
-      // the same colour as what it is standing on.
-      //
-      // The outline, though, is still recoverable globally (detectOutlineRect
-      // pools gradient along whole rows and columns). So stop asking the fill
-      // to be right about the interior at all: clear outside the outline, and
-      // RESTORE anything the fill took inside it. Alpha was only zeroed and
-      // PNG keeps the RGB of transparent pixels, so the photograph returns
-      // exactly - white top edges included.
-      //
-      // A thin margin just inside the outline is left to the fill, so the
-      // slivers of backdrop at a pedal's rounded corners still go.
-      const r = await detectOutlineRect(cut.buf);
-      const { data: px, info } = await sharp(cut.buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-      const { width: W, height: H, channels: C } = info;
-      const margin = Math.max(2, Math.round(Math.min(r.x1 - r.x0, r.y1 - r.y0) * OUTLINE_CORNER_MARGIN));
-      for (let y = 0; y < H; y++) {
-        for (let x = 0; x < W; x++) {
-          const i = (y * W + x) * C;
-          const outside = x < r.x0 || x > r.x1 || y < r.y0 || y > r.y1;
-          if (outside) { px[i + 3] = 0; continue; }
-          // Left to the fill only at the CORNERS - near an edge in BOTH axes.
-          // Applying the margin along whole edges instead cost the GEB-7 its
-          // top: rows 0-2 came back 2-11% opaque, because a white edge inside
-          // that band is still the fill's to eat, which is the whole bug.
-          const nearX = x < r.x0 + margin || x > r.x1 - margin;
-          const nearY = y < r.y0 + margin || y > r.y1 - margin;
-          if (!(nearX && nearY) && px[i + 3] <= 200) px[i + 3] = 255;
-        }
-      }
-      cut = { ...cut, buf: await sharp(px, { raw: { width: W, height: H, channels: C } }).png().toBuffer() };
-    }
     if (opts.rect) {
       // The knockout has already taken the backdrop it CAN identify (which
       // includes the white slivers at the pedal's rounded corners). What is
@@ -1121,7 +1082,6 @@ async function main() {
     // carries a drop shadow the knockout cannot separate. See PEDAL_OVERRIDES.
     const candidateOpts = {
       rect: override.mode === 'rect',
-      outline: override.mode === 'outline',
       close: override.close === true,
       strict: override.strict === true,
       bgTol: override.bgTol,
