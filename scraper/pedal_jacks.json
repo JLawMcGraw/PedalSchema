@@ -1933,6 +1933,111 @@
           "label": "IN"
         }
       ]
+    },
+    {
+      "manufacturer": "MXR",
+      "name": "Phase 90",
+      "confidence": "confirmed",
+      "sourceUrl": "https://cdn11.bigcommerce.com/s-n26aknlnlm/products/589/images/6193/11101000001.MAIN__38391.1663874793.386.513.jpg?c=2",
+      "notes": "Read off Dunlop's own top-down product photograph, where the enclosure is SILKSCREENED 'OUTPUT' beside the left jack and 'INPUT' beside the right, with both barrels visible. A top-down photograph cannot fall foul of the mirroring trap the way a face-on rear-panel drawing does, and the orientation is fixed independently by the footswitch sitting at the front edge and the SPEED knob at the rear. Confirmed at magnification rather than at thumbnail size. The M101 manual (https://www.jimdunlop.com/content/manuals/M101.pdf) names both jacks but never says which side, which is why this pedal sat unresearched since 2026-07-31. Silhouette measurement puts the left barrel 47.5% down the body; the right jack is at the same height but does not clear the enclosure edge in this photo's slight perspective, so both positions are recorded as approximate. DC IN is on the rear edge on this enclosure but is NOT visible in a top-down view, so it is omitted rather than guessed.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 47,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 47,
+          "label": "INPUT"
+        }
+      ]
+    },
+    {
+      "manufacturer": "MXR",
+      "name": "Dyna Comp",
+      "confidence": "confirmed",
+      "sourceUrl": "https://cdn11.bigcommerce.com/s-n26aknlnlm/products/591/images/6205/11102000001.MAIN__44037.1663874793.386.513.jpg?c=2",
+      "notes": "Read off Dunlop's own top-down product photograph: 'OUTPUT' silkscreened beside the left jack and 'INPUT' beside the right, both barrels visible. Evidence taken from THIS pedal's photograph rather than inferred from the Phase 90 sharing the enclosure - the three MXR compacts were each confirmed separately. Note the top face also carries a knob labelled OUTPUT, which is a level control and not the jack; the jack labels are the vertical ones on the side walls. DC IN is on the rear edge but not visible from above, so it is omitted rather than guessed.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 47,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 47,
+          "label": "INPUT"
+        }
+      ]
+    },
+    {
+      "manufacturer": "MXR",
+      "name": "Carbon Copy",
+      "confidence": "confirmed",
+      "sourceUrl": "https://cdn11.bigcommerce.com/s-n26aknlnlm/products/607/images/6299/11169000001.MAIN__89194.1663874794.386.513.jpg?c=2",
+      "notes": "Read off Dunlop's own top-down product photograph: 'OUTPUT' silkscreened beside the left jack and 'INPUT' beside the right, both barrels visible. Confirmed from this pedal's own photograph, not inherited from the other MXR compacts. DC IN is on the rear edge but not visible from above, so it is omitted rather than guessed.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 47,
+          "label": "OUTPUT"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 47,
+          "label": "INPUT"
+        }
+      ]
+    },
+    {
+      "manufacturer": "Dunlop",
+      "name": "Cry Baby GCB95",
+      "confidence": "confirmed",
+      "sourceUrl": "https://www.jimdunlop.com/content/manuals/GCB95.pdf",
+      "notes": "TWO independent sources agreeing, which is what settled it. (1) Dunlop's top-down product photograph shows the words 'AMPLIFIER' and 'INSTRUMENT' MOULDED into the left and right side walls respectively, with the jack openings visible beside each. (2) The GCB95 documentation describes the output jack on the LEFT side and the input on the RIGHT. The photograph alone was not enough: a treadle's toe and heel are hard to tell apart from above, and reading the orientation backwards would have mirrored the entry - the same failure mode the rear-panel drawings are rejected for. The second source fixes the orientation without depending on that judgement. Dunlop name the jacks by what plugs in: INSTRUMENT is the input (guitar) and AMPLIFIER is the output. Positions along the side walls are approximate. No DC jack is recorded: the GCB95 takes a battery or an ECB003 adaptor, and the adaptor jack is not visible in a top-down view.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 50,
+          "label": "AMPLIFIER"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 50,
+          "label": "INSTRUMENT"
+        }
+      ]
+    },
+    {
+      "manufacturer": "Dunlop",
+      "name": "Fuzz Face",
+      "confidence": "confirmed",
+      "sourceUrl": "https://cdn11.bigcommerce.com/s-n26aknlnlm/products/1165/images/7305/11064000001.MAIN__26188.1663874800.386.513.jpg?c=2",
+      "notes": "Read off Dunlop's own top-down product photograph, and it contradicts the default assumption in BOTH respects - which is exactly the kind of pedal that should never have been left to a fallback. The round enclosure carries 'IN' and 'OUT' silkscreened on the REAR (top) edge, not on the sides, with both barrels visible there. And the lateral order is REVERSED from a compact: IN sits left of centre and OUT right of centre, where a BOSS or MXR box has input right and output left. An assumed layout would have got the edge wrong and then the side wrong as well. Positions along the rear edge are read from the photograph and are approximate. No DC jack: this pedal is battery-only, which is why none appears on the enclosure.",
+      "jacks": [
+        {
+          "jackType": "input",
+          "side": "top",
+          "positionPercent": 38,
+          "label": "IN"
+        },
+        {
+          "jackType": "output",
+          "side": "top",
+          "positionPercent": 61,
+          "label": "OUT"
+        }
+      ]
     }
   ]
 }
