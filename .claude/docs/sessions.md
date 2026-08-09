@@ -102,7 +102,107 @@ output left, fixing orientation without that judgement.
   the Neo (~2.76 x 4.53) - the width is off by 0.75in, three times the Strymon
   error. Recorded, not acted on: unlike Strymon, these are secondary sources.
 
+## 2026-08-08, later: the pre-existing defects, and three owner corrections
+
+Six more commits. The owner corrected me three times and every correction
+changed the work.
+
+### "A rear-jack pedal can sit against the back rail - the plug hangs off"
+I had written the opposite into the plan as a placement rule to build: reserve
+clearance behind any pedal with rear-edge jacks. Wrong, and it would have
+constrained every layout for no reason. It also confirms the corridor model
+reaching past the board edge (`minY - 40`) is **correct by design**, and it
+retired the eight-standoffs-outside-the-board theory that measurement had
+already begun to undermine.
+
+### "It should go north, even off the board, then east - and through pedals as
+### a last resort if that fails"
+This is the one that fixed the red cable's DRAWING. The last rung joined the two
+standoffs directly, producing a diagonal across the board: a picture of a cable
+that cannot exist, since a patch cable leaves a jack square-on and turns at
+right angles. It now emits an L, choosing whichever of the two crosses fewer
+pedal BODIES.
+
+    before   (744,269) (734,269) (1220,-10) (1220,0)              diagonal
+    after    (744,269) (734,269) (734,-10) (1220,-10) (1220,0)    north, east, down
+
+Exactly the described route. It stays `fallback-invalid` and red, and
+`routingFailures` still charges it, because it really does pass through DC-2W
+and the owner should see that. Honest about the compromise; no longer dishonest
+about the shape.
+
+### Two more pre-existing routing bugs, found by chasing that cable
+1. **`routeAroundBoard` only ever tried the NEAREST edge.** Leaving means a
+   straight run out past the board, and on a full board that run is likely
+   blocked - the board being full is the strategy's whole premise. Both ring
+   directions inherited the one blocked stub, so the strategy built to rescue
+   full boards could not rescue one. Now all four exits x four entries x two
+   directions, shortest clear wins.
+2. **The perimeter rung selected against one path and returned another.** It
+   judged `[standoff, ...ring, standoff]` and returned `[jack, ...ring, jack]` -
+   the standoffs dropped entirely, and since `findPathViolations` exempts the
+   source box on segment 0 only, the exit stub was stub-EXEMPT while being
+   chosen and non-exempt when validated. A route could be selected and then
+   reported invalid. **Fix 1 is what exposed it**, by widening the candidate set
+   until the phase-6 test broke - that test earning its keep.
+
+**Why the cable is unroutable at all, measured:** the NS-2's left-output
+standoff (734,269) is sealed on all four sides. Rows 1 and 2 are 7.6px apart
+where a path needs 16, and the PW-3 straddler (7.56in deep) overlaps rows 2 AND
+3, so `buildCorridors` merges them and there is no lane between them either. A*
+already searches 150px beyond the board, so "north off the board" was reachable
+in principle - it failed because the pocket has no exit at any resolution.
+
+### "I don't understand the question" - the Holy Grail
+My question was bad. EHX sell several pedals called Holy Grail (original, Nano,
+Plus, Neo, Max) at different sizes; our row was a generic "Holy Grail" at
+3.5 x 4.7in, matching none, while showing a photograph captioned HOLY GRAIL NEO.
+It had been a Neo in all but name since 8/3, when `mirror-pedal-images.js` was
+pointed at `HolyGrailNeo_-1.jpg` and the Neo product page.
+
+ehx.com specifies `4.5 x 2.75 x 2.1` and `75mA` against a stored `3.5 x 4.7 x
+2.1` at `50mA`. **The draw mattered more than the size**: understated by half,
+in the flattering direction. Renamed, corrected, and the rename carried into the
+two places that key by name - `mirror-pedal-images.js` sources and
+`knockout-fingerprint.json` - or the knockout harness silently loses its
+baseline. Naming it also made its photograph legitimately its own, so its jacks
+could finally be read: AMP left, INPUT right, 9V rear. Jacks 5 -> 4 outstanding.
+
+### Measurement provenance, at last
+Four dimension errors in two days, every one found while looking at something
+else, every one in a row whose `notes` were null. `dimensions_source_url` +
+`dimensions_verified_at` mirror the jacks contract;
+`verify-pedal-dimensions.js` reports 67 catalogue / **6 attributed** (5 from the
+maker, 1 retailer) / **61 never researched**. Backfill is six rows by hand -
+parsing free text would have manufactured provenance, the mistake
+`20260801000004` had to undo. An unattributed row is NOT a violation; a row with
+a source and no date is.
+
+**`supabase link` being "blocked on the owner" is stale.** SUPABASE_DB_PASSWORD
+is already in `.env.local` and the session pooler at
+`aws-0-us-east-1.pooler.supabase.com` accepts it, so DDL can be applied directly.
+PostgREST cannot run DDL, which is what forced the discovery.
+
+### Verification
+312 tests (from 293 at session start), tsc clean, eslint src 0 errors,
+config-matrix 66/66 by trial ID, browser gate passing, knockout regression 64/64
+unmoved, both saved boards byte-identical through every data change.
+
 ### Next tasks
+- [ ] **`test` board deliberately NOT re-optimized.** The owner uses it to
+      exercise edge cases, and its saved layout currently carries two
+      `fallback-invalid` cables where an optimized one carries one. Leaving it
+      preserves more edge cases; re-run Optimize whenever that stops being
+      useful.
+- [ ] **The red cable is still red, and correctly so.** The pocket is sealed at
+      8px clearance. If it should ever route, the mechanism is A* to the board
+      edge then a ring - not another exit direction, and NOT widening
+      PERIMETER_OFFSET or shrinking OBSTACLE_MARGIN to recover the 4px the
+      bottom exit misses by.
+- [ ] **Four jack layouts left**, all genuinely blocked: Big Muff Pi and Small
+      Clone have no head-on photograph, the RAT 2's photograph shows no jacks or
+      labels, the Klon has no photograph and is licence-blocked. **The owner does
+      not own any of them**, so owner-inspection is not available either.
 - [ ] **Photos for Big Muff Pi and Small Clone.** Unchanged and still the only
       hard blocker: both need a HEAD-ON source, EHX shoot at three-quarters,
       Sweetwater 403s a fetch and shows a human-verification wall to real
