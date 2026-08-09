@@ -2019,6 +2019,33 @@
       ]
     },
     {
+      "manufacturer": "Electro-Harmonix",
+      "name": "Holy Grail Neo",
+      "confidence": "confirmed",
+      "sourceUrl": "https://cdn11.bigcommerce.com/s-4hc0jwsnnq/images/stencil/original/products/14681/53555/92763-tmp526B__44720.1715113298.jpg?c=1",
+      "notes": "Read off the head-on top-down photograph this pedal already uses as its catalogue image, which cannot fall foul of the mirroring trap. The enclosure is printed 'AMP' beside the LEFT jack and 'INPUT' beside the RIGHT, with both barrels visible, and '9V' with a centre-negative symbol on the REAR edge. Orientation is fixed independently by the footswitch at the front edge and the REVERB knob at the rear. Silhouette measurement puts the two side barrels at 48.6% and 48.3% down the body - symmetric, as the printing suggests - so both are recorded at 48; the power jack's position along the rear edge is approximate. EHX name the output by what it plugs into, so AMP is the output. This entry became readable only once the row was correctly identified as a NEO (migration 20260808000002); before that its photograph was of a different product from the one the row claimed to be.",
+      "jacks": [
+        {
+          "jackType": "output",
+          "side": "left",
+          "positionPercent": 48,
+          "label": "AMP"
+        },
+        {
+          "jackType": "input",
+          "side": "right",
+          "positionPercent": 48,
+          "label": "INPUT"
+        },
+        {
+          "jackType": "power",
+          "side": "top",
+          "positionPercent": 50,
+          "label": "9V"
+        }
+      ]
+    },
+    {
       "manufacturer": "Dunlop",
       "name": "Fuzz Face",
       "confidence": "confirmed",

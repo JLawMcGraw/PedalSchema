@@ -76,7 +76,7 @@ const PRODUCT_PAGES = {
   // because the automated gates cannot tell: the side-on Small Clone passed
   // the footprint check at 0.99x and a silhouette stays rectangular whichever
   // face you photograph.
-  'Electro-Harmonix Holy Grail': [
+  'Electro-Harmonix Holy Grail Neo': [
     'https://cdn11.bigcommerce.com/s-4hc0jwsnnq/images/stencil/original/products/14681/53555/92763-tmp526B__44720.1715113298.jpg?c=1',
     'https://www.ehx.com/wp-content/uploads/2020/10/HolyGrailNeo_-1.jpg',
     'https://www.ehx.com/products/holy-grail-neo/',
