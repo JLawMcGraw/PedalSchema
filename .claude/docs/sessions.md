@@ -189,11 +189,20 @@ config-matrix 66/66 by trial ID, browser gate passing, knockout regression 64/64
 unmoved, both saved boards byte-identical through every data change.
 
 ### Next tasks
-- [ ] **`test` board deliberately NOT re-optimized.** The owner uses it to
-      exercise edge cases, and its saved layout currently carries two
-      `fallback-invalid` cables where an optimized one carries one. Leaving it
-      preserves more edge cases; re-run Optimize whenever that stops being
-      useful.
+- [x] **`test` board optimized and SAVED.** I had argued for leaving it, to
+      preserve edge cases. The owner's reason for doing it anyway is better:
+      *someone could have a board this complex*, so the dense path has to be
+      exercised rather than reasoned about. It was worth it - nothing had ever
+      run optimize-THEN-PERSIST end to end on a 22-pedal board, and that is the
+      combination the DEFERRABLE chain-position constraint (20260801000005)
+      exists for. New `optimize-and-save.js` drives the real UI (the toolbar
+      button, not a store hook, because handleSave prunes before it upserts)
+      and re-reads the database to prove the write landed:
+
+          22 pedals, optimize settled in 295ms
+          invalid cables 2 -> 1, 5 of 22 placements changed
+          DB: 5 of 22 rows changed on disk
+          saved layout now within 1.32 of its own optimum (526.55 vs 525.23)
 - [ ] **The red cable is still red, and correctly so.** The pocket is sealed at
       8px clearance. If it should ever route, the mechanism is A* to the board
       edge then a ring - not another exit direction, and NOT widening
