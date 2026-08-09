@@ -30,6 +30,7 @@ import {
   OBSTACLE_MARGIN,
   dist,
   isPathClear,
+  findPathViolations,
 } from '../geometry';
 
 import { findPathAStar, getStandoffPoint } from '../pathfinding';
@@ -505,9 +506,40 @@ function routeCablePath(
     return { path: perimeterPath(around), strategy: 'perimeter' };
   }
 
-  // Fallback: return invalid direct path (will be marked red by renderer)
+  // Last resort: route THROUGH the pedals, deliberately, and say so.
+  //
+  // A sealed jack is a real situation rather than a bug to route around. On the
+  // `test` board the NS-2's left output is enclosed on all four sides - the
+  // row-1/row-2 gap is 7.6px where a path needs 2 x OBSTACLE_MARGIN, and the
+  // PW-3 straddler merges rows 2 and 3 so there is no lane between them either.
+  // No corridor, no perimeter ring and no A* route exists at that clearance. In
+  // the room you press the cable in: pedals have chamfers and cables bend.
+  //
+  // This used to join the two standoffs DIRECTLY, which drew a diagonal across
+  // the board - a picture of a cable that could not exist, since a patch cable
+  // leaves a jack square-on and turns at right angles. It stays
+  // `fallback-invalid` so the renderer still draws it red and routingFailures
+  // still charges it: the board really is over-full and should say so. What
+  // changes is that the drawing is now a cable.
+  //
+  // Of the two L-paths, take the one crossing the fewest pedal BODIES - if it
+  // must pass through something, pass through as little as possible. Ties go to
+  // horizontal-first for determinism, which config-matrix asserts.
+  const elbows = [
+    { x: toStandoff.x, y: fromStandoff.y }, // horizontal leg first
+    { x: fromStandoff.x, y: toStandoff.y }, // vertical leg first
+  ];
+  const scored = elbows.map((elbow) => {
+    const candidate = dedupePath([from, fromStandoff, elbow, toStandoff, to]);
+    return {
+      candidate,
+      crossings: findPathViolations(candidate, boxes, { fromBoxIdx, toBoxIdx }).length,
+    };
+  });
+  const best = scored[1].crossings < scored[0].crossings ? scored[1] : scored[0];
+
   return {
-    path: dedupePath([from, fromStandoff, toStandoff, to]),
+    path: best.candidate,
     strategy: 'fallback-invalid',
   };
 }
