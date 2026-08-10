@@ -21,6 +21,25 @@ saved boards        J$ Home 9 on Classic Jr    test 22 on Classic Pro
 
 ---
 
+> **STATUS 2026-08-10.** R1 §1 ("say so") is DONE - the canvas now carries a
+> cable legend and names the reason for every red cable. R2 was already done.
+>
+> **The red cable this whole file was written about no longer exists.** It was
+> the chain-order bug fixed in `b471698` - `applyDefaultOrdering` had a
+> non-total comparator, so the app rendered a chain order the database did not
+> hold - and not a routing limit at all. Both saved boards now draw 0
+> unroutable cables. Everything below about *that cable's* geometry still
+> describes the board it was measured on, but it is no longer a live defect.
+>
+> R1 §3 (A\* to the edge, then a ring) remains unbuilt and still has no board
+> that needs it. R3, R4 and R7 are done. R5 and R6 are unchanged and still
+> blocked on a person.
+>
+> The corridor-attachment follow-up is re-scoped in the 2026-08-10 entry of
+> `sessions.md`: the cause is band merging in `buildCorridors`, not
+> `attachCorridor`, and the payoff is tidiness rather than cable length,
+> because A\* is already shortest-at-clearance.
+
 ## R1 — PARTLY DONE 2026-08-08. Two bugs fixed; the cable itself is unroutable
 
 R2 was built first, and naming the failing endpoint immediately killed the

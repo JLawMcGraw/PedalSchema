@@ -4,6 +4,225 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-10 - The chain order was decided by database row order, and the canvas learns to explain itself
+
+Went looking for a live example of the R1 "say why a cable is red" item and
+found instead that the app was not showing the board it had saved. Two commits:
+`b471698` (the bug) and `b22ffed` (the legend and the explanation).
+
+**Nothing was written to the database, and that is a result rather than an
+omission** - see the last section.
+
+### The app rendered a chain order the database did not hold
+
+`applyDefaultOrdering` returned `orderA - orderB` and nothing else, so two
+pedals sharing a sort key compared equal and `Array.sort` - stable - left them
+in whatever order the CALLER passed. The caller is the editor loader, mapping
+`configuration_pedals` out of a PostgREST embed **with no ORDER BY**, and
+Postgres may hand back an UPDATED row in a new place. Saving a board could
+reorder the chain of the board you reopened, with nobody touching it.
+
+It fell hardest on the one feature whose job is reordering ties: joint
+optimization permutes **swappable groups**, defined as consecutive pedals of
+the SAME CATEGORY - precisely the pedals that tie. The optimizer wrote a chain
+order to the database and the next load discarded it.
+
+On `test`, five pedals in two tie groups (GE-7 / GEB-7 / EQ-200, all
+`category=eq` with no `defaultChainPosition`; DD-7 / Timeline, both `delay` at
+130). Permuting ONLY the input array, every other input byte-identical:
+
+    sorted by chainPosition   invalid 0   evicted 0
+    sorted by id              invalid 2   evicted 3
+    sorted by createdAt       invalid 2   evicted 0
+    reversed                  invalid 8   evicted 3
+    what the live app did     invalid 2   evicted 3
+
+Verified in the app, clean load, `isDirty: false`:
+
+    before   chain 14,15,13,20,18   invalid 2   evicted 3
+    after    chain 13,14,15,18,20   invalid 0   evicted 0
+    DB holds 13,14,15,18,20 - the app now renders what was saved
+
+**The two red cables on `test` were this bug, not a routing limit**, and so
+were the 3 evictions - which RESTORES 8-8's finding that fallback work belongs
+at corridor attachment rather than lane capacity. I had briefly taken those
+evictions as evidence against it.
+
+### Why the fingerprint could never have caught it
+
+The offline fingerprint - the gate used to prove change after change
+behaviour-neutral - **sorts its input by `chainPosition`**, the very key the
+new tie-break uses. So the harness silently supplied the determinism the app
+lacked, and measured a board the app never rendered: 0 invalid where the app
+drew 2. Byte-identity after the fix was PREDICTED on exactly that reasoning
+before it was run, and its holding is what makes the account a mechanism
+rather than a guess.
+
+Same family as the `rails` bug recorded in that same dump script: **a harness
+that normalises something the product does not is not testing the product.**
+
+### Four wrong hypotheses, discarded on measurement
+
+Recorded because each cost a probe and each was killed by data, not argument:
+cost-model vs renderer disagreement (they agree exactly, per-cable);
+`normalizeChain` reordering on load (moves 0 of 22); the amp's `loopType`
+(`parallel` against the fixture's `series` - `loopType` never reaches
+routing); `defaultChainPosition` missing from the offline dump (it is, and it
+changes nothing here). The fifth try - permuting the input array with
+everything else held fixed - was the one that moved.
+
+### The canvas now says what it draws, and why red is red
+
+Four appearances the app documented nowhere. Measured drawable set on `test`:
+`orange 4, green 20, green dashed 1`.
+
+    solid orange    Instrument - guitar to board, board to amp
+    solid green     Patch - pedal to pedal
+    dashed green    Around the board - no room between rows, run it underneath
+    solid red       Will not fit - no route exists
+
+Red was ambiguous IN PRINCIPLE: the renderer painted `cableType: 'power'` and
+`valid: false` the same `#ef4444`. `calculateCables` only ever emits
+'instrument' or 'patch', so red means one thing - but 'power' is mapped as its
+own kind rather than deleted, so the collision would surface in `explain.ts`
+instead of on the canvas.
+
+And a red cable now gives its reason, from facts that already existed on the
+routed cable and had never reached the screen (`laneOutcome` names which END
+found no channel; `validation.violations` names what the line is drawn
+through):
+
+    FZ-1W -> EQ-200 - Neither jack has a clear channel to the rest of the
+    board at 0.2in clearance. Drawn through EQ-200, GE-7, GEB-7.
+
+### Corridor attachment: the cause is upstream, and the detour is not a prize
+
+`attachCorridor` is sound - every failing stub is in the board interior where
+NO corridor exists, missing by 31-167px against an 18px tolerance. The cause
+is `buildCorridors`:
+
+    band 1   y [  0, 204]    6 boxes
+    band 2   y [218, 640]   16 boxes     <- rows 2-4 merged
+
+Rows sit 2.99in and 2.46in apart while pedals run to 5.12in deep, so they
+overlap in y (they interleave in x, so they do not collide) and the transitive
+clustering fuses them. The inter-band corridor computes `lo = 212, hi = 210` -
+width -2, dropped. **Both surviving horizontal corridors are outside the pedal
+area; the interior has none**, and band 2's verticals must clear all three
+merged rows, leaving four of width 4-12px. Hence 8 of 25 cables unattached.
+
+**The +74.4in those cables carry is NOT recoverable** - I framed it as a prize
+and then corrected it. A* returns a shortest axis-aligned clear path, so where
+it drew 53.0in against a 26.1in straight line, no shorter route exists at
+0.2in clearance. Corridors would buy tidiness, not length. And the dropped
+corridor is not tunable: 14px of free space needs 16, and widening a global
+constant to recover 2px is the move recorded going wrong twice.
+
+Remedy if ever wanted: **partial-span horizontal corridors** - corridors from
+actual free space rather than full-width band gaps. Not started.
+
+### Key changes
+
+| File | Change |
+|------|--------|
+| `src/lib/engine/signal-chain/index.ts` | `applyDefaultOrdering` comparator made TOTAL: ties break on stored `chainPosition`, then `id` |
+| `src/app/(dashboard)/editor/[id]/page.tsx` | `.order('chain_position', { referencedTable: 'configuration_pedals' })` on the embed |
+| `src/lib/engine/signal-chain/__tests__/chain-ordering.test.ts` | 3 tests: permutation-invariance, saved order preserved, idempotence |
+| `src/lib/engine/cables/explain.ts` | NEW. `cableAppearance` (one definition of the vocabulary) + `explainRoutingFailure` |
+| `src/lib/engine/cables/__tests__/explain.test.ts` | NEW. 8 tests |
+| `src/components/editor/canvas/cable-legend.tsx` | NEW. Legend + failure block, HTML overlay |
+| `src/components/editor/canvas/cable-renderer.tsx` | Reads `cableAppearance` instead of its own colour/dash expression |
+| `src/components/editor/canvas/editor-canvas.tsx` | Renders the legend, gated on `cablesVisible` |
+| `.claude/scripts/verify-cable-legend.js` | NEW. 22-check cross-reference gate |
+
+### Technical decisions
+
+1. **Ties break on the stored `chainPosition`, not on `id` alone.** The order
+   last saved - by the user or by Optimize - is the one worth preserving; `id`
+   is only the backstop for two pedals sharing a position mid-edit, where
+   returning 0 would put input order back in charge.
+2. **The ORDER BY is defence in depth, not the fix.** The comparator alone
+   makes the result deterministic; the embed order matters because anything
+   else reading `placedPedals` positionally deserves a stable list.
+3. **The vocabulary lives in the engine, not the components.** The legend and
+   the renderer must agree or the legend is lying, and a swatch drifted from
+   its stroke is worse than no legend. It is also the only way to test it:
+   this project has no jsdom and no testing-library, so anything expressed
+   inside a component cannot be checked at all.
+4. **The gate is a cross-reference, not a screenshot.** Each swatch's stroke
+   and dash are compared against a real cable of that kind read out of the
+   rendered SVG. The failure branch, which no saved board reaches, is driven
+   by an in-memory chain reorder through `__loadPedalSchemaRepro` - nothing is
+   written.
+5. **The screenshot still earned its keep.** The DOM cross-reference PASSED on
+   a first legend that was a 19rem block in the top-left covering four pedals -
+   a legend hiding what it explains. Data extraction cannot see occlusion.
+
+### Architecture notes
+
+`explain.ts` is the single definition of cable appearance. `cable-renderer`
+and `cable-legend` both call `cableAppearance`, so a legend row cannot appear
+for a kind the canvas is not drawing, and a swatch cannot drift from its
+stroke. `CLEARANCE_INCHES` derives from `OBSTACLE_MARGIN`, so the number the
+router refused on is the number the user is shown.
+
+The legend is an HTML overlay outside the `<svg>`: it does not scale with zoom
+or pan away, and it needs no pointer events on cable strokes - which are
+disabled because cables render BENEATH pedals and would swallow drags. Below
+`lg` it lifts to `bottom-14`, clear of the mobile FABs, which live at
+`bottom-4` in a SIBLING stacking context and would otherwise collide.
+
+### Verification
+
+    vitest              323 pass, 1 skipped   (from 312 at session start)
+    tsc --noEmit        clean
+    eslint src          0 errors, 24 warnings (pre-existing)
+    config-matrix       66/66 by trial ID
+    lane-router         reconciliation green
+    router-parity       green
+    saved-board fp      BYTE-IDENTICAL through the legend work
+    verify-optimize     PASS in the browser
+    verify-cable-legend 22/22
+    npm run build       clean, .next/server + .next/static present
+
+### Nothing was written to the database, deliberately
+
+The stored data was never wrong - `13,14,15,18,20` was correct on disk
+throughout. The bug was in the READING, so the fix made the app agree with the
+database rather than the other way round. Confirmed across every saved config
+after the fix:
+
+    J$ Home   9 pedals, 11 cables   isDirty=false  unroutable 0  drift 0/9
+    test     22 pedals, 25 cables   isDirty=false  unroutable 0  drift 0/22
+
+Both are fixed points of load. Writing anything would have overwritten good
+data.
+
+### Next tasks
+
+- [ ] **Partial-span horizontal corridors** (`buildCorridors`). The measured
+      remedy for 8 of 25 cables having nothing to attach to. Payoff is
+      TIDINESS - shared lanes, fewer of the board's 8 crossings - **not**
+      length, because A* is already shortest-at-clearance. Size it against
+      that before starting.
+- [ ] **Audit other comparators for totality.** This bug was a `sort` whose
+      comparator returned 0 for distinct items, in a codebase that feeds
+      arrays from PostgREST embeds. `applyDefaultOrdering` is unlikely to be
+      the only one.
+- [ ] **The offline dump normalises what the app leaves arbitrary.** It sorts
+      by `chainPosition` and omits `defaultChainPosition`. Neither matters now
+      that the comparator is total, but the harness is still not the app, and
+      that is twice this file has been the reason a real defect was invisible.
+- [ ] **Re-Optimize `test`** - it sits ~1.3 from its own optimum. A click, and
+      the owner's, since Optimize overwrites a hand-arranged board.
+- [ ] **Photos for Big Muff Pi and Small Clone** - unchanged, still the only
+      hard blocker. Both need a HEAD-ON source; save one by hand and it goes
+      through `/pedals/new`. Closing it also closes two of the four jack gaps.
+- [ ] **Four jack layouts** (Big Muff Pi, Small Clone, RAT 2, Klon) - all
+      genuinely blocked; the owner owns none of them.
+
+---
+
 ## Session: 2026-08-08 - A plan, then all of it; and two beliefs that did not survive being measured
 
 Wrote `.claude/docs/8-8-plan.md` grounded in measurements taken while writing
