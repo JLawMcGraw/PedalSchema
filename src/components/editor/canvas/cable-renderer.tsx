@@ -1,6 +1,7 @@
 'use client';
 
 import type { RoutedCable } from '@/lib/engine/cables/route-cables';
+import { cableAppearance } from '@/lib/engine/cables/explain';
 
 // ============================================================================
 // CABLE RENDERER COMPONENT (purely presentational)
@@ -55,39 +56,37 @@ function roundedPath(path: { x: number; y: number }[]): string {
 }
 
 export function CableRenderer({ routed }: CableRendererProps) {
-  const { cable, path, valid, fromPos, toPos, strategy } = routed;
+  const { path, fromPos, toPos } = routed;
 
   if (path.length < 2) return null;
 
   const pathD = roundedPath(path);
 
-  // Cable colors by type - invalid paths shown in red
-  const baseColor = cable.cableType === 'instrument' ? '#f59e0b' :
-                    cable.cableType === 'power' ? '#ef4444' : '#22c55e';
-  const color = valid ? baseColor : '#ef4444'; // Red for invalid paths
+  /**
+   * Colour and dash come from engine/cables/explain, NOT from a local
+   * expression, because the legend draws its swatches from the same function.
+   * When they were separate the legend could only ever be a copy of this
+   * decision, and a copy is a thing that drifts - a swatch claiming to explain
+   * a stroke it no longer matches is worse than no legend at all.
+   */
+  const { colour: color, dashed } = cableAppearance(routed);
 
   /**
-   * A perimeter cable could not fit between the rows, so routeAroundBoard
-   * sent it around the outside. That is correct, and it is what a player
-   * actually does - run it underneath - but drawn solid it just looks like a
-   * cable taking an inexplicably long way round.
+   * No <title> tooltip on any of these strokes, deliberately - including the
+   * dashed perimeter route, where one would be most useful.
    *
-   * Dashed, because that already reads as "not on the surface".
+   * A title needs pointer events, and the wrapper <g> below disables them for
+   * a load-bearing reason: cables render BENEATH pedals (editor-canvas.tsx),
+   * so a hit-testable cable can swallow the pointer when you drag a pedal
+   * sitting over it. Enabling them on just one stroke is probably safe - a
+   * perimeter route is by definition outside the board, where there are no
+   * pedals to drag - but "probably" is not verifiable here: this project has
+   * no jsdom and no testing-library, so a component cannot be exercised at
+   * all. Shipping an untestable interaction change was the wrong trade.
    *
-   * NOT given a <title> tooltip, deliberately. A title needs pointer events,
-   * and the wrapper <g> below disables them for a load-bearing reason: cables
-   * render BENEATH pedals (editor-canvas.tsx), so a hit-testable cable can
-   * swallow the pointer when you drag a pedal sitting over it. Enabling them
-   * on just this stroke is probably safe - a perimeter route is by definition
-   * outside the board, where there are no pedals to drag - but "probably" is
-   * not verifiable here: no board in the fixtures OR either saved
-   * configuration produces a drawn perimeter route (measured: lane-router 68,
-   * l-horizontal 3, channel 3 across every config-matrix case), and there is
-   * no jsdom or testing-library in this project to exercise the component
-   * without one. Shipping an interaction change with no way to test it, to
-   * annotate a cable nobody currently sees, is the wrong trade.
+   * The legend answers the same question without touching the hit-testing:
+   * it names the dash and the red in plain text beside the board.
    */
-  const isPerimeter = strategy === 'perimeter';
 
   return (
     <g style={{ pointerEvents: 'none' }}>
@@ -99,7 +98,7 @@ export function CableRenderer({ routed }: CableRendererProps) {
         strokeWidth={5}
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeDasharray={isPerimeter ? '10 6' : undefined}
+        strokeDasharray={dashed ? '10 6' : undefined}
       />
       {/* Cable line */}
       <path
@@ -109,7 +108,7 @@ export function CableRenderer({ routed }: CableRendererProps) {
         strokeWidth={3}
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeDasharray={isPerimeter ? '10 6' : undefined}
+        strokeDasharray={dashed ? '10 6' : undefined}
       />
       {/* Jack connection points */}
       <circle cx={fromPos.x} cy={fromPos.y} r={5} fill={color} stroke="#000" strokeWidth={1} />

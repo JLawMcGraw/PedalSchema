@@ -8,6 +8,7 @@ import { useDerivedConfiguration, INCHES_TO_PIXELS } from '@/store/derived';
 import { BoardRenderer } from './board-renderer';
 import { PedalRenderer } from './pedal-renderer';
 import { CableRenderer } from './cable-renderer';
+import { CableLegend } from './cable-legend';
 import { snapToRail, findEmptySpot } from '@/lib/engine/collision';
 import { getCategoryDefaultOrder } from '@/lib/constants/pedal-categories';
 import { getExternalEndpointPx } from '@/lib/engine/cables/endpoints';
@@ -442,6 +443,18 @@ export function EditorCanvas() {
           );
         })}
       </svg>
+
+      {/* What the colours and the dash mean, and why any red cable is red.
+          Outside the <svg> so it ignores zoom and pan - a legend that shrinks
+          when you zoom out is unreadable exactly when the board is busiest.
+          Hidden with the cables, since it describes nothing when they are. */}
+      {cablesVisible && (
+        <CableLegend
+          routedCables={displayedCables}
+          placedPedals={placedPedals}
+          pedalsById={pedalsById}
+        />
+      )}
     </div>
   );
 }
