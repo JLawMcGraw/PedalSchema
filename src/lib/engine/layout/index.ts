@@ -467,7 +467,10 @@ export function calculateGreedyPlacementWithDiagnostics(
         index,
         dist: Math.abs(Math.min(rowY, board.depthInches - clusterDepth) + clusterDepth / 2 - anchorY),
       }))
-      .sort((a, b) => a.dist - b.dist)
+      // Equidistant rows are common on a symmetric board, and the row picked
+      // first steers placement. Tie on index, which is what the stable sort
+      // already yields - written down so it cannot quietly stop being true.
+      .sort((a, b) => (a.dist - b.dist) || (a.index - b.index))
       .map((r) => r.index);
 
   /**

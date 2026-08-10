@@ -64,15 +64,75 @@ export function getExternalEndpointPx(
 }
 
 /**
+ * How much a jack's label says "this is the one a single mono cable goes to".
+ * Higher wins. 0 means the label tells us nothing.
+ *
+ * A pedal can carry two jacks of the same TYPE - stereo A/B pairs, guitar and
+ * bass inputs, a direct out beside the real one. 39 of the 59 catalogued
+ * pedals do, in the 12 label patterns scored below, and 13 of them are on the
+ * two saved boards.
+ *
+ * The label is the only thing that can settle it, because it is what is
+ * silkscreened on the enclosure. Position cannot:
+ *
+ *     BF-3   [OUTPUT A (MONO)] @22   [OUTPUT B] @38
+ *     DD-7   [OUTPUT B] @22          [OUTPUT A (MONO)] @38
+ *
+ * A "lowest position" rule picks the mono jack on the BF-3 and the stereo-only
+ * jack on the DD-7. There is no positional rule that is right for both.
+ *
+ * Each clause below is a real pattern from the catalogue, not a guess at what
+ * might exist. The MONO ones are unambiguous - the pedal says so. The other
+ * three are conventions, and they are the ones to revisit if a board ever
+ * looks wrong:
+ *   - LEFT is the mono jack on a stereo pair, by long convention.
+ *   - GUITAR IN over BASS IN, because this is a guitar pedalboard.
+ *   - the plain OUTPUT over a DIRECT OUT or BYPASS, which are side feeds
+ *     rather than the effected signal path.
+ */
+function monoAffinity(label: string | null | undefined): number {
+  if (!label) return 0;
+  const l = label.toUpperCase();
+  // "OUTPUT A (MONO)", "OUTPUT A/MONO", "MONO OUT", "INPUT-A (MONO)"
+  if (l.includes('MONO')) return 4;
+  if (l.includes('STEREO') || /\bRIGHT\b/.test(l)) return -1;
+  if (/\bLEFT\b/.test(l)) return 3;
+  if (/\bGUITAR\b/.test(l)) return 2;
+  if (/\bBASS\b/.test(l)) return -1;
+  // A bare OUTPUT/INPUT beats a qualified side feed (DIRECT OUT, BYPASS).
+  if (l === 'OUTPUT' || l === 'INPUT') return 1;
+  return 0;
+}
+
+/**
  * Find a jack of a specific type on a pedal.
  * Returns a synthetic jack if not found (for pedals without that jack type).
  * Convention: input/send on the right edge, output/return on the left edge
  * (signal flows right-to-left, guitar on the right, amp on the left).
+ *
+ * When a pedal has SEVERAL jacks of the requested type this used to take
+ * `.find()` - the first one in an array ordered by nothing at all, since the
+ * jacks arrive from a PostgREST embed with no ORDER BY. That silently wired
+ * the DD-7 and the EQ-200 into `OUTPUT B`, a jack that only carries signal in
+ * stereo. See `monoAffinity` for why the label and not the position decides,
+ * and `find-jack.test.ts` for all 12 patterns.
  */
 export function findJack(pedal: Pedal, jackType: 'input' | 'output' | 'send' | 'return'): PedalJack {
   // Try to find the actual jack
-  const jack = pedal.jacks?.find((j) => j.jackType === jackType);
-  if (jack) return jack;
+  const candidates = pedal.jacks?.filter((j) => j.jackType === jackType) ?? [];
+  if (candidates.length > 0) {
+    // Sorted, not scanned, and the comparator is TOTAL: affinity first, then
+    // position, then id. Without that last clause two unlabelled jacks would
+    // compare equal and the array order - the thing we cannot trust - would
+    // be back in charge.
+    const [best] = [...candidates].sort((a, b) => {
+      const affinity = monoAffinity(b.label) - monoAffinity(a.label);
+      if (affinity !== 0) return affinity;
+      if (a.positionPercent !== b.positionPercent) return a.positionPercent - b.positionPercent;
+      return String(a.id).localeCompare(String(b.id));
+    });
+    return best;
+  }
 
   // For send/return, only return synthetic if pedal supports it
   if (jackType === 'send' || jackType === 'return') {

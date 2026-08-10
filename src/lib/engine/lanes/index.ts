@@ -453,8 +453,15 @@ function assignLanes(
       spacing = width / (n - 1);
     }
 
-    // Keep parallel flows parallel: order lanes by run midpoint
-    list.sort((a, b) => (a.alongLo + a.alongHi) - (b.alongLo + b.alongHi));
+    // Keep parallel flows parallel: order lanes by run midpoint.
+    //
+    // The cableIndex tie-break is a no-op TODAY - traversals are pushed in
+    // cable order, so a stable sort already leaves equal midpoints in that
+    // order - and it is here so it stays a no-op. Two cables sharing a
+    // midpoint decide which lane each gets, i.e. what is drawn, and leaving
+    // that to the incoming array order is how the chain-order bug worked.
+    list.sort((a, b) =>
+      ((a.alongLo + a.alongHi) - (b.alongLo + b.alongHi)) || (a.cableIndex - b.cableIndex));
 
     const center = (corridor.lo + corridor.hi) / 2;
     const first = center - ((n - 1) * spacing) / 2;
