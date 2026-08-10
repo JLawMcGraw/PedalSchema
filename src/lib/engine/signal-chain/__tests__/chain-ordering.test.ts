@@ -299,3 +299,80 @@ describe('a loop hub is ordered before the pedals in its loop', () => {
     expect(ids.indexOf('gate1')).toBeGreaterThan(ids.indexOf('od2'));
   });
 });
+
+/**
+ * Ties in the category sort used to be decided by the INPUT ARRAY ORDER.
+ *
+ * `applyDefaultOrdering` compared `defaultChainPosition ?? categoryDefault`
+ * and returned that difference alone, so two pedals of the same category
+ * compared equal and `Array.prototype.sort` - stable - left them in whatever
+ * order the caller happened to pass. The caller is the editor loader, which
+ * maps `configuration_pedals` straight out of a PostgREST embed with no
+ * ORDER BY, and Postgres is free to return an updated row in a new place.
+ *
+ * So saving a board could change the chain order of the board you reopened,
+ * without anyone touching it. Measured on the saved `test` board: permuting
+ * ONLY the input array, with every other input identical, moved the count of
+ * unroutable cables between 0, 2 and 8.
+ *
+ * It bit the one feature that exists to reorder ties: joint optimization
+ * reorders within "swappable groups", which are by definition consecutive
+ * pedals of the SAME CATEGORY - exactly the pedals whose sort keys tie. The
+ * optimizer's chain order was written to the database and then discarded by
+ * the next load.
+ *
+ * The tie-break is the stored chainPosition, so the order the user (or the
+ * optimizer) last saved is what survives, with the id as a final backstop so
+ * the result is total.
+ */
+describe('ties are broken deterministically, not by input array order', () => {
+  const permutations: Array<[string, (xs: PlacedPedal[]) => PlacedPedal[]]> = [
+    ['as given', (xs) => xs],
+    ['reversed', (xs) => [...xs].reverse()],
+    ['by id', (xs) => [...xs].sort((a, b) => a.id.localeCompare(b.id))],
+    ['rotated', (xs) => [...xs.slice(1), xs[0]]],
+  ];
+
+  it('returns one order for every input permutation of a tied group', () => {
+    const orders = permutations.map(([, permute]) => {
+      // Three EQs: same category, no defaultChainPosition - the sort key ties.
+      const { pedalsById, placed } = setup([
+        ['eqA', 'eq', 1],
+        ['eqB', 'eq', 2],
+        ['eqC', 'eq', 3],
+      ]);
+      const result = signalChainEngine.calculate(permute(placed), pedalsById, noLoopContext);
+      return result.orderedPedals.map((p) => p.id);
+    });
+
+    for (const order of orders) expect(order).toEqual(orders[0]);
+  });
+
+  it('breaks the tie on the STORED chainPosition, preserving a saved order', () => {
+    // What the optimizer saved: C, A, B. Fed in a different array order.
+    const { pedalsById, placed } = setup([
+      ['eqA', 'eq', 2],
+      ['eqB', 'eq', 3],
+      ['eqC', 'eq', 1],
+    ]);
+
+    const result = signalChainEngine.calculate([...placed].reverse(), pedalsById, noLoopContext);
+
+    expect(result.orderedPedals.map((p) => p.id)).toEqual(['eqC', 'eqA', 'eqB']);
+    expect(result.orderedPedals.map((p) => p.chainPosition)).toEqual([1, 2, 3]);
+  });
+
+  it('is idempotent - re-normalizing a normalized chain changes nothing', () => {
+    const { pedalsById, placed } = setup([
+      ['eqA', 'eq', 2],
+      ['eqB', 'eq', 3],
+      ['eqC', 'eq', 1],
+    ]);
+
+    const once = signalChainEngine.calculate(placed, pedalsById, noLoopContext).orderedPedals;
+    const twice = signalChainEngine.calculate(once, pedalsById, noLoopContext).orderedPedals;
+
+    expect(twice.map((p) => p.id)).toEqual(once.map((p) => p.id));
+    expect(twice.map((p) => p.chainPosition)).toEqual(once.map((p) => p.chainPosition));
+  });
+});

@@ -30,6 +30,13 @@ export default async function EditorPage({ params }: PageProps) {
       )
     `)
     .eq('id', id)
+    // A PostgREST embed has no inherent order, and Postgres may hand back an
+    // UPDATED row in a new place - so without this the pedals arrive in an
+    // order that changes when the board is saved. The chain comparator now
+    // breaks ties on chainPosition and cannot be swayed by array order, but
+    // the array order should not be arbitrary in the first place: anything
+    // else reading `placedPedals` positionally gets a stable list too.
+    .order('chain_position', { referencedTable: 'configuration_pedals' })
     .single();
 
   if (error || !config) {

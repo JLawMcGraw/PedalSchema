@@ -152,7 +152,26 @@ export class SignalChainEngine {
   }
 
   /**
-   * Apply category-based default ordering
+   * Apply category-based default ordering.
+   *
+   * The comparator must be TOTAL. It used to return `orderA - orderB` alone,
+   * so any two pedals sharing a sort key - three EQs, two delays - compared
+   * equal, and `sort` being stable meant their order was whatever the caller
+   * passed in. The caller is the editor loader, which maps
+   * `configuration_pedals` out of a PostgREST embed carrying no ORDER BY, and
+   * Postgres may return an UPDATED row in a different place than before. So
+   * saving a board could silently reorder the chain of the board you reopened.
+   *
+   * That fell hardest on the one feature whose whole job is reordering ties:
+   * joint optimization permutes "swappable groups", which are consecutive
+   * pedals of the SAME CATEGORY - precisely the pedals that tie here. The
+   * optimizer wrote a chain order to the database and this discarded it on the
+   * next load.
+   *
+   * Ties break on the STORED chainPosition, so the order last saved - by the
+   * user or by Optimize - is the order that survives. `id` is the final
+   * backstop: two pedals can share a chainPosition mid-edit, and a comparator
+   * that returns 0 there would put the input order back in charge.
    */
   private applyDefaultOrdering(pedals: PlacedPedal[]): PlacedPedal[] {
     return [...pedals].sort((a, b) => {
@@ -163,8 +182,10 @@ export class SignalChainEngine {
 
       const orderA = pedalA.defaultChainPosition ?? getCategoryDefaultOrder(pedalA.category);
       const orderB = pedalB.defaultChainPosition ?? getCategoryDefaultOrder(pedalB.category);
+      if (orderA !== orderB) return orderA - orderB;
 
-      return orderA - orderB;
+      if (a.chainPosition !== b.chainPosition) return a.chainPosition - b.chainPosition;
+      return a.id.localeCompare(b.id);
     });
   }
 
