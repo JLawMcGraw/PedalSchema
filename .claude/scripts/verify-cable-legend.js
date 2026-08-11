@@ -16,7 +16,7 @@
  * Usage: node .claude/scripts/verify-cable-legend.js
  */
 const { chromium } = require('playwright');
-const { loadEnv, login, openEditor, waitForCanvas, snapshot } = require('./lib/twin');
+const { loadEnv, login, openEditor, waitForCanvas, snapshot, BASE_URL } = require('./lib/twin');
 
 const CONFIG_ID = process.env.CONFIG_ID || 'e0a0c21e-3b9d-4d21-b2e8-701a2cd31f6d';
 
@@ -175,6 +175,58 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); console.log(`  ${ok ? 'PAS
       }
     } else {
       check(false, 'legend still present after the reorder');
+    }
+
+    // --- below the lg breakpoint ---------------------------------------------
+    //
+    // The legend lifts to `bottom-14` under lg to clear the mobile floating
+    // action buttons, which sit at `bottom-4` in a SIBLING container
+    // (editor-client) - absolutely positioned in a different stacking parent,
+    // so nothing lays them out against each other.
+    //
+    // That was DERIVED FROM READING THE CSS and never rendered: this gate ran
+    // only at 1600x1100, which is above the breakpoint. Reasoning about a
+    // stacking context is exactly the kind of spatial claim this project does
+    // not accept without a measurement, so here is the measurement.
+    console.log('\nBELOW THE lg BREAKPOINT  (390x844, where the mobile FABs appear)');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${BASE_URL}/editor/${CONFIG_ID}`);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    await waitForCanvas(page);
+
+    const boxes = await page.evaluate(() => {
+      const rect = (el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height, bottom: r.bottom, top: r.top };
+      };
+      const legend = document.querySelector('[data-cable-legend]');
+      // The FABs are the only buttons inside the lg:hidden overlay.
+      const fabs = [...document.querySelectorAll('.lg\\:hidden button')]
+        .map(rect)
+        .filter((b) => b && b.width > 0 && b.height > 0);
+      return { legend: rect(legend), fabs, viewport: { w: window.innerWidth, h: window.innerHeight } };
+    });
+
+    check(!!boxes.legend, 'the legend still renders on a phone viewport');
+    check(boxes.fabs.length > 0, `the mobile action buttons are present (${boxes.fabs.length} found)`);
+
+    if (boxes.legend && boxes.fabs.length) {
+      const overlaps = (a, b) => !(a.x + a.width <= b.x || b.x + b.width <= a.x ||
+                                   a.y + a.height <= b.y || b.y + b.height <= a.y);
+      const hit = boxes.fabs.filter((f) => overlaps(boxes.legend, f));
+      console.log(`  legend  y ${boxes.legend.top.toFixed(0)}..${boxes.legend.bottom.toFixed(0)}`);
+      boxes.fabs.forEach((f, i) => console.log(`  fab ${i}   y ${f.top.toFixed(0)}..${f.bottom.toFixed(0)}  x ${f.x.toFixed(0)}..${(f.x + f.width).toFixed(0)}`));
+      check(hit.length === 0, `legend clears the mobile action buttons (${hit.length} overlapping)`);
+      check(boxes.legend.bottom <= boxes.viewport.h + 1,
+        `legend sits inside the viewport (bottom ${boxes.legend.bottom.toFixed(0)} <= ${boxes.viewport.h})`);
+    }
+
+    // Evidence, not verification - but the 19rem block that covered four
+    // pedals got through a DOM check and was caught by eye, so it earns a shot.
+    if (process.env.LEGEND_SHOT) {
+      await page.screenshot({ path: process.env.LEGEND_SHOT });
+      console.log(`  screenshot -> ${process.env.LEGEND_SHOT}`);
     }
 
     console.log(fail.length === 0
