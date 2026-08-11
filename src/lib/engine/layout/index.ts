@@ -10,7 +10,7 @@ import { deriveRowBands, deriveRowLayout, type RowBand, type RowFit } from './ro
 import { isDebugEnabled } from '../debug-flag';
 
 
-import { getExternalEndpointInches } from '../cables/endpoints';
+import { getExternalEndpointInches, findJack } from '../cables/endpoints';
 
 interface PlacedBox {
   x: number;
@@ -51,6 +51,44 @@ export interface GreedyPlacementResult {
    * honestly beats failing differently.
    */
   degraded: boolean;
+}
+
+/**
+ * Extra clearance for a pedal whose input AND output land on the SAME edge
+ * once rotation is applied - both cable runs are pulled into one gap, so that
+ * gap needs room for two lanes.
+ *
+ * Module scope and exported ONLY so the parity test can reach it. It was a
+ * closure, and while it was a closure it kept its own copy of the jack lookup:
+ * `pedal.jacks.find((j) => j.jackType === jackType)`. `ea9bf67` fixed that same
+ * scan in `findJack` and could not reach this one, so the layout engine and the
+ * router were free to disagree about which jack a pedal uses. That is the
+ * defect P1.5 existed to end - the optimizer scoring geometry it does not draw.
+ *
+ * Harmless on today's catalogue and measured to be: all 39 duplicate jack
+ * groups have both jacks on the same side, and this reads only `.side`. The
+ * corpus simply contains no pedal that could tell the two policies apart,
+ * which is why `jack-policy-parity.test.ts` builds one by hand.
+ */
+export function sameSideJackPad(
+  placed: PlacedPedal,
+  pedalsById: Record<string, Pedal>
+): number {
+  const pedal = pedalsById[placed.pedalId] || placed.pedal;
+  if (!pedal?.jacks?.length) return 0;
+  const effectiveSide = (jackType: 'input' | 'output'): string | null => {
+    // findJack, not a local scan - one policy for "which jack does this pedal
+    // use", shared with the router that draws the cable.
+    const jack = findJack(pedal, jackType);
+    return rotateSide(jack.side, placed.rotationDegrees);
+  };
+  const input = effectiveSide('input');
+  const output = effectiveSide('output');
+  // Only left/right shared sides pull cables into a narrow SIDE gap;
+  // top/bottom shared sides feed the wide row channels, which have room
+  const sharedSideGap = input !== null && input === output &&
+    (input === 'left' || input === 'right');
+  return sharedSideGap ? 0.35 : 0;
 }
 
 /**
@@ -182,26 +220,6 @@ export function calculateGreedyPlacementWithDiagnostics(
     return new Set(ys.map((y) => Math.round(y * 100))).size > 1;
   };
 
-  // Pedals whose input AND output land on the SAME edge (after rotation,
-  // e.g. a rotated top-jack pedal) pull both cable runs into one gap -
-  // give that gap corridor room for two lanes.
-  const sameSideJackPad = (placed: PlacedPedal): number => {
-    const pedal = pedalsById[placed.pedalId] || placed.pedal;
-    if (!pedal?.jacks?.length) return 0;
-    const effectiveSide = (jackType: 'input' | 'output'): string | null => {
-      const jack = pedal.jacks!.find((j) => j.jackType === jackType);
-      if (!jack) return null;
-      return rotateSide(jack.side, placed.rotationDegrees);
-    };
-    const input = effectiveSide('input');
-    const output = effectiveSide('output');
-    // Only left/right shared sides pull cables into a narrow SIDE gap;
-    // top/bottom shared sides feed the wide row channels, which have room
-    const sharedSideGap = input !== null && input === output &&
-      (input === 'left' || input === 'right');
-    return sharedSideGap ? 0.35 : 0;
-  };
-
   const placePackedChain = (
     chain: PlacedPedal[],
     rowOrder: number[],
@@ -214,7 +232,7 @@ export function calculateGreedyPlacementWithDiagnostics(
     // both sides; the hub pedal always does (four jacks worth of cables)
     const padOf = (placed: PlacedPedal): number => {
       const isEdge = placed.id === chain[0].id || placed.id === chain[chain.length - 1].id;
-      return Math.max(hubPad(placed), sameSideJackPad(placed), isEdge ? edgePad : 0);
+      return Math.max(hubPad(placed), sameSideJackPad(placed, pedalsById), isEdge ? edgePad : 0);
     };
     const effWidth = (placed: PlacedPedal): number => dims(placed).width + 2 * padOf(placed);
 
