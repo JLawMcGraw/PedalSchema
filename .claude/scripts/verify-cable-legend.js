@@ -9,16 +9,56 @@
  * of a real cable of that kind, read out of the SVG the canvas rendered.
  *
  * Then it exercises the failure branch, which no saved board currently
- * reaches: a chain order that produces two unroutable cables is loaded
- * IN MEMORY through __loadPedalSchemaRepro. Nothing is written - the page is
- * never saved, and reloading restores the stored board.
+ * reaches, by REVERSING the chain order in memory through
+ * __loadPedalSchemaRepro. Nothing is written - the page is never saved, and
+ * reloading restores the stored board. A sparse board may strand no cable;
+ * that is reported as NOT EXERCISED rather than passed over in silence.
  *
- * Usage: node .claude/scripts/verify-cable-legend.js
+ * Finally it re-renders at a phone viewport and checks the legend clears the
+ * mobile action buttons, which live in a different stacking context.
+ *
+ * Usage:
+ *   node .claude/scripts/verify-cable-legend.js            densest board
+ *   CONFIG_ID=<uuid> node .claude/scripts/verify-cable-legend.js
+ *   LEGEND_SHOT=/tmp/x.png node .claude/scripts/verify-cable-legend.js
  */
 const { chromium } = require('playwright');
 const { loadEnv, login, openEditor, waitForCanvas, snapshot, BASE_URL } = require('./lib/twin');
 
-const CONFIG_ID = process.env.CONFIG_ID || 'e0a0c21e-3b9d-4d21-b2e8-701a2cd31f6d';
+/**
+ * Which board to check. CONFIG_ID wins; otherwise the DENSEST one, found the
+ * same way dump-state.js finds it.
+ *
+ * This used to default to a hardcoded UUID - one board, in one database. A
+ * bare UUID is not a secret (RLS decides what it opens), but it made the
+ * script useless to anyone else who cloned the repo, and worse than useless
+ * in the failure branch: no pedal would have matched and the checks would
+ * have passed against nothing.
+ *
+ * Densest rather than first, because the failure branch needs a board with no
+ * room to spare.
+ */
+async function pickConfig(page) {
+  if (process.env.CONFIG_ID) return process.env.CONFIG_ID;
+  await page.goto(`${BASE_URL}/dashboard`);
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+  const hrefs = await page.$$eval(
+    'a[href^="/editor/"]:not([href="/editor/new"])',
+    (as) => [...new Set(as.map((a) => a.getAttribute('href')))]
+  );
+  if (hrefs.length === 0) throw new Error('no configurations on the dashboard');
+
+  let best = null;
+  for (const href of hrefs) {
+    await page.goto(BASE_URL + href);
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    await waitForCanvas(page);
+    const count = await page.evaluate(() => window.__getPedalSchemaState().placedPedals.length);
+    if (!best || count > best.count) best = { id: href.replace('/editor/', ''), count };
+  }
+  console.log(`config: ${best.id} (${best.count} pedals - the densest of ${hrefs.length})`);
+  return best.id;
+}
 
 /** Read the legend out of the DOM. */
 async function readLegend(page) {
@@ -94,6 +134,7 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); console.log(`  ${ok ? 'PAS
   const page = await browser.newContext({ viewport: { width: 1600, height: 1100 } }).then((c) => c.newPage());
   try {
     await login(page);
+    const CONFIG_ID = await pickConfig(page);
     await openEditor(page, CONFIG_ID);
 
     // --- The saved board ----------------------------------------------------
@@ -133,22 +174,41 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); console.log(`  ${ok ? 'PAS
         `failure entries (${legend.failures.length}) == unroutable cables (${invalid})`);
     }
 
-    // --- The failure branch, in memory only ---------------------------------
-    // A chain order that leaves two cables unroutable. Reachable by hand (the
-    // user can order their chain), and applied through initConfiguration so
-    // nothing is persisted.
-    console.log('\nFAILURE BRANCH  (in-memory chain reorder, never saved)');
-    const scrambled = { '04ca33be': 14, '60559dea': 15, '89936b2e': 13, 'faca3fd3': 20, '4ac8291f': 18 };
-    await page.evaluate((positions) => {
+    /*
+     * --- The failure branch, in memory only ---------------------------------
+     *
+     * No saved board currently draws a red cable, so one has to be provoked.
+     * This used to do it by pinning five specific chainPositions BY PEDAL ROW
+     * ID - which worked on exactly one board, in one database, and would have
+     * quietly matched nothing for anyone else who cloned the repo. The checks
+     * below would then have asserted "0 failures == 0 unroutable" and passed
+     * while testing nothing.
+     *
+     * Reversing the chain order is the same perturbation without the
+     * hardcoding: it is what the owner could do by hand in the chain panel,
+     * and on a dense board it strands cables because the signal now zig-zags
+     * across the whole board. Measured on `test`: 8 unroutable.
+     *
+     * On a SPARSE board it may strand nothing, and that is a legitimate
+     * outcome rather than a failure - so it is reported as NOT EXERCISED
+     * instead of quietly passing. The branch is not left unguarded either
+     * way: explain.test.ts covers the same text generation with 11 unit tests
+     * and no browser.
+     *
+     * Nothing is persisted - initConfiguration only touches the store.
+     */
+    console.log('\nFAILURE BRANCH  (in-memory chain reversal, never saved)');
+    await page.evaluate(() => {
       const s = window.__getPedalSchemaState();
+      const n = s.placedPedals.length;
       window.__loadPedalSchemaRepro({
         ...s,
-        placedPedals: s.placedPedals.map((p) => {
-          const key = Object.keys(positions).find((k) => p.id.startsWith(k));
-          return key ? { ...p, chainPosition: positions[key] } : p;
-        }),
+        placedPedals: s.placedPedals.map((p) => ({
+          ...p,
+          chainPosition: n + 1 - p.chainPosition,
+        })),
       });
-    }, scrambled);
+    });
     await waitForCanvas(page);
     await page.waitForFunction(
       () => window.__getPedalSchemaDerived().routedCables.some((rc) => !rc.valid),
@@ -160,8 +220,14 @@ const check = (ok, msg) => { if (!ok) fail.push(msg); console.log(`  ${ok ? 'PAS
     const invalid2 = after.filter((a) => !a.valid);
     console.log(`  unroutable cables now: ${invalid2.length}`);
 
-    check(invalid2.length > 0, 'the reorder produces at least one unroutable cable to explain');
-    if (legend2) {
+    if (invalid2.length === 0) {
+      // Not a failure. A board with room to spare has nothing to refuse, and
+      // saying so beats asserting something vacuous. Loud, because a branch
+      // that silently stops running is how verify-jack-render stayed broken.
+      console.log('  NOT EXERCISED  reversing the chain stranded no cable on this board -');
+      console.log('                 it is not dense enough. The text generation itself is');
+      console.log('                 covered by explain.test.ts without a browser.');
+    } else if (legend2) {
       check(legend2.failures.length === invalid2.length,
         `failure entries (${legend2.failures.length}) == unroutable cables (${invalid2.length})`);
       check(/will not fit/.test(legend2.heading || ''), `heading names the problem: "${legend2.heading}"`);
