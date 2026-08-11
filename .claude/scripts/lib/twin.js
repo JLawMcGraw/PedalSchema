@@ -59,7 +59,21 @@ async function openEditor(page, configId = process.env.CONFIG_ID) {
     if (!href) throw new Error('No configuration found on the dashboard');
     await page.goto(`${BASE_URL}${href}`);
   }
-  await page.waitForLoadState('networkidle');
+  /*
+   * `networkidle` is a PROXY for readiness, and not the one that matters here.
+   * waitForCanvas below polls the real condition - the canvas element and the
+   * twin hook both present - so an idle network adds nothing except a way to
+   * fail.
+   *
+   * And it does fail: run the gates one after another (verify-all.sh) and the
+   * dev server is busy enough recompiling that networkidle can miss its 30s
+   * window on a page that has in fact rendered. verify-jack-render passed 3/3
+   * standalone and timed out inside the suite, which is a timing guess losing
+   * a race, not a defect it was built to catch.
+   *
+   * So: give it a short budget, and let waitForCanvas be the judge.
+   */
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
   await waitForCanvas(page);
   return page.url();
 }

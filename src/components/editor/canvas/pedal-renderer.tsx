@@ -192,6 +192,14 @@ export function PedalRenderer({
         return (
           <circle
             key={index}
+            // Marks this circle as a JACK. The pedal group also holds the
+            // chain-position badge and, on a collision, a warning dot - both
+            // plain circles inside the same <g>. verify-jack-render counted
+            // them as jacks and reported "3 recorded, 4 drawn", which reads as
+            // a rendering bug and was a selector that could not tell a jack
+            // from a badge.
+            data-jack={jack.jackType}
+            data-jack-assumed={jack.assumed ? '' : undefined}
             cx={jx}
             cy={jy}
             r={jackRadius}
