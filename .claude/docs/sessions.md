@@ -372,6 +372,53 @@ likely to recur.
 
 ### Next tasks
 
+- [ ] **NEXT SESSION: the routing-config toggles.** The owner reports that
+      hitting the effects-loop button and Optimize should change the cabling,
+      and that turning on dirty modulation should move cables AND pedals - and
+      that neither seems right. Measured offline before the session so it does
+      not start cold. **The two halves have different answers.**
+
+      **The effects loop WORKS at the engine level.** Replaying the `test`
+      board through normalizeChain then `calculateOptimalLayoutJoint`:
+
+          loop=off 4cm=off   score 531.15   0 pedals in loop
+          loop=ON  4cm=off   score 848.09   6 pedals in loop   placements differ, chain differs
+          loop=ON  4cm=ON    score 719.21   6 pedals in loop   placements differ, chain differs
+
+      So if it looks wrong in the app, the gap is between the store and the
+      engine, not inside the engine. Check the worker path first:
+      `configuration-store.ts:655` sends `{ ...routingConfig, useEffectsLoop,
+      use4CableMethod }`, and whether the canvas re-derives after the toggle.
+
+      **`modulationInLoop` is inert, and there are two separate reasons.**
+      Holding the other flags fixed, mod=off vs mod=ON gives IDENTICAL
+      placements in all three pairings, and the in-loop count does not move
+      (6 -> 6, 0 -> 0).
+
+      1. **The rule is one-directional.** `rules.ts:208` moves modulation to
+         `effects_loop` when the flag is ON and does NOTHING when it is OFF -
+         the comment says "Default: keep modulation in front of amp" but no
+         code moves anything back. So a pedal that has ever been in the loop
+         can never return to front_of_amp, and "dirty modulation" is
+         unreachable for it. **This is most likely the bug the owner is
+         seeing.**
+      2. **On `test` both modulation pedals are ALREADY in the loop** in
+         stored data (DC-2W and PH-3, `location: effects_loop`), so the
+         toggle is a no-op in both directions on that board. J$ Home is the
+         opposite case - Chorus Ensemble Deluxe and BF-3 are both
+         `front_of_amp` - so test the ON direction there.
+
+      Also worth knowing: **`modulationInLoop` is not in `RoutingConfig` and
+      nothing in `layout/` or `topology/` reads it.** Its only route to
+      placement is indirect, through the `location` that normalizeChain
+      writes. That is a defensible design, but it means the flag is inert
+      whenever normalizeChain does not actually change a location - which is
+      exactly case 2 above.
+
+      Start by making the rule symmetric and deciding what OFF should mean for
+      a pedal the user has manually placed (`locationOverride` is already
+      respected in the ON direction and would need the same care going back).
+
 - [ ] **Photographs for Big Muff Pi and Small Clone.** Unchanged, and now the
       only thing standing between this and a complete catalogue. Both need a
       HEAD-ON top-down source; save one by hand and it goes through
