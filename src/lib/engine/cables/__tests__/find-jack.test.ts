@@ -50,6 +50,8 @@ const PATTERNS: Array<{ n: number; type: SignalJack; a: string; b: string; want:
   { n: 11, type: 'output', a: 'OUTPUT A (MONO)', b: 'OUTPUT B', want: 'OUTPUT A (MONO)' },
   { n: 8, type: 'input', a: 'INPUT A (MONO)', b: 'INPUT B', want: 'INPUT A (MONO)' },
   { n: 3, type: 'output', a: 'OUTPUT A/MONO', b: 'OUTPUT B', want: 'OUTPUT A/MONO' },
+  // LEFT verified against strymon.net 2026-08-10, not assumed: mono is the
+  // LEFT INPUT and LEFT OUTPUT on TimeLine/BigSky, and the LEFT OUTPUT on Flint.
   { n: 3, type: 'output', a: 'LEFT OUT', b: 'RIGHT OUT', want: 'LEFT OUT' },
   { n: 2, type: 'input', a: 'BASS IN', b: 'GUITAR IN', want: 'GUITAR IN' },
   { n: 2, type: 'output', a: 'DIRECT OUT', b: 'OUTPUT', want: 'OUTPUT' },

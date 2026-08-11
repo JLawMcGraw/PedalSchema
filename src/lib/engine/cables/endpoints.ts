@@ -82,11 +82,29 @@ export function getExternalEndpointPx(
  * jack on the DD-7. There is no positional rule that is right for both.
  *
  * Each clause below is a real pattern from the catalogue, not a guess at what
- * might exist. The MONO ones are unambiguous - the pedal says so. The other
- * three are conventions, and they are the ones to revisit if a board ever
- * looks wrong:
- *   - LEFT is the mono jack on a stereo pair, by long convention.
- *   - GUITAR IN over BASS IN, because this is a guitar pedalboard.
+ * might exist. The MONO ones are unambiguous - the pedal says so.
+ *
+ * LEFT was shipped as a convention and is now VERIFIED, which is why it is no
+ * longer grouped with the judgement calls. It rides on exactly three pedals,
+ * all Strymon - Timeline and BigSky on `test`, Flint on J$ Home - and Strymon
+ * publish the answer directly:
+ *
+ *   "Connect a mono TS instrument cable into the LEFT INPUT and LEFT OUTPUT
+ *    for a mono connection."   (BigSky, Mobius, NightSky, TimeLine, Volante)
+ *   Flint, a two-footswitch pedal: mono TS into the INPUT and the LEFT OUTPUT.
+ *   https://www.strymon.net/faq/mono-and-stereo-connections/
+ *   https://www.strymon.net/support/flint/      read 2026-08-10
+ *
+ * Note what did NOT change: the jack LABELS still read "LEFT OUT"/"RIGHT OUT",
+ * because that is what is silkscreened on the enclosure. Writing "(MONO)" into
+ * them would make the label a worse record of the pedal in order to make this
+ * function's job easier. The label records the enclosure; this function records
+ * the manufacturer's wiring instruction. Two different facts, two homes.
+ *
+ * Two judgement calls remain, and these are the ones to revisit:
+ *   - GUITAR IN over BASS IN, because this is a guitar pedalboard. That is a
+ *     product decision living in the router; if bass rigs ever matter it
+ *     belongs on the configuration instead. Affects the AW-3 and BF-3.
  *   - the plain OUTPUT over a DIRECT OUT or BYPASS, which are side feeds
  *     rather than the effected signal path.
  */
