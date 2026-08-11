@@ -200,15 +200,19 @@ data.
 
 ### Next tasks
 
+> **Superseded - see the "2026-08-10, later" section below.** The comparator
+> audit was done and found the same bug a second time; the offline-dump item
+> was resolved by the round-trip gate. Only the corridor, photo and jack items
+> below are still open, and they are restated there.
+
+- [x] **Audit other comparators for totality.** Done. It found `findJack`
+      scanning an unordered embed - the chain-order bug's twin - plus a second
+      copy of the jack decision in the layout engine.
 - [ ] **Partial-span horizontal corridors** (`buildCorridors`). The measured
       remedy for 8 of 25 cables having nothing to attach to. Payoff is
       TIDINESS - shared lanes, fewer of the board's 8 crossings - **not**
       length, because A* is already shortest-at-clearance. Size it against
       that before starting.
-- [ ] **Audit other comparators for totality.** This bug was a `sort` whose
-      comparator returned 0 for distinct items, in a codebase that feeds
-      arrays from PostgREST embeds. `applyDefaultOrdering` is unlikely to be
-      the only one.
 - [ ] **The offline dump normalises what the app leaves arbitrary.** It sorts
       by `chainPosition` and omits `defaultChainPosition`. Neither matters now
       that the comparator is total, but the harness is still not the app, and
@@ -220,6 +224,169 @@ data.
       through `/pedals/new`. Closing it also closes two of the four jack gaps.
 - [ ] **Four jack layouts** (Big Muff Pi, Small Clone, RAT 2, Klon) - all
       genuinely blocked; the owner owns none of them.
+
+---
+
+## 2026-08-10, later: the same bug a second time, and the gates that would have caught both
+
+Nine more commits. The session record above was written at what looked like the
+end; the owner then asked for a comparator audit, and it found the chain-order
+bug's twin. `.claude/docs/8-10-plan.md` was written from measurements taken
+while writing it, and all six of its tasks plus its three owner decisions are
+now closed.
+
+**Nothing was written to the database this session.** Both boards were verified
+byte-identical against a pre-session backup after every gate had run, twice.
+
+### The board was wiring mono cables into stereo-only jacks
+
+The audit was for comparators. The defect it found was not a `sort` at all.
+
+`findJack` was `pedal.jacks?.find((j) => j.jackType === jackType)` - the first
+row of that type in an array ordered by nothing, out of a PostgREST embed with
+no ORDER BY, exactly like `configuration_pedals`. **39 of 59 catalogued pedals
+carry two rows of the same `jack_type`** - stereo A/B pairs, guitar/bass inputs,
+direct outs - and 13 of them are on the two saved boards.
+
+Not merely unstable: on the DD-7 and the EQ-200 the row that came back first was
+`OUTPUT B`, so the board drew a mono patch cable into a jack that only carries
+signal in stereo.
+
+**A positional tie-break cannot fix it**, which is the part worth keeping:
+
+    BF-3   [OUTPUT A (MONO)] @22   [OUTPUT B] @38          lowest is right
+    DD-7   [OUTPUT B] @22          [OUTPUT A (MONO)] @38   lowest is WRONG
+
+Position does not know which jack is which; the LABEL does, because it is what
+is silkscreened on the enclosure. All 39 groups are label-distinguishable in 12
+patterns. `test` moved 191.23 -> 190.23in and two cables were promoted from
+shortcut to lane-routed; J$ Home was byte-identical.
+
+### The rest of the audit came back clean, and that is also a result
+
+| verdict | sites |
+|---|---|
+| already total | eviction victim sort, both routing-strategy sorts |
+| key measured to have no duplicates | `board_rails.sort_order` 0, `power_supply_outputs.sort_order` 0, `chain_position` UNIQUE, cable `sortOrder` sequential |
+| non-total but deterministic input | Dijkstra queue, band/row-box construction, two power-panel orderings |
+
+Two tie-breaks were added where neutrality could be PROVEN (lane assignment by
+midpoint, `rowsNearestY`) and the fingerprint confirmed byte-identical. The
+Dijkstra queue was deliberately left alone: a tie-break there changes which
+equal-cost path wins, i.e. changes drawings, for no present benefit.
+
+### Proving a gate can fail is where the findings were
+
+Both new gates were made to fail on purpose before being trusted, and both
+attempts taught something the passing run could not.
+
+**The round-trip gate passed on the reverted comparator.** Putting
+`applyDefaultOrdering` back to its buggy form was not enough - `.order(
+'chain_position')` was carrying the board by itself. Only with BOTH layers
+removed does it fail, and then it reproduces the original exactly: the same
+five pedals, the same values, the same two unroutable cables. So the
+defence-in-depth claim in b471698 is now **measured**: either layer alone
+prevents the bug. Worth knowing before someone simplifies one away.
+
+**The catalogue gate** names the pattern to add rather than a count:
+
+    UNMATCHED  Hypothetical Stereo Thing output: [OUT ALPHA]@70  [OUT BETA]@30
+               -> chose [OUT BETA] on position alone
+
+### The broken gate had three defects, and only one was advertised
+
+`verify-jack-render.js` had been failing since a83702a and was found weeks
+later while auditing something else.
+
+1. It clicked a FIXED COORDINATE to place a pedal. Optimizing `test` packed 22
+   pedals, one landed under (0.5, 0.55), PedalRenderer's `stopPropagation`
+   swallowed the click, and the script failed on the NEXT line - blaming the
+   store for a missed click. It now scans for a gap.
+2. Then it reported a rendering bug that was its own selector: "3 recorded, 4
+   drawn". The fourth circle was the chain-position badge. Jack circles now
+   carry `data-jack`.
+3. `networkidle` was racing the dev server - 3/3 standalone, timing out
+   in-suite. It was never the condition that mattered; `waitForCanvas` is.
+   Fixed once in the shared helper, so every gate steadied.
+
+`verify-all.sh` exists because nothing ran them together, which is the only
+reason this went unnoticed. **18 gates, 0 failing.**
+
+### Two beliefs of mine that did not survive
+
+**The plan told me to move MONO into the jack labels and the plan was wrong.**
+T1 proposed writing "LEFT OUT (MONO)" so `monoAffinity` could match only MONO.
+That would have made the label a worse record of the pedal to make one
+function's job easier. Strymon silkscreen LEFT and RIGHT. The label records the
+enclosure; the function records the manufacturer's wiring instruction. Two
+facts, two homes. All three pedals already had confirmed `jacks_source_url` -
+the gap was that the ROUTING RULE had no provenance, which is a comment's job
+and not a column's.
+
+**The LEFT convention was right.** strymon.net states it outright for BigSky
+and TimeLine by name, and Flint's support page for the two-footswitch case.
+Fingerprint byte-identical; what changed is that it is now attributable.
+
+### Owner decisions, all three settled
+
+- **GUITAR IN over BASS IN stays**, revisitable if bass rigs matter. Exposure
+  recorded: BF-3 on J$ Home, 0.81in of endpoint movement if wrong.
+- **The migration question is CLOSED, and the owner's framing closed it** - the
+  affected set is just "whose last successful save predates the fix". The
+  window is the whole project life (3bdde64, 2026-01-04 -> b471698 today), so
+  it narrows nothing retroactively but is a clean forward test. J$ Home was
+  never affected (0 of 9 drift with both fixes stripped); `test` holds the
+  OPTIMIZER's order, because optimize-and-save saved the store and the scramble
+  only ever happened on later loads, none of them re-saved. Nothing to migrate.
+- **The failure text now separates what a cable crosses from what it ends in.**
+  The first draft produced "into EQ-200 and GE-7's own body" - one possessive
+  for two names - which is a real case, since a cable can clip both endpoints.
+  Caught by reading the live output, not the test.
+
+### My own measurements were wrong three times
+
+Recorded because the pattern matters more than the instances: the tooling I
+write mid-session gets less scrutiny than the code it checks.
+
+1. A grep for exit-code discipline counted `process.exit(1)` and missed
+   `process.exit(x === 0 ? 0 : 1)`, producing "11 of 18 gates exit 0 on
+   failure". False. Every gate exits honestly.
+2. `node script.js | tail -1` then `$?` reads TAIL's status. That produced a
+   table of eleven passing gates while one was failing.
+3. `page.boundingBox()` returns `width`/`height`; I destructured `w`/`h` and
+   got a non-finite coordinate.
+
+All three were self-caught, two of them because a result looked too clean. The
+`verify-all.sh` header now records the second one, since it is the one most
+likely to recur.
+
+### Verification
+
+    vitest              348 pass, 4 skipped   (from 312 at session start)
+    tsc --noEmit        clean
+    eslint src          0 errors, 24 warnings (pre-existing)
+    verify-all.sh --all 18 gates, 0 failing
+    saved-board fp      byte-identical across every change after the jack fix
+    npm run build       compiled, .next/server + .next/static present
+    database            31 rows compared to a pre-session backup: 0 differing
+
+### Next tasks
+
+- [ ] **Photographs for Big Muff Pi and Small Clone.** Unchanged, and now the
+      only thing standing between this and a complete catalogue. Both need a
+      HEAD-ON top-down source; save one by hand and it goes through
+      `/pedals/new`. Closes two of the four outstanding jack layouts as well.
+- [ ] **RAT 2 and Klon jack layouts** - no photo shows their jacks, Klon also
+      licence-blocked, and the owner owns neither.
+- [ ] **Partial-span horizontal corridors.** The measured remedy for 8 of 25
+      cables having nothing to attach to. Payoff is TIDINESS, not length - A*
+      is already shortest-at-clearance - so size it against that before
+      starting. See the corridor section of the entry above.
+- [ ] **`GUITAR IN` becomes a configuration setting** if bass rigs ever matter.
+- [ ] Anything reading `placedPedals` or `jacks` positionally is now safe by
+      construction, but the CLASS is worth remembering: an array from a
+      PostgREST embed has no order, and this project shipped two bugs of that
+      shape in one codebase.
 
 ---
 

@@ -1,5 +1,13 @@
 # Fixing what 8/10 left open
 
+> **STATUS: COMPLETE, 2026-08-10.** All six tasks are done and all three owner
+> decisions are settled - see the "2026-08-10, later" entry in `sessions.md`
+> for the outcomes, including the two places this plan told me to do the wrong
+> thing (T1 proposed editing jack labels that were already correct) and the
+> discovery that the round-trip gate could not fail until BOTH chain-order
+> fixes were removed. Kept as a record of what was measured, not as a to-do.
+
+
 > **For Claude:** REQUIRED SUB-SKILL: use `superpowers:executing-plans` to work
 > through this task-by-task.
 
