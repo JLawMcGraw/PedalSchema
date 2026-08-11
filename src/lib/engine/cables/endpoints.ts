@@ -108,7 +108,7 @@ export function getExternalEndpointPx(
  *   - the plain OUTPUT over a DIRECT OUT or BYPASS, which are side feeds
  *     rather than the effected signal path.
  */
-function monoAffinity(label: string | null | undefined): number {
+export function monoAffinity(label: string | null | undefined): number {
   if (!label) return 0;
   const l = label.toUpperCase();
   // "OUTPUT A (MONO)", "OUTPUT A/MONO", "MONO OUT", "INPUT-A (MONO)"
