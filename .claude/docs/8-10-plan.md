@@ -350,12 +350,25 @@ These need a person, and guessing at them is how the width veto survived.
   AW-3 and BF-3. That is a product decision - "this is a guitar app" - written
   into the router. If bass rigs ever matter it belongs on the configuration,
   not in a constant.
-- **Boards saved during the chain-order window carry the scramble as data.**
-  Both current boards are clean (verified: 0 drift, fixed points), so this is
-  moot at n=2. It stops being moot the moment anyone else has a board, because
-  the tie-break now faithfully preserves a "saved order" that may be an
-  artifact, and nothing can tell the two apart afterwards. Decide the policy
-  before there are users, not after.
+- **Boards saved during the chain-order window - CLOSED 2026-08-10.** The
+  owner's framing settled it: the affected set is just "whose last successful
+  save predates the fix". The window turned out to be the whole project life -
+  `applyDefaultOrdering` shipped in 3bdde64 (2026-01-04) and was fixed in
+  b471698 (2026-08-10) - so that rule narrows nothing retroactively, but it is
+  a clean forward test: saved after b471698 means clean, no forensics needed.
+
+  Both existing boards are verifiably fine, for different reasons.
+  **J$ Home was never affected**: with BOTH fixes stripped out to prove the
+  round-trip gate could fail, it showed 0 of 9 drift, so it has no tie group
+  that scrambles. **`test` holds the optimizer's own order**: optimize-and-save
+  applied the chain order to the store and saved THAT; the scramble only
+  happened on subsequent loads, and none of those was re-saved. Its stored
+  13,14,15,18,20 is intent, which is why it now draws 0 unroutable cables
+  where the scrambled view drew 2.
+
+  Nothing to migrate. If a third board ever appears from a backup, the test is
+  its last-save timestamp against b471698.
+
 - **`Drawn through EQ-200, GE-7, GEB-7`** names the cable's own destination.
   Accurate - it clips that pedal's body on a middle segment - but it may read
   as a bug. Trivial to filter the endpoints out; unclear that it should be.

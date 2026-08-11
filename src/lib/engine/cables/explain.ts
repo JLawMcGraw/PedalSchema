@@ -151,11 +151,26 @@ export function explainRoutingFailure(
 
   // Deduped and in path order: the same pedal shows up once per segment that
   // clips it, and an obstacle that is not a pedal has no name to report.
-  const through: string[] = [];
+  //
+  // Split into pedals the cable CROSSES and its own endpoints, because a
+  // cable that clips the pedal it is going to reads as a broken message when
+  // the two are listed together ("FZ-1W -> EQ-200 ... drawn through EQ-200").
+  // Both facts are real - findPathViolations exempts an endpoint on its own
+  // segment only, so clipping it mid-path is a genuine violation and means the
+  // cable is entering that pedal's body rather than approaching its jack - so
+  // they are reported separately rather than one of them dropped.
+  const endpointIds = new Set(
+    [routed.cable.fromPedalId, routed.cable.toPedalId].filter(Boolean) as string[]
+  );
+  const crosses: string[] = [];
+  const intoBody: string[] = [];
   for (const violation of routed.validation?.violations ?? []) {
     const name = nameOf(violation.pedalId);
-    if (name && !through.includes(name)) through.push(name);
+    if (!name) continue;
+    const bucket = violation.pedalId && endpointIds.has(violation.pedalId) ? intoBody : crosses;
+    if (!bucket.includes(name)) bucket.push(name);
   }
+  const through = [...crosses, ...intoBody];
 
   // `laneOutcome` is undefined when the corridor router did not run, so every
   // branch has to survive not having it.
@@ -176,7 +191,18 @@ export function explainRoutingFailure(
 
   // Kept to one line. This is read on the canvas, over the board it is
   // describing, so every extra clause is board the user cannot see.
-  const drawn = through.length ? ` Drawn through ${through.join(', ')}.` : '';
+  const clauses: string[] = [];
+  if (crosses.length) clauses.push(`through ${crosses.join(', ')}`);
+  if (intoBody.length) {
+    // A cable can clip BOTH its endpoints, and "into EQ-200 and GE-7's own
+    // body" attaches one possessive to two names and one body to two pedals.
+    clauses.push(
+      intoBody.length === 1
+        ? `into ${intoBody[0]}'s own body`
+        : `into ${intoBody.map((n) => `${n}'s`).join(' and ')} own bodies`
+    );
+  }
+  const drawn = clauses.length ? ` Drawn ${clauses.join(', and ')}.` : '';
 
   return {
     label: `${from} → ${to}`,

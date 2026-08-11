@@ -83,9 +83,78 @@ describe('explaining a failure', () => {
     )!;
 
     expect(failure.label).toBe('FZ-1W → EQ-200');
-    expect(failure.through).toEqual(['EQ-200', 'GE-7']); // deduped, nulls dropped
+    // Crossings first, then the endpoint it enters - see the grouping test below.
+    expect(failure.through).toEqual(['GE-7', 'EQ-200']); // deduped, nulls dropped
     expect(failure.reason).toMatch(/neither jack/i);
     expect(failure.reason).toContain(String(CLEARANCE_INCHES));
+  });
+
+  /**
+   * A cable that clips its OWN endpoint reads as a mistake when the endpoint is
+   * listed alongside the pedals it merely crosses:
+   *
+   *   FZ-1W -> EQ-200 ... Drawn through EQ-200, GE-7, GEB-7.
+   *
+   * It is true - `findPathViolations` exempts the destination on the LAST
+   * segment only, so hitting it on a middle segment is a real violation, and a
+   * cable entering its own destination's body from the wrong side is worth
+   * knowing. But "through EQ-200" when EQ-200 is where it is going invites the
+   * reader to think the message is broken. Say both things, separately.
+   */
+  it('separates pedals it crosses from its own endpoint body', () => {
+    const failure = explainRoutingFailure(
+      routed({
+        valid: false,
+        laneOutcome: 'unattached-both',
+        validation: {
+          valid: false,
+          violations: [
+            { segmentIndex: 1, obstacleIndex: 0, pedalId: 'x', point: { x: 0, y: 0 } },
+            { segmentIndex: 1, obstacleIndex: 1, pedalId: 'b', point: { x: 0, y: 0 } },
+          ],
+        },
+      }),
+      nameOf
+    )!;
+
+    // 'b' is the cable's destination; 'x' is not.
+    expect(failure.reason).toContain("Drawn through GE-7, and into EQ-200's own body.");
+    expect(failure.through).toEqual(['GE-7', 'EQ-200']); // crossings first
+  });
+
+  it('reads correctly when it clips BOTH of its own endpoints', () => {
+    const failure = explainRoutingFailure(
+      routed({
+        valid: false,
+        validation: {
+          valid: false,
+          violations: [
+            { segmentIndex: 1, obstacleIndex: 0, pedalId: 'a', point: { x: 0, y: 0 } },
+            { segmentIndex: 2, obstacleIndex: 1, pedalId: 'b', point: { x: 0, y: 0 } },
+          ],
+        },
+      }),
+      nameOf
+    )!;
+    // Not "into FZ-1W and EQ-200's own body" - one possessive for two names,
+    // one body for two pedals.
+    expect(failure.reason).toContain("into FZ-1W's and EQ-200's own bodies");
+  });
+
+  it('says only what applies when the cable crosses nothing else', () => {
+    const failure = explainRoutingFailure(
+      routed({
+        valid: false,
+        validation: {
+          valid: false,
+          violations: [{ segmentIndex: 1, obstacleIndex: 0, pedalId: 'a', point: { x: 0, y: 0 } }],
+        },
+      }),
+      nameOf
+    )!;
+    // 'a' is the SOURCE of this cable.
+    expect(failure.reason).toContain('into FZ-1W');
+    expect(failure.reason).not.toContain('through');
   });
 
   it('distinguishes which end failed', () => {
