@@ -75,6 +75,26 @@ export const ENDPOINT_TOLERANCE = 4;
  */
 export const STANDOFF = 10;
 
+/**
+ * How far two coordinates may differ and still count as sharing an axis, in
+ * pixels.
+ *
+ * EVERY cable this app draws turns at right angles - a patch cable leaves a
+ * jack square-on, so a diagonal line is a picture of a cable that cannot
+ * exist. Sub-pixel differences fall out of jack-position arithmetic and are
+ * not diagonals anybody can see; this is the threshold that separates the two.
+ *
+ * Lives here because the PRODUCERS (the strategy cascade, A*) and the CHECKERS
+ * (orthogonal-cascade.test.ts, the lane router's acceptance test) must agree
+ * on it. They were separately hard-coded as 0.5 before 2026-08-18.
+ */
+export const ORTHOGONAL_EPSILON = 0.5;
+
+/** Do these two points share an axis, to within ORTHOGONAL_EPSILON? */
+export function sharesAxis(a: Point, b: Point): boolean {
+  return Math.abs(a.x - b.x) < ORTHOGONAL_EPSILON || Math.abs(a.y - b.y) < ORTHOGONAL_EPSILON;
+}
+
 /** Grid resolution for A* pathfinding, in pixels. */
 export const GRID_CELL_SIZE = 8;
 
@@ -144,10 +164,10 @@ export function manhattanize(pts: Point[]): Point[] {
   for (let i = 1; i < pts.length; i++) {
     const a = out[out.length - 1];
     const b = pts[i];
-    if (Math.abs(b.x - a.x) > 0.5 && Math.abs(b.y - a.y) > 0.5) {
+    if (!sharesAxis(a, b)) {
       const prev = out.length >= 2 ? out[out.length - 2] : null;
       const cameHorizontally = prev
-        ? Math.abs(a.y - prev.y) <= 0.5
+        ? Math.abs(a.y - prev.y) <= ORTHOGONAL_EPSILON
         : Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
       out.push(cameHorizontally ? { x: b.x, y: a.y } : { x: a.x, y: b.y });
     }

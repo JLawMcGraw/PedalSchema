@@ -29,6 +29,7 @@ import {
   STANDOFF,
   OBSTACLE_MARGIN,
   dist,
+  sharesAxis,
   isPathClear,
   findPathViolations,
 } from '../geometry';
@@ -59,6 +60,10 @@ const BOARD_OVERHANG = 16;
 function isPathWithinBounds(path: Point[], boardBounds: BoardBounds | null): boolean {
   if (!boardBounds || path.length < 3) return true;
 
+  const outside = (p: Point): boolean =>
+    p.x < boardBounds.minX || p.x > boardBounds.maxX ||
+    p.y < boardBounds.minY || p.y > boardBounds.maxY;
+
   for (let i = 1; i < path.length - 1; i++) {
     const p = path[i];
     if (p.x < boardBounds.minX - BOARD_OVERHANG ||
@@ -67,6 +72,25 @@ function isPathWithinBounds(path: Point[], boardBounds: BoardBounds | null): boo
         p.y > boardBounds.maxY + BOARD_OVERHANG) {
       return false;
     }
+  }
+
+  // THE OVERHANG IS FOR POKING OUT, NOT FOR TRAVELLING.
+  //
+  // The per-point check above says how FAR outside a point may sit; it says
+  // nothing about how far a route may RUN out there. A jack on a pedal flush
+  // against the edge points its stub slightly off-board, which is the whole
+  // reason for the allowance - but the same tolerance let A* leave the board
+  // and use the 16px band as a highway: measured on the perimeter fixture as a
+  // 520px run along y=-12, from x=700 to x=1220, which beat the perimeter rung
+  // and so was drawn as an ordinary cable rather than a dashed one the user is
+  // told to run underneath.
+  //
+  // A segment with BOTH ends outside the board is a run, not a stub, and may
+  // not be longer than one.
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    if (outside(a) && outside(b) && dist(a, b) > STANDOFF) return false;
   }
   return true;
 }
@@ -426,8 +450,23 @@ function routeCablePath(
     if (facing) return facing;
   }
 
-  // Strategy 1: Direct line between standoffs (for very close jacks)
-  if (dist(s, t) <= 80) {
+  // Strategy 1: Direct line between standoffs (for very close jacks).
+  //
+  // ONLY WHEN THE STANDOFFS ALREADY LINE UP. A patch cable leaves a jack
+  // square-on and turns at right angles; joining two standoffs that differ on
+  // both axes draws a diagonal, which is a picture of a cable that cannot
+  // exist. This rung was the last place in the cascade that produced one - A*
+  // is 4-directional, the L-paths and lane strategies are orthogonal by
+  // construction, the perimeter ring is axis-aligned, and even the
+  // deliberately-through-pedals fallback draws elbows.
+  //
+  // It costs nothing to restrict: when the standoffs DO line up, `[s, t]` is
+  // exactly what the L-paths below collapse to after dedupePath, and when they
+  // do not, those L-paths are the right answer anyway. What it buys is that
+  // the cascade's output can now be compared with the lane router's on equal
+  // terms - see the never-worse guard note in lane-router.test.ts, which was
+  // reverted precisely because this rung made the comparison unfair.
+  if (sharesAxis(s, t) && dist(s, t) <= 80) {
     const direct = candidateOk([s, t], 'direct');
     if (direct) return direct;
   }

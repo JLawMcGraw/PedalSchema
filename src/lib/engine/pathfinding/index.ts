@@ -13,6 +13,8 @@ import {
   Box,
   OBSTACLE_MARGIN,
   GRID_CELL_SIZE,
+  sharesAxis,
+  manhattanize,
   isPathClear,
   lineIntersectsBox,
 } from '../geometry';
@@ -389,7 +391,19 @@ export function findPathAStar(
   const isHorizontal = dy < 15 && dx > dy;
   const isVertical = dx < 15 && dy > dx;
 
-  if ((isVeryShort || (!hasObstacles && (isHorizontal || isVertical))) &&
+  // A STRAIGHT LINE ONLY WHEN IT IS ACTUALLY STRAIGHT.
+  //
+  // `isVeryShort` and the isHorizontal/isVertical pair are both tolerant -
+  // "short" says nothing about alignment, and "horizontal" here means within
+  // 15px of it, which is a shallow diagonal rather than a horizontal. Both
+  // returned `[start, end]` regardless, so A* - 4-directional everywhere else -
+  // was quietly emitting the one shape the renderer must never draw. Measured
+  // on mini/trio: (160.0,109.6) -> (156.0,108.0), a 4px by 1.6px diagonal.
+  //
+  // Misaligned pairs now fall through to the L-path strategy below, which
+  // covers everything up to maxLPathDistance and draws the corner.
+  if (sharesAxis(start, end) &&
+      (isVeryShort || (!hasObstacles && (isHorizontal || isVertical))) &&
       isDirectPathClear(start, end, boxes, excludeSet)) {
     return [start, end];
   }
@@ -470,8 +484,20 @@ export function findPathAStar(
 
     pixelPath.push(end);
 
-    // Simplify path - only remove truly collinear points, validate each step
-    return simplifyPathValidated(pixelPath, boxes, excludeSet);
+    // THE GRID IS ORTHOGONAL; THE ENDPOINTS ARE NOT ON IT.
+    //
+    // aStarSearch moves in four directions, so the interior of every path it
+    // returns is already square-cornered. `start` and `end` are real jack
+    // standoffs though, at whatever sub-cell position the pedal put them, so
+    // joining them to the first and last grid cell drew a short diagonal at
+    // each end - measured on mini/trio as (160.0,109.6) -> (156.0,108.0).
+    //
+    // manhattanize inserts the missing corner, continuing the direction the
+    // path was already travelling. An inserted corner can land inside a pedal,
+    // and nothing here checks that - deliberately: the caller validates every
+    // candidate through candidateOk, so an unsafe elbow costs this rung its
+    // turn in the cascade rather than producing a route through a pedal.
+    return simplifyPathValidated(manhattanize(pixelPath), boxes, excludeSet);
   }
 
   // STRATEGY 4: Perimeter fallback (validated with the shared policy)
