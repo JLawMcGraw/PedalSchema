@@ -200,8 +200,30 @@ export function calculateGreedyPlacementWithDiagnostics(
    * group - see the retry at the end of this function. 4-cable mode keeps it
    * unconditionally: there the hub spans the amp preamp and its members are
    * not adjacent, so nothing is gained by giving the room back.
+   *
+   * DROPPING IT IS GRADUATED, because all-or-nothing overshot. The pad is
+   * worth 0.5in on each side of TWO pedals - up to 2.0in of row - and a run
+   * that misses by a fraction of that used to surrender the lot. Measured on
+   * jr/seven + loop + ns2loop + locked, 2026-08-18:
+   *
+   *   padded run   TU-3 2.87 | PH-3 2.87 | NS-2 3.87 | TS9 2.87 | MT-2W 3.87
+   *                + 4 gaps x 0.5  =  18.35in of an 18.00in row
+   *
+   * It overflows by 0.35in, the group splits, and the ladder fell through to
+   * no pad at all - collapsing the hub's gaps from 40px back to 20px. Three
+   * cables need that gap on this board (the hub's SEND reaching a member on
+   * its far side, the RETURN coming back from the tail, and the hub's OUTPUT
+   * leaving to a pedal on the other row), and at 20px they came out 3-6px
+   * apart: three lane violations, which is one cable to look at.
+   *
+   * The TAIL gives its pad up first because it is the cheaper one. The hub
+   * carries four jacks and both of its gaps carry at least two runs; the tail
+   * carries two, and when the tail ends the row - which is exactly when the
+   * row is tight - its outer gap is the board edge and carries nothing. Hub
+   * only fits the same run in 17.35in with the group whole.
    */
-  let hubPadEnabled = true;
+  type HubPadMode = 'both' | 'hub-only' | 'none';
+  let hubPadMode: HubPadMode = 'both';
 
   /**
    * The pedal the loop group ENDS on, which needs the same room as the hub.
@@ -225,7 +247,10 @@ export function calculateGreedyPlacementWithDiagnostics(
     const isHub = !!topology.hub && placed.id === topology.hub.id;
     const isTail = !!loopGroupTail && placed.id === loopGroupTail;
     if (!isHub && !isTail) return 0;
-    if (topology.mode === 'pedal-loop' && !hubPadEnabled) return 0;
+    // 4-cable mode never gives it back - see hubPadMode.
+    if (topology.mode !== 'pedal-loop') return 0.5;
+    if (hubPadMode === 'none') return 0;
+    if (hubPadMode === 'hub-only' && !isHub) return 0;
     return 0.5;
   };
 
@@ -657,18 +682,26 @@ export function calculateGreedyPlacementWithDiagnostics(
    * cost a little; a member stranded on the next row costs two board-length
    * cables, so the padding is the cheaper thing to lose.
    *
+   * It gives the pad up in STEPS rather than all at once: the tail's pad
+   * first, then the hub's. A run that misses the row by 0.35in should not be
+   * made to surrender 2.0in of clearance - see hubPadMode for the measurement
+   * that put this rung in.
+   *
    * Only a pedal loop can give it up - see hubPad.
    */
-  const padOptions = loopGroupIds.length >= 2 ? [true, false] : [true];
+  const padOptions: HubPadMode[] =
+    loopGroupIds.length >= 2 ? ['both', 'hub-only', 'none'] : ['both'];
 
   /*
    * Wrapping before the group is tried INSIDE the pad axis, after the plain
    * attempt:
    *
-   *   pad on,  wrap off    what this did before the wrap axis existed
-   *   pad on,  wrap on     end the row early so the group stays whole
-   *   pad off, wrap off    give up the corridors
-   *   pad off, wrap on     last resort before the unsatisfiable fallback
+   *   both,     wrap off    what this did before the wrap axis existed
+   *   both,     wrap on     end the row early so the group stays whole
+   *   hub-only, wrap off    give the TAIL's corridor back, keep the hub's
+   *   hub-only, wrap on
+   *   none,     wrap off    give up the corridors
+   *   none,     wrap on     last resort before the unsatisfiable fallback
    *
    * Plain-first is what keeps every already-packing board bit-for-bit
    * unchanged: it settles on the first attempt and never sees the wrap.
@@ -676,9 +709,9 @@ export function calculateGreedyPlacementWithDiagnostics(
   const wrapOptions = loopGroupIds.length >= 2 ? [false, true] : [false];
 
   let settled = false;
-  for (const padOn of padOptions) {
+  for (const padMode of padOptions) {
     if (settled) break;
-    hubPadEnabled = padOn;
+    hubPadMode = padMode;
     for (const wrapOn of wrapOptions) {
     if (settled) break;
     wrapBeforeGroupEnabled = wrapOn;
@@ -693,7 +726,7 @@ export function calculateGreedyPlacementWithDiagnostics(
         // A split group is not good enough while an axis remains untried -
         // that is the outcome both the wrap and dropping the pad exist to
         // avoid. Only the final combination accepts one.
-        const lastResort = !padOn && wrapOn;
+        const lastResort = padMode === 'none' && wrapOn;
         if (!placementDegraded && !(!lastResort && loopGroupSplit())) { settled = true; break; }
       }
       if (!settled && tier < CLEARANCE_TIERS.length - 1 && DEBUG_PLACEMENT) {
@@ -708,7 +741,7 @@ export function calculateGreedyPlacementWithDiagnostics(
   // existed, so a board that was already unsatisfiable is not ALSO changed.
   if (!settled) {
     CLUSTER_CABLE_CLEARANCE = CLEARANCE_TIERS[CLEARANCE_TIERS.length - 1];
-    hubPadEnabled = true;
+    hubPadMode = 'both';
     wrapBeforeGroupEnabled = false;
     straddleFirstPass = false;
     placementDegraded = false;

@@ -142,22 +142,33 @@ function buildScenario(combo: Combo): Scenario | null {
 const isLenient = (_f: ScenarioFlags): boolean => false;
 
 /**
- * Scenarios that knowingly run cables closer together than MIN spacing, with
- * the count measured on 2026-08-18. Cosmetic - the routes are legal and
- * distinct, they just read as one cable where they share a corridor. Same
- * family as the residual lane violation on the owner's board (roadmap P4).
+ * Scenarios that knowingly run cables closer together than MIN spacing.
  *
- * A `+locked` case: two pedals pinned mid-chain leave the packer no room to
- * end a row where it would like to. The unpinned version of the same board is
- * clean, which is the evidence that the pinning is what costs it.
+ * THIS TABLE IS EMPTY, and keeping it empty is the point - every entry it
+ * ever held turned out to be a real defect with a measurable cause, never an
+ * acceptable cosmetic residue:
  *
- * `wide/seven: loop+ns2loop+locked` was here at 1 until the row-corridor
- * contract landed (OBSTACLE_MARGIN 8 -> 6, geometry/index.ts): with a corridor
- * the router will actually enter, that cable stopped being squeezed.
+ *   wide/seven: loop+ns2loop+locked   1   closed 2026-08-18 by the row-corridor
+ *                                         contract (OBSTACLE_MARGIN 8 -> 6):
+ *                                         with a corridor the router will
+ *                                         actually enter, that cable stopped
+ *                                         being squeezed
+ *   jr/seven:   loop+ns2loop+locked   3   closed 2026-08-18 by graduated hub
+ *                                         padding (layout/index.ts). The
+ *                                         diagnosis it carried - "pinned
+ *                                         pedals leave the packer no room to
+ *                                         end a row" - was WRONG. The packer
+ *                                         had room; it had given up 2.0in of
+ *                                         hub corridor to recover a 0.35in
+ *                                         overflow, because the pad was a
+ *                                         boolean. See hub-pad-graduated.test.ts
+ *
+ * So a new entry here is a bug that has not been read closely enough yet, not
+ * a tolerance. Pin the count if one is genuinely unavoidable, and write down
+ * the measurement beside it - a budget without one rots into a wrong story,
+ * which is exactly what the jr/seven line above did for a fortnight.
  */
-const LANE_VIOLATION_BUDGET: Record<string, number> = {
-  'jr/seven: loop+ns2loop+locked': 3,
-};
+const LANE_VIOLATION_BUDGET: Record<string, number> = {};
 
 // ---------------------------------------------------------------------------
 // Snapshots for determinism/idempotence comparison
