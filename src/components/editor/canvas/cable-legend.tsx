@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { Pedal, PlacedPedal } from '@/types';
 import type { RoutedCable } from '@/lib/engine/cables/route-cables';
 import {
@@ -55,6 +56,14 @@ function Swatch({ kind }: { kind: (typeof CABLE_LEGEND)[number]['kind'] }) {
 }
 
 export function CableLegend({ routedCables, placedPedals, pedalsById }: CableLegendProps) {
+  // COLLAPSED BY DEFAULT, because the panel grows with the failure count and
+  // it sits over the board it is describing. On `test` four failures made a
+  // six-line block across the lower third - the same mistake as the original
+  // 19rem top-left legend, arrived at from the other direction. The headline
+  // is the part you always want; the per-cable reasons are the part you want
+  // once, while you are fixing it.
+  const [showFailures, setShowFailures] = useState(false);
+
   if (routedCables.length === 0) return null;
 
   const nameOf = (id: string | null): string | null => {
@@ -94,21 +103,41 @@ export function CableLegend({ routedCables, placedPedals, pedalsById }: CableLeg
     >
       {failures.length > 0 && (
         <div className="pointer-events-auto max-w-[34rem] rounded-lg border border-red-900/60 bg-neutral-900/95 px-3 py-2 text-xs shadow-lg backdrop-blur-sm">
-          <p className="mb-1 font-medium text-red-400">
+          <button
+            type="button"
+            data-legend-failures-toggle=""
+            aria-expanded={showFailures}
+            onClick={() => setShowFailures((open) => !open)}
+            className="flex w-full items-center gap-1.5 text-left font-medium text-red-400 hover:text-red-300"
+          >
+            <span aria-hidden className="text-[0.65rem] leading-none">{showFailures ? '▾' : '▸'}</span>
             {failures.length === 1 ? '1 cable will not fit' : `${failures.length} cables will not fit`}
-          </p>
-          <ul className="space-y-1">
-            {failures.map((failure) => (
-              <li key={failure.label} data-legend-failure={failure.label} className="text-neutral-400">
-                <span className="text-neutral-200">{failure.label}</span>
-                {' — '}
-                {failure.reason}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1 text-neutral-500">
-            Move the pedals apart, or run these underneath the board.
-          </p>
+            <span className="font-normal text-neutral-500">
+              {showFailures ? '' : '— run under the board, or move the pedals apart'}
+            </span>
+          </button>
+
+          {showFailures && (
+            <>
+              <ul className="mt-1 space-y-1">
+                {failures.map((failure) => (
+                  <li key={failure.label} data-legend-failure={failure.label} className="text-neutral-400">
+                    <span className="text-neutral-200">{failure.label}</span>
+                    {' — '}
+                    {failure.reason}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-neutral-500">
+                {/* Under-board is named FIRST because it is the remedy that
+                    always exists. Moving pedals apart depends on the board
+                    having room, which - on a board reporting failures - is
+                    exactly what it does not have. */}
+                Run these underneath the board, or move the pedals apart to
+                open a channel between the rows.
+              </p>
+            </>
+          )}
         </div>
       )}
 

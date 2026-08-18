@@ -60,8 +60,20 @@ async function pickConfig(page) {
   return best.id;
 }
 
-/** Read the legend out of the DOM. */
+/**
+ * Read the legend out of the DOM.
+ *
+ * The failure list is COLLAPSED by default - it grows with the failure count
+ * and sits over the board it describes - so expand it first or every check
+ * below counts zero entries and passes for the wrong reason.
+ */
 async function readLegend(page) {
+  const toggle = page.locator('[data-legend-failures-toggle]');
+  if (await toggle.count()) {
+    if ((await toggle.first().getAttribute('aria-expanded')) === 'false') {
+      await toggle.first().click();
+    }
+  }
   return page.evaluate(() => {
     const root = document.querySelector('[data-cable-legend]');
     if (!root) return null;
