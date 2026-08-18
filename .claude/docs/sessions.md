@@ -145,7 +145,52 @@ member is never acceptable. Both real boards are **byte-identical** across the
 change, because a board that packs cleanly settles on attempt 1 and never sees
 the new axis.
 
+### Why four cables are red on `test`, and why the owner is right that they fit
+
+Measured, and it is a CONSTANT CONTRADICTION rather than a routing failure:
+
+    ROW_GAP              0.35in = 14px    what rows are DESIGNED for
+    2 x OBSTACLE_MARGIN  0.40in = 16px    what a cable needs between two rows
+
+Both row gaps on `test` are exactly 14px - the placer produced its designed
+layout, and the router then refuses every row corridor in it. That is why all
+four failures report `unattached-*`: the stubs cannot reach any corridor,
+because at this clearance the board has none. The cascade is not at fault; it
+tries eight strategies including A* and a perimeter ring, and there is genuinely
+no on-surface route.
+
+The owner is right that the cables fit. Rows are 0.35in apart and a patch cable
+is about 0.24in; the router wants 0.4in. Same family as the 25px-margin vs
+20px-spacing contradiction from the July review.
+
+**Both one-line fixes work and both cost real invariants** (`test` goes 4 red
+cables to 2 either way):
+
+    OBSTACLE_MARGIN 8 -> 6    3 tests move: one lane violation DISAPPEARS
+                              (wide/seven+locked 1 -> 0), the eviction fixture
+                              stops over-subscribing and goes vacuous, and
+                              wide/twelve+4cm loses 1 more crossing
+    ROW_GAP 0.35 -> 0.4       5 tests move, all placement/row-band ones
+
+Tried both, reverted both: OBSTACLE_MARGIN has three interlocking contracts
+(COLLISION_SPACING, STANDOFF, ENDPOINT_TOLERANCE) and ROW_GAP's own comment
+warns against moving it without redoing the row-band arithmetic. Shipping
+either at the end of a session, with an invariant test left vacuous, is how
+these constants caused trouble the first time.
+
+**The task is to make the contract explicit**: OBSTACLE_MARGIN must be less
+than half of BOTH the horizontal guarantee (COLLISION_SPACING) and the vertical
+design gap (ROW_GAP). Today it satisfies the first and violates the second, and
+nothing says it should. Then fix the eviction fixture to over-subscribe on
+purpose rather than by accident of the old margin.
+
+The two that remain red after either fix both involve BigSky, a 6.75in pedal at
+the left edge - a separate case, not the same cause.
+
 ### Next Tasks
+- [ ] **The row corridor contradiction above.** Highest value: it turns 4 red
+      cables into 2 on the owner's real board, and red cables are the loudest
+      wrong thing the app draws.
 - [ ] **The lane router loses to the strategy router on dense boards.**
       jr/seven+4cm is 11 crossings against 8. Roadmap P4's neighbour, and the
       allowance in `lane-router.test.ts` is pinned at 3 so it cannot drift.
