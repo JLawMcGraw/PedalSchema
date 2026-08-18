@@ -11,7 +11,17 @@ A visual pedalboard planning and layout tool for guitarists. Design your pedalbo
 - **Real Pedal Photos** - Pedals render as background-free silhouettes; custom uploads get
   the same treatment client-side before upload
 - **Effects Loop Support** - Configure and visualize amp effects loop routing with dedicated send/return jacks
+- **Clean or Dirty Modulation** - Put chorus, flanger and phaser in the amp's loop, or in
+  front of the drives so the modulated signal is what hits the dirt. The switch moves
+  cables *and* pedals
+- **4-Cable Method** - NS-2 style hub pedals gate the drives while time effects run
+  post-preamp
 - **Collision Detection** - Prevents pedal overlap and ensures valid layouts
+- **Power Budget** - Total current draw per board, split by voltage, with high-draw pedals
+  flagged. Pedals whose draw was never recorded are counted separately rather than as
+  zero, so an unknown never reads as free
+- **Power Supply Planning** - Assign pedals to a supply's outputs and see which output is
+  over its rating
 - **Undo/Redo** - Board edits are reversible, including optimization
 - **Multiple Board Sizes** - Support for various pedalboard dimensions
 - **Responsive Design** - Works on desktop and mobile with collapsible panels
@@ -19,24 +29,42 @@ A visual pedalboard planning and layout tool for guitarists. Design your pedalbo
 ## Cable Routing
 
 Routing runs in `src/lib/engine`, not in the renderer — the canvas is handed finished
-polylines. Two routers, in order:
+polylines. Two routers, and **both of them run**:
 
 1. **Lane router** (`engine/lanes`) — a Manhattan corridor model that assigns cables to
    lanes with coordinated spacing, so parallel runs stay individually traceable.
 2. **Strategy cascade** (`engine/cables/routing-strategies`) for anything the corridor
-   model can't serve — seven rungs, cheapest sufficient first: direct → L-path → channel
-   between rows → above → below → safe lane → **A\* as the last resort**, then an
-   explicitly invalid path the renderer draws red.
+   model can't serve — ten rungs, cheapest sufficient first: facing jacks → direct →
+   L-path → channel between rows → above → below → safe lane → A\* → **around the
+   outside of the board**, then an explicitly invalid path the renderer draws red.
+
+The whole board is then routed a second time with the corridor model switched off, and
+whichever result has **fewer cable crossings** is the one drawn. The corridor model is
+better nearly everywhere and occasionally worse on a dense board, so "the lane router
+never draws a worse board than the cascade" is enforced rather than hoped for. It costs
+about 1.23x on a real-board optimize.
+
+**Every cable turns at right angles.** A patch cable leaves a jack square-on, so a
+diagonal line is a picture of a cable that cannot exist — the corridor model guarantees
+it by construction and the cascade is held to it by test.
 
 Every cable records which rung produced it, so an unexpected shape is diagnosable without
-re-tracing the cascade by hand.
+re-tracing the cascade by hand. Four appearances carry meaning on the canvas:
+
+| | |
+|---|---|
+| solid orange | instrument cable — guitar to board, board to amp |
+| solid green | patch cable — pedal to pedal |
+| **dashed** | no room between the rows; run this one underneath the board |
+| **red** | no route exists at this spacing, with the reason named |
 
 - **Collision Avoidance** - Cables route around every pedal except their own endpoints
 - **Standoff Points** - Cables exit a jack perpendicular to the pedal edge before turning
 - **Jack-Aware Routing** - Cables connect to actual input/output jack positions
 - **Effects Loop Routing** - Amp send/return connections approach pedals through the channel
-- **Shared Geometry** - Clearances live in `engine/geometry` as documented contracts, so
-  routing, validation and the optimizer cannot disagree about them
+- **Shared Geometry** - Clearances live in `engine/geometry` as documented contracts that
+  a test asserts, so routing, validation and the optimizer cannot disagree about them —
+  nor can a cable be asked to fit through a gap narrower than the one the placer designs
 
 ## Effects Loop
 
@@ -78,7 +106,7 @@ src/
 │   │   ├── canvas/         # Pedalboard canvas components
 │   │   │   ├── board-renderer.tsx
 │   │   │   ├── pedal-renderer.tsx
-│   │   │   ├── cable-renderer.tsx  # A* pathfinding cable routing
+│   │   │   ├── cable-renderer.tsx  # draws finished polylines; does no routing
 │   │   │   └── editor-canvas.tsx   # Main canvas with amp visualization
 │   │   ├── panels/         # Side panels (library, properties, routing)
 │   │   └── toolbar/        # Editor toolbar with responsive overflow
@@ -91,9 +119,10 @@ src/
 │   │   ├── signal-chain/   # Ordering rules, warnings, suggestions
 │   │   ├── cables/         # Cable generation, routing strategies, validation
 │   │   ├── lanes/          # Manhattan corridor router
-│   │   ├── pathfinding/    # A* grid search (routing's last resort)
+│   │   ├── pathfinding/    # A* grid search (one rung of the cascade)
 │   │   ├── obstacles/      # Obstacle set construction
 │   │   ├── collision/      # Collision detection & rail snapping
+│   │   ├── power/          # Current draw totals and supply-output planning
 │   │   └── layout/         # Placement search + routing-aware cost function
 │   └── images/             # Background knockout for pedal photos
 ├── store/                  # Zustand state management (source state + derived)
