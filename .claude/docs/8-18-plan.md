@@ -1,5 +1,22 @@
 # The routing-config toggles (2026-08-18)
 
+> **STATUS: DONE, 2026-08-18.** All tasks closed - see the session entry in
+> `sessions.md`. Two places this plan was WRONG, both corrected by measurement
+> rather than argument:
+>
+> 1. **"`modulationInLoop` is inert."** Only the OFF direction was. The ON
+>    direction worked all along; `test` cannot show it (both modulation pedals
+>    already in the loop) and J$ Home half-hides it (one of the two is
+>    `chainPositionLocked`, so rules skip it entirely).
+> 2. **"The gap is exactly loop ON, mod flag OFF."** Too small. Dirty
+>    modulation is an ORDER - modulation before the drives - not just a
+>    location, per the owner mid-session. The category defaults put modulation
+>    at 110, after overdrive 60 / distortion 70 / fuzz 80, so no pedal ever
+>    moved. That is the "should move cables AND pedals" report.
+>
+> T5 found the effects-loop half is FINE in the app, as the engine measurement
+> suggested. The reported bug was one of the two toggles.
+
 > **For Claude:** work through this task by task. Every claim below is a
 > file:line read this session or a measurement quoted from 8/10 — none of it
 > needs re-deriving before starting.

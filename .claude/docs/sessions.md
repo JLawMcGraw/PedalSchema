@@ -4,6 +4,127 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-18 - Dirty modulation is an order, not a location
+
+The switch had two positions and one behaviour. Fixed, and the fix is twice
+the size the plan predicted because the plan had the wrong definition of the
+feature. Commits: `209eba6` (plan), `b11af32` (the fix), `b558436` (proof in
+the app).
+
+### What the plan got wrong, and how
+
+**"`modulationInLoop` is inert."** Only the OFF direction was. Measured on the
+real boards before touching anything:
+
+    J$ Home  4cm=off mod=off   108.68   BF-3 front_of_amp
+    J$ Home  4cm=off mod=ON    135.88   BF-3 effects_loop, placements differ
+
+The ON direction had always worked. It looked dead because of where it was
+looked at: on `test` both modulation pedals are already `effects_loop` in
+stored data, so the switch is a no-op in either direction, and on J$ Home one
+of the two (Chorus Ensemble Deluxe) is `chainPositionLocked`, which excludes it
+from rule processing entirely - both ordering and location, by contract. Two
+different reasons for nothing moving, on the only two boards there are.
+
+**"The gap is exactly loop ON, mod flag OFF."** Too small, and the owner said
+so mid-session: *dirty modulation places modulation before the distortion,
+overdrive and fuzz.* It is an ORDER. The category defaults put modulation at
+110 against overdrive 60, distortion 70, fuzz 80, so "off" only ever meant "not
+in the loop" and no pedal moved on the board. **That is the "it should move
+cables AND pedals" report** - half the switch was missing, not one direction of
+it. No amount of location symmetry would have fixed it, and the session would
+have shipped a half-fix that passed all its own tests.
+
+### The fix
+
+`modulation-flexible` now sets the location in both directions AND reorders
+modulation and tremolo in front of the first drive when the switch is off.
+Direct-pickup fuzz still goes first - it has to see the pickups unbuffered,
+which outranks modulation's placement.
+
+The reorder is gated on the loop existing, the same condition the panel renders
+the switch under. Without that gate an unseen `false` default re-cabled every
+loopless board; the config matrix caught it on six ns2loop scenarios.
+
+4CM honours the switch too (owner's T0 decision). `deriveSignalTopology`
+partitioned by CATEGORY and read `location` only to find the hub, so the switch
+was inert there whatever the rule wrote. **The first attempt put dirty
+modulation in the hub's own loop, after the drives - wrong by the owner's
+definition and measurably worse: 70in of cable and 7 crossings on the 22-pedal
+board.** Moving it before the hub, where the drives sit behind it, is both the
+correct wiring and the cheaper one.
+
+### The harness was dropping six fields the engine reads
+
+`dump-configs-offline.js` omitted `supports4Cable`, `needsDirectPickup`,
+`needsBufferBefore`, `defaultChainPosition`, `voltage` and `polarity`.
+`supports4Cable` was the expensive one: it gates the four-cable-hub rule, so
+every offline replay of a 4-cable board ran with **no hub**, while the dumped
+rows still said `location: four_cable_hub` and made it look like the rule had
+fired. Third in the family after the `rails` bug and the fingerprint's
+chainPosition sort - **a harness that drops or normalises what the product
+reads is not testing the product.** Every measurement here was retaken on the
+repaired harness and came out the same.
+
+### Two invariants now carry a budget instead of a bare zero
+
+Both on jr/seven with dirty modulation, and both for one reason: clean gives
+the modulation pedals their own topology segment and their own row, while dirty
+makes all seven pedals a single front run on an 18in board.
+
+    clean   tuner gate od dist | phaser flanger looper     0 violations
+    dirty   tuner phaser flanger gate od | dist looper     4 violations
+
+    lane separation      4, cosmetic - corridors 1-2px
+    loop group intact    1 stranded member - NOT cosmetic
+
+Pinned to measured counts, not widened to a blanket allowance, so any other
+case that regresses still fails at zero.
+
+**The obvious fix for the stranded member was written this session and
+reverted.** Ending the row before the group instead of through it fails because
+the hub and its members are placed in two separate passes - `primaryChain` lays
+the hub out inline, then `hubClusters` places the members beside it. Forcing
+the wrap moves the hub to a row where the members no longer fit alongside, the
+attempt reports degraded, and the retry loop falls back to exactly the split it
+was avoiding. Keeping the group whole means teaching those two passes about
+each other's row budget. That diagnosis is recorded on the budget in
+`config-matrix.test.ts` so the next attempt does not rediscover it.
+
+### The effects-loop half is fine
+
+8/10 predicted the gap might be store->canvas. It is not.
+`verify-modulation-switch.js` drives the real control on a throwaway clone and
+reads the twin - nine checks, all passing:
+
+    DIRTY  TU-3 -> Chorus -> BF-3 -> TS9 -> Conspiracy -> NS-2 -> ...
+    CLEAN  TU-3 -> Chorus -> TS9 -> NS-2 -> Conspiracy -> BF-3(loop) -> ...
+
+The switch renders, dirty puts BF-3 before the first drive and out of the loop,
+clean moves it in, the drawn cables change, the round trip returns the chain
+byte-for-byte, and Optimize moves pedals while keeping modulation ahead of the
+drives. **The reported bug was one of the two toggles.**
+
+### What the owner will see
+
+`test` is stored at loop+4cm+dirty and has been silently drawing the CLEAN
+layout. Opening it now gives the dirty one it asks for: 189.89in and 8
+crossings become 247.9in and 18. Longer because it IS longer - two pedals move
+out of the amp loop into the front run. If clean was what was wanted there, the
+switch is now the thing that says so.
+
+### Next Tasks
+- [ ] **Keep a loop group off a row boundary.** The one non-cosmetic residue,
+      diagnosed above. `primaryChain` and `hubClusters` place in two passes and
+      neither knows the other's row budget; a retry axis is not enough.
+- [ ] **The lane router loses to the strategy router on dense boards.**
+      jr/seven+4cm is 11 crossings against 8. Roadmap P4's neighbour, and the
+      allowance in `lane-router.test.ts` is pinned at 3 so it cannot drift.
+- [ ] **P1.5 is still open** - the cost model and the drawn routing use
+      different routers.
+
+---
+
 ## Session: 2026-08-10 - The chain order was decided by database row order, and the canvas learns to explain itself
 
 Went looking for a live example of the R1 "say why a cable is red" item and
