@@ -367,6 +367,60 @@ not help - the pad widens a pedal horizontally, and what a top-jack pedal needs
 is corridor HEIGHT, which no amount of x-padding buys. Worth correcting the
 comment before it is used to justify something.
 
+### The last lane budget, and a diagnosis that had gone unread (`45afa18`)
+
+`jr/seven: loop+ns2loop+locked` drew 3 lane violations and had been budgeted on
+the note that **"two pedals pinned mid-chain leave the packer no room to end a
+row where it would like to"**, with the wrap-before-group retry named as the
+likely fix. The packer had room. The note was never measured, and it pointed at
+the wrong mechanism entirely.
+
+What the coordinates say, which is the only reason this got found:
+
+    unpinned   gaps around the hub 1.0in   -> the hub pad is ON
+    pinned     every gap exactly   0.5in   -> the hub pad is OFF
+
+The pad is 0.5in on each side of TWO pedals - the loop hub and the pedal its
+group ends on - so up to 2.0in of row, and it sat behind a single boolean:
+
+    padded    TU-3 2.87 | PH-3 2.87 | NS-2 3.87 | TS9 2.87 | MT-2W 3.87
+              + 4 gaps x 0.5  =  18.35in  of an 18.00in row
+    hub only  ... MT-2W 2.87  =  17.35in
+
+**It misses by 0.35in and was made to surrender 2.0in.** The group splits, the
+retry ladder falls through to no pad at all, and the hub's gaps collapse from
+40px to 20px. Three cables need that one gap on this board - the hub's SEND
+reaching a member on its far side, the RETURN coming back from the tail, and
+the hub's OUTPUT leaving to a pedal on the other row - and at 20px they came
+out 3-6px apart. Three violations, one cable to look at.
+
+So the ladder gains a rung: `both` -> `hub-only` -> `none`. The TAIL gives its
+pad up first, because the hub carries four jacks and both its gaps carry at
+least two runs, while the tail carries two - and when the tail ends the row,
+which is exactly when the row is tight, its outer gap is the board edge and
+carries nothing.
+
+**The tail's pad costs row width even at the board edge**, because a pedal's
+packed width is `width + 2 * pad` on both sides whether or not a neighbour can
+use it. That is what makes the rung worth having rather than merely tidy, and
+it is not visible from reading `hubPad` alone.
+
+Blast radius, measured both ways before committing:
+
+    matrix        1 of 66 scenarios changed - the target, lanes 3 -> 0
+                  65 byte-identical in position AND cable validity
+    real boards   byte-identical (offline fingerprint, empty diff)
+
+Both real boards settle on an earlier rung and never see the new one, so
+nothing the owner looks at moves.
+
+**`LANE_VIOLATION_BUDGET` is now an empty table**, and its comment says why
+that is the point rather than an accident: both entries it ever held were real
+defects with measurable causes, and this one sat there looking settled while
+carrying a diagnosis nobody had checked. The pattern is the one this file keeps
+recording - a claim written without a measurement beside it survives on the
+strength of being in writing.
+
 ### Architecture Notes
 
 Durable facts learned today, recorded because each one cost time to establish
@@ -397,6 +451,11 @@ cascade's `direct` rung, A*'s early returns, and A*'s join between its
 pedal flush against the edge can point its stub off-board; a segment with both
 ends outside the board is capped at a stub's length.
 
+**A pedal's packed width includes its pad on BOTH sides**, whether or not a
+neighbour is there to use it - so clearance given to a pedal at the end of a
+row still costs that row width. The hub padding is given up in steps for this
+reason (`hubPadMode`, layout/index.ts): tail first, then hub.
+
 ### Next Tasks
 
 - [ ] **Decide what `test` should be.** It is stored at loop+4cm+dirty and has
@@ -409,10 +468,11 @@ ends outside the board is capped at a stub's length.
       seats one run. A shallower pedal in row 1, one fewer row, or run one of
       them underneath. **No code action - do not loosen a clearance to make
       them go away.**
-- [ ] **One `+locked` lane budget remains** (`jr/seven: loop+ns2loop+locked`,
-      3 violations). Two pedals pinned mid-chain leave the packer no room to end
-      a row where it would like to; the unpinned board is clean, which is the
-      evidence. Likely the wrap-before-group retry taught about pinned pedals.
+- [x] **The last `+locked` lane budget is closed** (`jr/seven: loop+ns2loop
+      +locked`, was 3 violations, `45afa18`). The recorded diagnosis was wrong:
+      the packer had room, and had given up 2.0in of hub corridor to recover a
+      0.35in overflow because the pad was a boolean. Now graduated - tail's pad
+      first, then the hub's. `LANE_VIOLATION_BUDGET` is an empty table.
 - [ ] **The optimizer pays 1.23x** for the never-worse guarantee (1.64s -> 2.02s
       across both saved boards). Worth optimising only if Optimize feels slow;
       the cheap win is that the second pass only matters where the two routers

@@ -61,26 +61,29 @@ loosening is a deliberate act with the arithmetic redone.
 
 ---
 
-## R2 — Lane separation on dense boards
+## R2 — CLOSED 2026-08-18 (`45afa18`)
 
-The last measured residue, down from four cases to one:
+Was: "jr/seven loop+ns2loop+locked, 3 lane violations - two pedals pinned
+mid-chain leave the packer no room to end a row where it would like to. The
+wrap-before-group retry is the shape of the answer; it needs to understand
+pinned pedals as well as loop groups."
 
-    jr/seven: loop+ns2loop+locked    3 lane violations
+**That diagnosis was wrong, and it is the third time this file has been
+confidently wrong in writing.** The packer had room. The pinning is real but
+incidental: it changes the chain order, which changes where the run overflows.
+The actual cause is that hub corridor padding was a BOOLEAN worth up to 2.0in
+of row, so a run overflowing by 0.35in surrendered the lot and collapsed the
+hub's gaps from 40px to 20px, where three cables have to pass on this board.
 
-Pinned in `LANE_VIOLATION_BUDGET` with the count, so it fails if it gets worse
-AND if it gets better. Cosmetic - the routes are legal and distinct, they just
-read as one cable where they share a corridor.
+Fixed by giving the pad up in steps - tail's first, then the hub's. Measured:
+1 of 66 matrix scenarios changed, both real boards byte-identical.
 
-**The evidence for the cause is that the UNPINNED version of the same board is
-clean.** Two pedals pinned mid-chain leave the packer no room to end a row
-where it would like to. The wrap-before-group retry added on 2026-08-18
-(`layout/index.ts`) is the shape of the answer; it needs to understand pinned
-pedals as well as loop groups.
+`LANE_VIOLATION_BUDGET` is now an EMPTY table. Both entries it ever held were
+real defects, not cosmetic residue - which is the argument against ever adding
+one without the measurement beside it.
 
-Note what is NOT here any more: the crossing allowances in
-`lane-router.test.ts` are an EMPTY table. "The lane router never draws a worse
-board than the cascade" is now enforced by routing both ways and keeping the
-better picture, so it is a guarantee rather than a tolerance.
+Evidence to re-check with: `hub-pad-graduated.test.ts`, and `hubPadMode` in
+`layout/index.ts`.
 
 ---
 
