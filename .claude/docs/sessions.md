@@ -235,21 +235,49 @@ routing-heavy suites (880ms -> 1400ms). Make the cascade orthogonal first and
 the guard becomes worth revisiting; the note is recorded on the allowance in
 `lane-router.test.ts`.
 
+### The cascade is orthogonal, and the guard works on the second attempt
+
+`474ccba`, then `d1e41db`. Three places drew diagonals and only the first was
+known: the cascade's `direct` rung (any pair within 80px, aligned or not), A*'s
+"very short" and within-15px-of-an-axis early returns, and - the one nobody had
+looked for - A*'s join between its 4-directional grid and the off-grid jack
+standoffs at each end. `manhattanize` already existed for exactly that repair.
+
+**`BOARD_OVERHANG` was being used as a highway.** It exists so a jack on a
+pedal flush against the edge can point its stub slightly off-board, and
+`isPathWithinBounds` applied it per POINT - which says how far outside a point
+may sit and nothing about how far a route may RUN out there. A* left the board
+and travelled 520px along y=-12, beat the perimeter rung, and was then drawn as
+an ordinary cable instead of a dashed one the user is told to run underneath. A
+segment with both ends outside the board is now capped at a stub's length. This
+surfaced only because a perimeter fixture went red - the fixture's own comment
+had predicted the failure mode and said to tighten it rather than loosen the
+assertion.
+
+With both routers orthogonal the never-worse guard became a FAIR comparison and
+was rebuilt. **The allowance table in `lane-router.test.ts` is now empty**: the
+two per-case exceptions are deleted because the property is enforced rather
+than tolerated. A cable the corridor served and then lost on the whole-board
+comparison reports the new `outrouted` outcome, so the strategy/outcome
+reconciliation keeps holding.
+
+Cost, measured: **1.23x on a real-board optimize** (1.64s -> 2.02s for both
+saved boards), 1.6x on the synthetic suites where routing is nearly all the
+work. Both real boards byte-identical - nothing the owner sees changes; what
+changes is that a denser board can no longer quietly get worse.
+
 ### Next Tasks
-- [ ] **Make the strategy cascade always orthogonal.** It is the blocker for
-      the never-worse guard above, and diagonal cables are wrong on their own
-      terms - the fallback was already taught to draw elbows for exactly that
-      reason, but the earlier rungs were not.
 - [ ] **The last 2 red cables on `test`** both end at BigSky, a 6.75in pedal on
       the left edge. Different cause from the corridor contradiction; not yet
       diagnosed.
-- [ ] **The lane router still loses on dense boards** - jr/seven+4cm 11 against
-      8, wide/twelve+4cm 7 against 5. Allowances are pinned per case so any
-      OTHER case that regresses still fails at 1.
 - [ ] **One `+locked` lane budget remains** (`jr/seven` 3). Pinning two pedals
       mid-chain leaves the packer no room to end a row where it would like to;
       the unpinned version of the board is clean, which is the evidence.
       Likely the wrap-before-group idea applied around pinned pedals.
+- [ ] **`roadmap-next.md` is stale** (dated 2026-08-01) and cost this session
+      two wrong claims - P1.5 and P3 are done, P1's supply half is done, P2's
+      fit explanation is done. Either refresh it or delete it in favour of the
+      per-session task lists, which have stayed accurate.
 
 ---
 
