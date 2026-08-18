@@ -14,7 +14,8 @@ import { makePedalSet, makeAmp } from '../../__tests__/support/fixtures';
 import { signalChainEngine } from '../../signal-chain';
 import { deriveSignalTopology } from '../index';
 
-function derive(use4CableMethod: boolean, useEffectsLoop: boolean, ns2UseLoop = false) {
+function derive(use4CableMethod: boolean, useEffectsLoop: boolean, ns2UseLoop = false,
+  modulationInLoop = false) {
   const set = makePedalSet('twelve');
   let pedals = set.placedPedals;
   if (ns2UseLoop) {
@@ -23,7 +24,7 @@ function derive(use4CableMethod: boolean, useEffectsLoop: boolean, ns2UseLoop = 
   }
   const ctx = {
     ampHasEffectsLoop: true, useEffectsLoop, use4CableMethod,
-    modulationInLoop: false, loopType: 'series' as const,
+    modulationInLoop, loopType: 'series' as const,
   };
   pedals = signalChainEngine.calculate(pedals, set.pedalsById, ctx).orderedPedals;
   const topology = deriveSignalTopology(
@@ -61,12 +62,30 @@ describe('4-cable method wiring (BOSS NS-2 X-pattern)', () => {
     const postGate = names(seg.get('after-hub')!.pedals);
     expect(seg.get('after-hub')!.from).toMatchObject({ kind: 'pedal', jack: 'output' });
     expect(seg.get('after-hub')!.to).toEqual({ kind: 'external', type: 'amp_return' });
-    for (const fx of ['phaser', 'delay', 'reverb']) {
+    // Delay and reverb are post-gate because the method says so - the gate
+    // must never chop their trails. The PHASER is not here: this fixture has
+    // modulationInLoop false, and dirty modulation means the modulated signal
+    // hits the dirt, so it belongs in front of the hub with the drives behind
+    // it. Before 2026-08-18 it sat here regardless of the switch, which is
+    // what made the switch look dead under 4CM.
+    for (const fx of ['delay', 'reverb']) {
       expect(postGate).toContain(fx);
     }
+    expect(postGate).not.toContain('phaser');
+    expect(names(seg.get('before-hub')!.pedals)).toContain('phaser');
     expect(postGate).toContain('looper');
     // Time FX come before the looper (chain order preserved)
     expect(postGate.indexOf('delay')).toBeLessThan(postGate.indexOf('looper'));
+  });
+
+  it('puts CLEAN modulation in the amp loop, post-gate, with the other time FX', () => {
+    // The other half of the switch: same rig, modulationInLoop on. Written
+    // because the case above can only prove where dirty modulation goes, and
+    // a one-directional rule passes half a round trip.
+    const { topology } = derive(true, true, false, true);
+    const seg = new Map(topology.segments.map((s) => [s.id, s]));
+    expect(names(seg.get('after-hub')!.pedals)).toContain('phaser');
+    expect(names(seg.get('before-hub')!.pedals)).not.toContain('phaser');
   });
 });
 

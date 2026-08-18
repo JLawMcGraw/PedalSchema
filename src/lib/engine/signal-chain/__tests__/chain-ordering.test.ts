@@ -220,9 +220,20 @@ describe('a pedal cannot sit in a loop the rig does not have', () => {
   });
 
   it('leaves it alone when there really is a loop in use', () => {
-    const { pedalsById, placed } = inLoop();
+    // A DELAY, deliberately, not the chorus the other cases use. This asserts
+    // that step 3b does NOT fire when a loop exists - an invariant that holds
+    // for every category. Written with a modulation pedal it also silently
+    // asserted that the modulation switch does nothing in its off position,
+    // which is the bug fixed on 2026-08-18: loopContext has modulationInLoop
+    // false, so a chorus here now correctly lands front_of_amp. The switch's
+    // own behaviour is tested in 'the modulation switch works in both
+    // directions' below; this test is about the loop existing.
+    const { pedalsById, placed } = setup([
+      ['tuner1', 'tuner', 1],
+      ['delay1', 'delay', 2, { location: 'effects_loop' }],
+    ]);
     const result = signalChainEngine.calculate(placed, pedalsById, loopContext);
-    expect(result.orderedPedals.find((p) => p.id === 'chorus1')!.location).toBe('effects_loop');
+    expect(result.orderedPedals.find((p) => p.id === 'delay1')!.location).toBe('effects_loop');
   });
 
   it('does not disturb a pinned chain position while correcting the location', () => {
@@ -234,6 +245,157 @@ describe('a pedal cannot sit in a loop the rig does not have', () => {
     const tuner = result.orderedPedals.find((p) => p.id === 'tuner1')!;
     expect(chorus.location).toBe('front_of_amp');
     expect(chorus.chainPosition).toBe(tuner.chainPosition + 1);
+  });
+});
+
+describe('the modulation switch works in both directions', () => {
+  /*
+   * `modulationInLoop` used to be one-directional: the rule moved modulation
+   * INTO the loop when the flag was on and returned the chain untouched when
+   * it was off. So a pedal that had ever been in the loop could never come
+   * back, and the panel's "Dirty: modulation before preamp" described a state
+   * the engine could not produce.
+   *
+   * It read as fully inert because of where it was looked at: on `test` both
+   * modulation pedals are already `effects_loop` in stored data (no-op in
+   * either direction), and on J$ Home one of the two is chainPositionLocked,
+   * which excludes it from rule processing entirely. Only the OFF direction
+   * was ever actually broken.
+   */
+  const modContext = (modulationInLoop: boolean, use4CableMethod = false): ChainContext => ({
+    ampHasEffectsLoop: true,
+    useEffectsLoop: true,
+    use4CableMethod,
+    modulationInLoop,
+  });
+
+  const locationOf = (result: ReturnType<typeof signalChainEngine.calculate>, id: string) =>
+    result.orderedPedals.find((p) => p.id === id)!.location;
+
+  it('ON moves a front-of-amp modulation pedal into the loop', () => {
+    const { pedalsById, placed } = setup([
+      ['tuner1', 'tuner', 1],
+      ['chorus1', 'modulation', 2, { location: 'front_of_amp' }],
+    ]);
+    const result = signalChainEngine.calculate(placed, pedalsById, modContext(true));
+    expect(locationOf(result, 'chorus1')).toBe('effects_loop');
+  });
+
+  it('OFF returns a stored-in-loop modulation pedal to the front - the direction that was missing', () => {
+    const { pedalsById, placed } = setup([
+      ['tuner1', 'tuner', 1],
+      ['chorus1', 'modulation', 2, { location: 'effects_loop' }],
+    ]);
+    const result = signalChainEngine.calculate(placed, pedalsById, modContext(false));
+    expect(locationOf(result, 'chorus1')).toBe('front_of_amp');
+  });
+
+  it('treats tremolo the same as modulation in both directions', () => {
+    const { pedalsById, placed } = setup([
+      ['trem1', 'tremolo', 1, { location: 'front_of_amp' }],
+    ]);
+    expect(locationOf(signalChainEngine.calculate(placed, pedalsById, modContext(true)), 'trem1'))
+      .toBe('effects_loop');
+
+    const { pedalsById: byId2, placed: placed2 } = setup([
+      ['trem1', 'tremolo', 1, { location: 'effects_loop' }],
+    ]);
+    expect(locationOf(signalChainEngine.calculate(placed2, byId2, modContext(false)), 'trem1'))
+      .toBe('front_of_amp');
+  });
+
+  it('ON -> OFF -> ON round-trips to where it started', () => {
+    // The round trip is the test the one-directional rule could not pass: its
+    // second leg was a no-op, so the third had nothing to move and the chain
+    // never came back. Each leg is fed the PREVIOUS leg's output, which is
+    // what the store does - normalizeChain writes locations back onto
+    // placedPedals, so every toggle starts from the last one's result.
+    const { pedalsById, placed } = setup([
+      ['tuner1', 'tuner', 1],
+      ['chorus1', 'modulation', 2, { location: 'front_of_amp' }],
+      ['delay1', 'delay', 3, { location: 'front_of_amp' }],
+    ]);
+
+    const on1 = signalChainEngine.calculate(placed, pedalsById, modContext(true));
+    expect(locationOf(on1, 'chorus1')).toBe('effects_loop');
+
+    const off = signalChainEngine.calculate(on1.orderedPedals, pedalsById, modContext(false));
+    expect(locationOf(off, 'chorus1')).toBe('front_of_amp');
+    // The delay is not modulation's business: the time-effects rule owns it,
+    // and it stays in the loop across the whole round trip.
+    expect(locationOf(off, 'delay1')).toBe('effects_loop');
+
+    const on2 = signalChainEngine.calculate(off.orderedPedals, pedalsById, modContext(true));
+    expect(locationOf(on2, 'chorus1')).toBe('effects_loop');
+    expect(on2.orderedPedals.map((p) => `${p.id}:${p.chainPosition}:${p.location}`))
+      .toEqual(on1.orderedPedals.map((p) => `${p.id}:${p.chainPosition}:${p.location}`));
+  });
+
+  it('never moves a pedal the user placed by hand, in either direction', () => {
+    // locationOverride was respected in the ON direction only because the OFF
+    // direction did not exist. A symmetric rule can lose that guard silently,
+    // and the user would find their manual placement undone by a switch.
+    const front = setup([
+      ['chorus1', 'modulation', 1, { location: 'front_of_amp', locationOverride: true }],
+    ]);
+    expect(locationOf(signalChainEngine.calculate(front.placed, front.pedalsById, modContext(true)), 'chorus1'))
+      .toBe('front_of_amp');
+
+    const loop = setup([
+      ['chorus1', 'modulation', 1, { location: 'effects_loop', locationOverride: true }],
+    ]);
+    expect(locationOf(signalChainEngine.calculate(loop.placed, loop.pedalsById, modContext(false)), 'chorus1'))
+      .toBe('effects_loop');
+  });
+
+  it('OFF wins over the 4-cable method for modulation, but not for delay and reverb', () => {
+    // Owner's decision, 2026-08-18. four-cable-fx-loop (priority 104) puts all
+    // four time-based categories in the loop; modulation-flexible (priority
+    // 50) runs after it and pulls modulation back when the switch is off.
+    // Delay and reverb stay put - post-preamp is the point of the method for
+    // those, while modulation placement is taste. A lower-priority rule
+    // overriding a higher one is deliberate here.
+    const { pedalsById, placed } = setup([
+      ['chorus1', 'modulation', 1, { location: 'front_of_amp' }],
+      ['delay1', 'delay', 2, { location: 'front_of_amp' }],
+      ['verb1', 'reverb', 3, { location: 'front_of_amp' }],
+    ]);
+
+    const on = signalChainEngine.calculate(placed, pedalsById, modContext(true, true));
+    expect(locationOf(on, 'chorus1')).toBe('effects_loop');
+
+    const off = signalChainEngine.calculate(placed, pedalsById, modContext(false, true));
+    expect(locationOf(off, 'chorus1')).toBe('front_of_amp');
+    expect(locationOf(off, 'delay1')).toBe('effects_loop');
+    expect(locationOf(off, 'verb1')).toBe('effects_loop');
+  });
+
+  it('leaves the switch to step 3b when the rig has no loop at all', () => {
+    // Two places writing the same location is how the duplicated jack policy
+    // started. With no loop, this rule must return the chain untouched and
+    // let step 3b sweep every category to front_of_amp.
+    const { pedalsById, placed } = setup([
+      ['chorus1', 'modulation', 1, { location: 'effects_loop' }],
+    ]);
+    for (const modulationInLoop of [false, true]) {
+      const result = signalChainEngine.calculate(placed, pedalsById, {
+        ampHasEffectsLoop: false, useEffectsLoop: false,
+        use4CableMethod: false, modulationInLoop,
+      });
+      expect(locationOf(result, 'chorus1')).toBe('front_of_amp');
+    }
+  });
+
+  it('does not move a modulation pedal whose chain position is pinned', () => {
+    // J$ Home's Chorus Ensemble Deluxe, which is why the switch looked dead
+    // there: locked pedals are excluded from rule processing entirely, both
+    // ordering AND location. That is the documented contract of a pin.
+    const { pedalsById, placed } = setup([
+      ['tuner1', 'tuner', 1],
+      ['chorus1', 'modulation', 2, { location: 'front_of_amp', chainPositionLocked: true }],
+    ]);
+    const result = signalChainEngine.calculate(placed, pedalsById, modContext(true));
+    expect(locationOf(result, 'chorus1')).toBe('front_of_amp');
   });
 });
 

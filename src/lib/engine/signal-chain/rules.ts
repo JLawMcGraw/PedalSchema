@@ -36,6 +36,14 @@ export const SIGNAL_CHAIN_RULES: ChainRule[] = [
       context.use4CableMethod === true &&
       context.ampHasEffectsLoop === true,
     apply: (pedals, context) => {
+      // MODULATION IS NOT FINAL HERE. `modulation-flexible` runs after this
+      // one (priority 50 against 104) and pulls modulation and tremolo back
+      // to front_of_amp when the modulation switch is off - the owner's call,
+      // 2026-08-18: delay and reverb belong post-preamp because that is the
+      // point of the method, but modulation placement stays taste, and the
+      // panel shows both switches at once so the modulation one has to keep
+      // meaning what it says. A lower-priority rule overriding a higher one
+      // looks like a bug from here; it is deliberate, so do not "fix" it.
       // In 4-cable method, time-based effects always go in amp's FX loop
       return pedals.map((p) => {
         if (p.locationOverride) return p; // Respect manual override
@@ -205,21 +213,70 @@ export const SIGNAL_CHAIN_RULES: ChainRule[] = [
     priority: 50,
     condition: (pedal) => pedal.category === 'modulation' || pedal.category === 'tremolo',
     apply: (pedals, context) => {
-      // If user has enabled "clean modulation" (modulationInLoop), move modulation to effects loop
-      // Skip pedals with manual location override
-      if (context.modulationInLoop && context.ampHasEffectsLoop && context.useEffectsLoop) {
-        return pedals.map((p) => {
-          if (p.locationOverride) return p; // Respect user's manual choice
+      // SYMMETRIC BY DESIGN. This rule used to move modulation INTO the loop
+      // when the flag was on and do nothing when it was off, under a comment
+      // claiming "Default: keep modulation in front of amp" that no code
+      // carried out. So a pedal that had ever been in the loop could never
+      // come back, and "Dirty: modulation before preamp" - which the panel
+      // renders for the off state (routing-options-panel.tsx) - was
+      // unreachable for it. The flag is a two-position switch; both positions
+      // have to mean something.
+      //
+      // The no-loop case is NOT handled here. calculate()'s step 3b already
+      // rewrites every effects_loop pedal to front_of_amp when the rig has no
+      // loop, for every category. Writing the same location from two places is
+      // how the duplicated jack policy started - leave it to the one that
+      // already owns it.
+      // DIRTY MODULATION IS AN ORDER, NOT JUST A LOCATION. The owner's
+      // definition, 2026-08-18: dirty modulation puts phaser, flanger and
+      // chorus BEFORE the distortion, overdrive and fuzz - the modulated
+      // signal is what hits the dirt. The category defaults order modulation
+      // at 110, after overdrive (60), distortion (70) and fuzz (80), so "off"
+      // used to mean only "not in the loop" and no pedal ever moved. That is
+      // the "it should move cables AND pedals" report: half the switch was
+      // missing, not just one direction of it.
+      const isModulation = (p: PlacedPedal) =>
+        p.pedal?.category === 'modulation' || p.pedal?.category === 'tremolo';
 
-          const pedal = p.pedal;
-          if (pedal && (pedal.category === 'modulation' || pedal.category === 'tremolo')) {
-            return { ...p, location: 'effects_loop' as const };
-          }
-          return p;
-        });
-      }
-      // Default: keep modulation in front of amp ("dirty modulation")
-      return pedals;
+      // The switch only exists when the rig has a usable loop - the panel
+      // renders it under exactly this condition. With no loop there is no
+      // clean/dirty choice to honour, the flag sits at its `false` default
+      // that the user never saw, and the conventional category order
+      // (modulation after the drives) is the right answer. Reordering on an
+      // unseen default would have re-cabled every loopless board.
+      const switchAvailable = context.ampHasEffectsLoop && context.useEffectsLoop;
+
+      const located = switchAvailable
+        ? pedals.map((p) => {
+            if (p.locationOverride) return p; // Respect user's manual choice
+            if (!isModulation(p)) return p;
+            const target = context.modulationInLoop
+              ? ('effects_loop' as const)
+              : ('front_of_amp' as const);
+            return p.location === target ? p : { ...p, location: target };
+          })
+        : pedals;
+
+      // Clean: the loop decides where they sit, and category order is right
+      // for anything left in front. Only DIRTY reorders.
+      if (context.modulationInLoop || !switchAvailable) return located;
+
+      // A direct-pickup fuzz has to see the pickups unbuffered - that is the
+      // whole point of `fuzz-first` (priority 100) - so dirty modulation goes
+      // before the drives but never in front of one of those.
+      const isDrive = (p: PlacedPedal) =>
+        p.pedal !== undefined &&
+        ['overdrive', 'distortion', 'fuzz'].includes(p.pedal.category) &&
+        !(p.pedal.category === 'fuzz' && p.pedal.needsDirectPickup);
+
+      const moving = located.filter((p) => isModulation(p) && p.location === 'front_of_amp');
+      if (moving.length === 0) return located;
+
+      const rest = located.filter((p) => !moving.includes(p));
+      const firstDrive = rest.findIndex(isDrive);
+      if (firstDrive < 0) return located; // no drives: nothing to be in front of
+
+      return [...rest.slice(0, firstDrive), ...moving, ...rest.slice(firstDrive)];
     },
   },
 

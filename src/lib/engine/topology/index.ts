@@ -105,7 +105,34 @@ export function deriveSignalTopology(
       const pedal = dataOf(placed);
       if (!pedal) continue;
 
-      if (FOUR_CM_BEFORE_HUB.includes(pedal.category)) beforeHub.push(placed);
+      // MODULATION IS PLACED BY ITS `location`, NOT BY ITS CATEGORY.
+      //
+      // Every other category here is a fact about the method: drives belong
+      // inside the gate, a looper belongs after everything. Modulation is the
+      // one the player chooses - clean (amp loop, post-preamp) or dirty (in
+      // front of the preamp, with the drives) - and the panel gives them a
+      // switch for it. Reading the category instead of the location made that
+      // switch inert under 4CM: `modulation-flexible` wrote the location the
+      // user asked for and this partition threw it away, so the cables and the
+      // cost never saw it.
+      //
+      // Reading the location also means a pedal the user placed by hand
+      // (locationOverride) or pinned (chainPositionLocked - excluded from
+      // rules entirely) is honoured under 4CM, which the category list could
+      // not do. Delay and reverb stay category-driven: post-preamp is the
+      // point of the method for those.
+      const modulationCategory = pedal.category === 'modulation' || pedal.category === 'tremolo';
+      if (modulationCategory) {
+        // Dirty modulation goes BEFORE the hub, which is where the drives
+        // live: the modulated signal is what hits the dirt. Putting it in the
+        // hub's loop instead would place it after the drives and inside the
+        // gate - measurably worse as well as wrong, since it strands the
+        // modulation at the far end of the primary run (on the 22-pedal board
+        // it cost 70in of cable and 7 crossings).
+        if (placed.location === 'effects_loop') inAmpLoop.push(placed);
+        else beforeHub.push(placed);
+      }
+      else if (FOUR_CM_BEFORE_HUB.includes(pedal.category)) beforeHub.push(placed);
       else if (FOUR_CM_IN_HUB_LOOP.includes(pedal.category)) inHubLoop.push(placed);
       else if (FOUR_CM_IN_AMP_LOOP.includes(pedal.category)) inAmpLoop.push(placed);
       else if (FOUR_CM_AFTER_HUB.includes(pedal.category)) afterHub.push(placed);

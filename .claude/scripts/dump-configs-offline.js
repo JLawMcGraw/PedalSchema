@@ -13,10 +13,26 @@ const { createClient } = require('@supabase/supabase-js');
 
 const out = process.argv[2] || '/tmp/configs.json';
 
+// EVERY pedal field the engine reads must be here. Six were missing until
+// 2026-08-18: supports4Cable, needsDirectPickup, needsBufferBefore,
+// defaultChainPosition, voltage, polarity. supports4Cable was the expensive
+// one - it gates the four-cable-hub rule (signal-chain/rules.ts, priority
+// 105), so offline replays of a 4-cable board silently ran with NO hub while
+// the dumped rows still said `location: four_cable_hub`, which made it look
+// like the rule had fired. Same family as the `rails` bug in dump-state.js
+// and the fingerprint's chainPosition sort: a harness that drops or
+// normalises what the product reads is not testing the product.
+//
+// Before adding a field to the engine, add it here.
 const camelPedal = (p) => ({
   id: p.id, name: p.name, manufacturer: p.manufacturer, category: p.category,
   widthInches: p.width_inches, depthInches: p.depth_inches, heightInches: p.height_inches,
   preferredLocation: p.preferred_location, currentMa: p.current_ma,
+  voltage: p.voltage, polarity: p.polarity,
+  defaultChainPosition: p.default_chain_position,
+  supports4Cable: p.supports_4_cable,
+  needsBufferBefore: p.needs_buffer_before,
+  needsDirectPickup: p.needs_direct_pickup,
   jacks: (p.pedal_jacks || []).map((j) => ({
     id: j.id, pedalId: j.pedal_id, jackType: j.jack_type, side: j.side,
     positionPercent: j.position_percent, label: j.label,
