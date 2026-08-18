@@ -37,11 +37,27 @@ export interface BoardBounds {
 /**
  * Clearance cables must keep from non-endpoint pedals, in pixels.
  *
- * CONTRACT: must be strictly less than half the minimum guaranteed pedal
- * spacing (COLLISION_SPACING = 0.5" = 20px at 40px/inch), otherwise no cable
- * can pass between two legally placed pedals. 2 * 8 = 16px < 20px.
+ * CONTRACT, both halves, at the app's 40px/inch:
+ *
+ *   2 * OBSTACLE_MARGIN < COLLISION_SPACING * 40   (0.5in = 20px, side to side)
+ *   2 * OBSTACLE_MARGIN < ROW_GAP * 40             (0.35in = 14px, row to row)
+ *
+ * clearance-contract.test.ts asserts both. The SECOND HALF was missing until
+ * 2026-08-18, and it was violated: at 8 a cable needed 16px to travel between
+ * two rows that the placer designs 14px apart. So a board laid out exactly to
+ * spec had no row corridor the router would use - every cable that had to
+ * cross between rows reported `unattached-*` and was drawn red. On the real
+ * 22-pedal board that was four cables, and the owner was right that they fit:
+ * the rows are 0.35in apart and a patch cable is about 0.24in.
+ *
+ * Same shape as the 25px-margin against 20px-spacing contradiction found in
+ * the July review - two numbers describing one gap, written in different
+ * files, agreeing with neither each other nor the hardware.
+ *
+ * 6 satisfies both (12 < 14 < 20). Raising it again means widening ROW_GAP
+ * first, and ROW_GAP has its own arithmetic to redo - see layout/constants.ts.
  */
-export const OBSTACLE_MARGIN = 8;
+export const OBSTACLE_MARGIN = 6;
 
 /**
  * Reduced-margin allowance for the first and last path segments.

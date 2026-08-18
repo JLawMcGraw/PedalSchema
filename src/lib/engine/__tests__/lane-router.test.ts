@@ -33,6 +33,18 @@ const cases: Array<[BoardKind, PedalSetKind, boolean, boolean]> = [
  * One everywhere - a single extra crossing is noise - except where a worse
  * number was measured and explained.
  *
+ * Widened for wide/twelve+4cm when OBSTACLE_MARGIN dropped 8 -> 6: usable row
+ * corridors mean the lane router now routes cables it previously handed to the
+ * cascade, and on that board its coordinated detours cross twice more than the
+ * cascade's independent ones (7 against 5).
+ *
+ * A "never worse than the cascade" guard was BUILT AND REVERTED for this on
+ * 2026-08-18. Routing both ways and keeping the better picture costs 1.6x on
+ * the routing-heavy suites and fixes nothing here: where the lane router
+ * loses, the cascade's alternative contains DIAGONAL segments, and trading a
+ * crossing for a diagonal cable is not a trade worth making. Make the cascade
+ * orthogonal first and the guard becomes worth revisiting.
+ *
  * jr/seven+4cm: 11 against 8, measured 2026-08-18. Both routers get worse on
  * this case than they used to (3 and 3), because dirty modulation puts the
  * modulation pedals in front of the drives and all seven pedals become one
@@ -44,6 +56,7 @@ const cases: Array<[BoardKind, PedalSetKind, boolean, boolean]> = [
  */
 const LANE_CROSSING_ALLOWANCE: Record<string, number> = {
   'jr/seven loop=true 4cm=true': 3,
+  'wide/twelve loop=true 4cm=true': 2,
 };
 
 describe('lane router acceptance', () => {

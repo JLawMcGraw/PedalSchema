@@ -17,7 +17,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { routeCablesWithLanes, type LaneRouteRequest } from '../index';
-import { MIN_LANE_SPACING, type Box } from '../../geometry';
+import { MIN_LANE_SPACING, LANE_SPACING, OBSTACLE_MARGIN, type Box } from '../../geometry';
 import type { ObstacleSet } from '../../obstacles';
 
 /** An obstacle set built by hand, so a corridor's width is exactly known. */
@@ -94,18 +94,29 @@ describe('lane router diagnostics', () => {
    * are both counted and attributed to the corridor that caused them.
    */
   it('counts evictions and attributes them to the over-capacity corridor', () => {
-    // A narrow horizontal gap between two banks of pedals: the only way across.
-    const gap = MIN_LANE_SPACING * 2; // seats ~3 lanes, far fewer than we demand
+    // ONE corridor, wide enough to seat a couple of lanes, and ten cables
+    // that must all TRAVEL ALONG it - not merely hop across it.
+    //
+    // The previous fixture sent each cable straight across a gap of
+    // MIN_LANE_SPACING * 2, which over-subscribed only because the gap was
+    // then too tight for the direct route. When OBSTACLE_MARGIN dropped from
+    // 8 to 6 on 2026-08-18 that same gap became crossable, every cable took
+    // the facing-jack shortcut, and the test went vacuous - it asserted
+    // evictions on a fixture that no longer produced any. Pressure has to come
+    // from cables SHARING a corridor's length, which is what assignLanes
+    // actually meters, not from the corridor being too tight to enter.
+    const gap = 2 * OBSTACLE_MARGIN + 2 * LANE_SPACING; // seats ~2 lanes
     const obs = obstacles(
       [box(0, 0, 700, 150), box(0, 150 + gap, 700, 150)],
       800,
       150 + gap + 150
     );
 
-    // Ten cables that must all traverse that one gap.
+    // Every cable runs nearly the full width of that one corridor, so they
+    // all want a lane in the same place at the same time.
     const requests: LaneRouteRequest[] = Array.from({ length: 10 }, (_, i) => ({
-      from: { x: 40 + i * 60, y: 150 },
-      to: { x: 40 + i * 60, y: 150 + gap },
+      from: { x: 20 + i, y: 150 },
+      to: { x: 680 - i, y: 150 + gap },
       fromPedalId: 'p0',
       toPedalId: 'p1',
     }));

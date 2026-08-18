@@ -147,12 +147,15 @@ const isLenient = (_f: ScenarioFlags): boolean => false;
  * distinct, they just read as one cable where they share a corridor. Same
  * family as the residual lane violation on the owner's board (roadmap P4).
  *
- * Both are `+locked` cases: two pedals pinned mid-chain leave the packer no
- * room to end a row where it would like to. The unpinned versions of the same
- * boards are clean, which is the evidence that the pinning is what costs them.
+ * A `+locked` case: two pedals pinned mid-chain leave the packer no room to
+ * end a row where it would like to. The unpinned version of the same board is
+ * clean, which is the evidence that the pinning is what costs it.
+ *
+ * `wide/seven: loop+ns2loop+locked` was here at 1 until the row-corridor
+ * contract landed (OBSTACLE_MARGIN 8 -> 6, geometry/index.ts): with a corridor
+ * the router will actually enter, that cable stopped being squeezed.
  */
 const LANE_VIOLATION_BUDGET: Record<string, number> = {
-  'wide/seven: loop+ns2loop+locked': 1,
   'jr/seven: loop+ns2loop+locked': 3,
 };
 
