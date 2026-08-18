@@ -187,22 +187,69 @@ purpose rather than by accident of the old margin.
 The two that remain red after either fix both involve BigSky, a 6.75in pedal at
 the left edge - a separate case, not the same cause.
 
+### The corridor contradiction, fixed (`c6980ae`)
+
+`OBSTACLE_MARGIN` 8 -> 6, and `clearance-contract.test.ts` now asserts the
+whole set rather than the one half that was written down. **Verified in the
+app: `test` draws 2 red cables where it drew 4**, one of the two now routing
+around the board (dashed) instead of failing, and the failure text correctly
+reports the new 0.15in clearance.
+
+Consequences, all measured: `wide/seven+ns2loop+locked` lane violations 1 -> 0
+(budget deleted); `wide/twelve+4cm` crossings 7 against 5 (allowance 1 -> 2);
+and the eviction fixture in `lane-diagnostics` went VACUOUS and was rebuilt -
+it over-subscribed only because its gap was too tight to cross directly, so a
+wider corridor let every cable take the facing-jack shortcut and no eviction
+happened at all.
+
+### P1.5 was already closed, and P5 is smaller than it reads
+
+**P1.5 is stale on the roadmap.** `routing-cost.ts:238` calls `routeCablePaths`
+- the same entry point the canvas uses - and `router-parity.test.ts` exists to
+keep them in lockstep. The 2026-08-02 session closed it. It was listed here as
+"the oldest real defect left" on the strength of the 8/01 roadmap without
+checking the code.
+
+**P5's plain `calculateGreedyPlacement` has no production callers.** Every
+product path goes through the WithDiagnostics form, and the optimizer surfaces
+`placementDegraded`. The muddy contract is a test-only convenience.
+
+Writing the assertion also killed a plausible claim: **"the optimizer never
+returns an overlapping layout" is FALSE.** On a board where nothing legal
+exists the baseline overlaps too, and the documented rule is that both being
+illegal means the user's board wins - which is right. An app that cannot fit
+your pedals should leave them where you put them, not shuffle them into a
+different impossible arrangement. That is what the test now asserts.
+
+### The "never worse than the cascade" guard: built, measured, reverted
+
+The suggested fix for the lane router losing on dense boards was to route both
+ways and keep the picture with fewer crossings. It does not work, and the
+reason is worth keeping: **where the lane router loses, the cascade's
+alternative contains DIAGONAL segments.** The lane router emits square corners
+by construction; the cascade does not. Trading a crossing for a diagonal cable
+is not a trade worth making - a patch cable leaves a jack square-on.
+
+Gated on orthogonality it fixes nothing at all, at 1.6x the cost on the
+routing-heavy suites (880ms -> 1400ms). Make the cascade orthogonal first and
+the guard becomes worth revisiting; the note is recorded on the allowance in
+`lane-router.test.ts`.
+
 ### Next Tasks
-- [ ] **The row corridor contradiction above.** Highest value: it turns 4 red
-      cables into 2 on the owner's real board, and red cables are the loudest
-      wrong thing the app draws.
-- [ ] **The lane router loses to the strategy router on dense boards.**
-      jr/seven+4cm is 11 crossings against 8. Roadmap P4's neighbour, and the
-      allowance in `lane-router.test.ts` is pinned at 3 so it cannot drift.
-- [ ] **Two `+locked` lane budgets remain** (`wide/seven` 1, `jr/seven` 3).
-      Pinning two pedals mid-chain leaves the packer no room to end a row where
-      it would like to - the unpinned versions of both boards are clean, which
-      is the evidence. Likely the same wrap idea applied around pinned pedals.
-- [ ] **P1.5 is still open** - the cost model and the drawn routing use
-      different routers.
-- [ ] **`hubClusters` is dead code.** It returns `[]`, and the comment block at
-      the top of `layout/index.ts` still describes it as placement group 3.
-      That stale comment is what sent this session down two wrong paths.
+- [ ] **Make the strategy cascade always orthogonal.** It is the blocker for
+      the never-worse guard above, and diagonal cables are wrong on their own
+      terms - the fallback was already taught to draw elbows for exactly that
+      reason, but the earlier rungs were not.
+- [ ] **The last 2 red cables on `test`** both end at BigSky, a 6.75in pedal on
+      the left edge. Different cause from the corridor contradiction; not yet
+      diagnosed.
+- [ ] **The lane router still loses on dense boards** - jr/seven+4cm 11 against
+      8, wide/twelve+4cm 7 against 5. Allowances are pinned per case so any
+      OTHER case that regresses still fails at 1.
+- [ ] **One `+locked` lane budget remains** (`jr/seven` 3). Pinning two pedals
+      mid-chain leaves the packer no room to end a row where it would like to;
+      the unpinned version of the board is clean, which is the evidence.
+      Likely the wrap-before-group idea applied around pinned pedals.
 
 ---
 
