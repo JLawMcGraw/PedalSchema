@@ -317,10 +317,11 @@ comment before it is used to justify something.
       mid-chain leaves the packer no room to end a row where it would like to;
       the unpinned version of the board is clean, which is the evidence.
       Likely the wrap-before-group idea applied around pinned pedals.
-- [ ] **`roadmap-next.md` is stale** (dated 2026-08-01) and cost this session
-      two wrong claims - P1.5 and P3 are done, P1's supply half is done, P2's
-      fit explanation is done. Either refresh it or delete it in favour of the
-      per-session task lists, which have stayed accurate.
+- [x] **`roadmap-next.md` refreshed** - rewritten 2026-08-18 against the code
+      rather than against itself. Seven items closed, each with the evidence to
+      re-check it by. It also now carries the question of whether it should
+      exist: it has been confidently wrong twice about finished work, while the
+      per-session task lists have stayed accurate.
 
 ---
 
