@@ -113,15 +113,51 @@ crossings become 247.9in and 18. Longer because it IS longer - two pedals move
 out of the amp loop into the front run. If clean was what was wanted there, the
 switch is now the thing that says so.
 
+### The stranded member, fixed later the same day (`6f52192`)
+
+**The diagnosis two sections above was wrong, and the wrongness is the lesson.**
+It said the hub and its members are placed in two passes that disagree about
+the row budget. They are not: `primaryChain` returns them inline and
+`hubClusters` is a stub returning `[]`. One pass. A split group was never two
+placements fighting - the row simply ran out mid-run.
+
+Two attempts were built on that wrong story before anyone read the two
+functions: forcing the wrap unconditionally, and reserving the members' width
+against the hub - which double-counted pedals already in the run and blew the
+row. **The story was assembled from the shape of the code (two named steps in a
+comment) rather than from what the functions return.**
+
+The fix is one retry axis: when the group will not fit in what is left of the
+row, end the row before it. Ending a row early costs a gap; wrapping through
+the group costs two board-length cables.
+
+It then still failed for an arithmetic reason worth keeping: the generic row
+search starts at `cursorX - width`, while `packedStartX` already returns the
+pedal's LEFT EDGE. Setting the cursor to `packedStartX` re-anchored the group
+one footprint too far left and its tail landed at box `[-0.5, 3.37]` - half an
+inch off an 18in board. The existing row-advance path passes `cursorX` straight
+through, which is why it had never hit this.
+
+Results: jr/seven+ns2loop goes from 1 stranded member and 4 lane violations to
+**zero of both** - the same wrap that keeps the group whole also stops the
+corridors being crushed. The chain-order budget is deleted outright; a stranded
+member is never acceptable. Both real boards are **byte-identical** across the
+change, because a board that packs cleanly settles on attempt 1 and never sees
+the new axis.
+
 ### Next Tasks
-- [ ] **Keep a loop group off a row boundary.** The one non-cosmetic residue,
-      diagnosed above. `primaryChain` and `hubClusters` place in two passes and
-      neither knows the other's row budget; a retry axis is not enough.
 - [ ] **The lane router loses to the strategy router on dense boards.**
       jr/seven+4cm is 11 crossings against 8. Roadmap P4's neighbour, and the
       allowance in `lane-router.test.ts` is pinned at 3 so it cannot drift.
+- [ ] **Two `+locked` lane budgets remain** (`wide/seven` 1, `jr/seven` 3).
+      Pinning two pedals mid-chain leaves the packer no room to end a row where
+      it would like to - the unpinned versions of both boards are clean, which
+      is the evidence. Likely the same wrap idea applied around pinned pedals.
 - [ ] **P1.5 is still open** - the cost model and the drawn routing use
       different routers.
+- [ ] **`hubClusters` is dead code.** It returns `[]`, and the comment block at
+      the top of `layout/index.ts` still describes it as placement group 3.
+      That stale comment is what sent this session down two wrong paths.
 
 ---
 
