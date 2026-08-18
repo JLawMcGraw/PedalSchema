@@ -54,10 +54,7 @@ const cases: Array<[BoardKind, PedalSetKind, boolean, boolean]> = [
  * modulation switch can fix. Pinned rather than widened to a blanket number,
  * so any OTHER case that regresses still fails at 1.
  */
-const LANE_CROSSING_ALLOWANCE: Record<string, number> = {
-  'jr/seven loop=true 4cm=true': 3,
-  'wide/twelve loop=true 4cm=true': 2,
-};
+const LANE_CROSSING_ALLOWANCE: Record<string, number> = {};
 
 describe('lane router acceptance', () => {
   beforeAll(() => { vi.spyOn(console, 'warn').mockImplementation(() => {}); });

@@ -94,6 +94,17 @@ export type LaneOutcome =
   /** Seated in a lane and the realized geometry validated. */
   | 'lane-routed'
   /**
+   * The corridor model routed this cable perfectly well, and the BOARD was
+   * still drawn better without it - so the cascade's path is the one on
+   * screen. Set by routeCablePaths' never-worse guard, which compares the two
+   * routers on total crossings and keeps the better picture.
+   *
+   * A distinct value rather than reusing 'lane-routed', because the invariant
+   * that a cable reports strategy 'lane-router' exactly when the corridor
+   * served it has to keep holding. Here the corridor served it and lost.
+   */
+  | 'outrouted'
+  /**
    * A standoff attaches to no corridor. Split by WHICH end, because that is the
    * whole diagnostic value: 6 of these on the `test` board looked alike and had
    * at least two different causes.

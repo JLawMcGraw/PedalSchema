@@ -22,6 +22,7 @@ import { getExternalEndpointPx, getPedalJackPx, type ExternalEndpointType } from
 import { isPathValid, type ValidationResult } from './validation';
 import { routeCablesWithLanes, type LaneRouteRequest, type LaneOutcome } from '../lanes';
 import { isDebugEnabled } from '../debug-flag';
+import { detectCableCrossings } from '../pathfinding';
 
 /**
  * One routed polyline, with no `Cable` attached.
@@ -319,6 +320,57 @@ export function routeCablePaths(
 ): RoutedPath[] {
   const laneRouter = options?.laneRouter ?? USE_LANE_ROUTER;
 
+  const withLanes = routeOnce(requests, obstacles, laneRouter);
+  if (!laneRouter) return withLanes;
+
+  /*
+   * THE CORRIDOR MODEL MUST NEVER DRAW A WORSE BOARD THAN THE CASCADE IT
+   * REPLACED.
+   *
+   * The lane router coordinates runs so parallel cables sit in separate lanes,
+   * which is better nearly everywhere and occasionally worse: on a dense board
+   * its coordinated detours can cross each other more often than the cascade's
+   * independent routes do. That was a TOLERANCE in lane-router.test.ts ("no
+   * more than one extra crossing"), which is a hope rather than a guarantee,
+   * and it was breached the moment a board got harder.
+   *
+   * This guard was built and REVERTED once, on 2026-08-18, because it did not
+   * work: where the lane router lost, the cascade's cheaper alternative
+   * contained diagonal segments, and trading a crossing for a diagonal cable
+   * is not a trade worth making. It works now because the cascade was made
+   * orthogonal - the two pictures are finally comparable.
+   *
+   * COST: two routing passes instead of one, on every derive AND inside the
+   * optimizer's scoring loop. Paid in both places deliberately - scoring a
+   * picture you do not draw is the P1.5 defect, and a guard that ran only when
+   * drawing would rebuild it.
+   */
+  const plain = routeOnce(requests, obstacles, false);
+  if (crossingCount(plain) >= crossingCount(withLanes)) return withLanes;
+
+  // The cascade won. Cables the corridor SERVED are relabelled 'outrouted' so
+  // that "strategy is lane-router exactly when the corridor served it" keeps
+  // holding; a cable the corridor never served keeps the reason it failed,
+  // which is what the canvas quotes when it explains a red cable.
+  return plain.map((r, i) => {
+    const outcome = withLanes[i]?.laneOutcome;
+    const served = outcome === 'lane-routed' || outcome === 'shortcut';
+    return { ...r, laneOutcome: served ? ('outrouted' as LaneOutcome) : outcome };
+  });
+}
+
+/** How many places do these paths cross each other? */
+function crossingCount(routed: RoutedPath[]): number {
+  return detectCableCrossings(
+    routed.map((r, i) => ({ id: String(i), points: r.path }))
+  ).length;
+}
+
+function routeOnce(
+  requests: LaneRouteRequest[],
+  obstacles: ObstacleSet,
+  laneRouter: boolean
+): RoutedPath[] {
   // Corridor-graph routing first (when enabled); nulls fall back below
   let lanePaths: Array<Point[] | null> = requests.map(() => null);
   let laneOutcomes: LaneOutcome[] | null = null;
