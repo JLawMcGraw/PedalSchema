@@ -164,6 +164,46 @@ crossings become 247.9in and 18. Longer because it IS longer - two pedals move
 out of the amp loop into the front run. If clean was what was wanted there, the
 switch is now the thing that says so.
 
+#### Re-measured 2026-08-18 evening: every number above is stale
+
+Kept rather than edited, because what went wrong with it is the point. **The
+board is not stored at 4cm.** Read straight from the database:
+
+    test   use_effects_loop=true  use_4_cable_method=FALSE  modulation_in_loop=false
+           updated_at 2026-08-18T19:55Z
+
+Nor do the lengths survive. Replayed through the same pipeline on the current
+rows:
+
+                      length      crossings   score      invalid cables
+    DIRTY (stored)    147.54in    8           480.74     Timeline -> BigSky   [evicted]
+                                                         BigSky -> amp_return [evicted]
+    CLEAN             131.22in    12          496.42     DM-2W -> Timeline    [unattached-from]
+                                                         BigSky -> amp_return [evicted]
+
+Three corrections fall out of that, and the third is the one that matters:
+
+1. **4cm is off**, so the section above describes a configuration that either
+   was changed afterwards or was never read from the database in the first
+   place. The `updated_at` says the board was touched later the same day.
+2. **The trade runs the other way.** Clean is 16in SHORTER, not longer, and it
+   is the worse board: 4 more crossings and a higher total score. Dirty, which
+   is what is stored, scores best.
+3. **The switch does not fix the red cables.** Both settings leave exactly two,
+   `BigSky -> amp_return` is red under both, and the rows land at the same four
+   y positions either way - so the switch has no lever on the vertical
+   crowding that causes it. The task list had these as one coupled decision.
+   They are two independent ones.
+
+Note also that clean's other failure is `unattached-from`, not `evicted` - a
+worse mode, meaning the stub reaches no corridor at all rather than finding a
+full one.
+
+**The lesson is the one this file keeps writing down.** These numbers were
+recorded without a re-read, went into a task list as the basis for a decision,
+and described a board that no longer existed within hours. A measurement is
+only current for as long as its inputs are.
+
 ### The stranded member, fixed later the same day (`6f52192`)
 
 **The diagnosis two sections above was wrong, and the wrongness is the lesson.**
@@ -458,16 +498,25 @@ reason (`hubPadMode`, layout/index.ts): tail first, then hub.
 
 ### Next Tasks
 
-- [ ] **Decide what `test` should be.** It is stored at loop+4cm+dirty and has
-      been silently drawn CLEAN. It now draws dirty - 247.9in and 18 crossings
-      against 189.89in and 8. Longer because it IS longer, two pedals moving out
-      of the amp loop into the front run. If clean was the intent, the switch is
-      now the thing that says so. **Owner's call, not a bug.**
-- [ ] **The two red cables on `test` need the owner too.** Fully diagnosed
-      (see above): BigSky carries both jacks on its top edge and the corridor
-      seats one run. A shallower pedal in row 1, one fewer row, or run one of
-      them underneath. **No code action - do not loosen a clearance to make
-      them go away.**
+- [ ] **Decide what `test` should be.** Re-measured on the current database
+      rows (see "Re-measured 2026-08-18 evening" above - the older numbers in
+      this entry are stale, and the board is NOT stored at 4cm):
+
+          DIRTY (stored)   147.54in   8 crossings   score 480.74
+          CLEAN            131.22in  12 crossings   score 496.42
+
+      Clean is shorter and scores WORSE. Dirty is what is stored and what the
+      cost model prefers. **Owner's call, not a bug** - the switch is a
+      wiring preference, and the engine has no opinion worth overriding yours.
+- [ ] **The two red cables on `test`.** INDEPENDENT of the switch, which is a
+      correction: both settings leave exactly two invalid cables, and
+      `BigSky -> amp_return` is red under both. The rows land at the same four
+      y positions either way, so the switch has no lever on the vertical
+      crowding. Diagnosed earlier as physical - BigSky carries both jacks on
+      its top edge and the corridor seats one run. **No code action - do not
+      loosen a clearance to make them go away.** If it is chased, re-derive
+      the "board is full" arithmetic against the CURRENT 4-row layout; the
+      original was measured on a configuration that no longer exists.
 - [x] **The last `+locked` lane budget is closed** (`jr/seven: loop+ns2loop
       +locked`, was 3 violations, `45afa18`). The recorded diagnosis was wrong:
       the packer had room, and had given up 2.0in of hub corridor to recover a
@@ -478,11 +527,17 @@ reason (`hubPadMode`, layout/index.ts): tail first, then hub.
       the cheap win is that the second pass only matters where the two routers
       disagree, and `laneOutcome` already records which cables the corridor
       served. **Do not "fix" it by scoring with a different router than the one
-      that draws** - that is P1.5.
-- [ ] **Should `roadmap-next.md` exist?** Rewritten today against the code, but
-      it has now been confidently wrong twice about finished work while these
-      per-session lists stayed accurate. Consider deleting it in favour of the
-      newest session entry.
+      that draws** - that is P1.5. Corroborated in the real browser on
+      2026-08-18: Optimize settles in 1923ms on the 22-pedal board and 116ms
+      on the 9-pedal one, both reporting "already optimal". That is the engine
+      figure, measured through the worker, and it is not slow enough to be
+      worth spending the guarantee on.
+- [x] **`roadmap-next.md` is no longer a roadmap.** It was wrong a third time
+      (R2's diagnosis pointed at the wrong function), so its forward-looking
+      items are gone and these per-session lists are the roadmap. What it keeps
+      is the part that does not rot: what is CLOSED, and what we have
+      deliberately decided NOT to do - the latter being a real guard against
+      redoing retracted work.
 
 ---
 
