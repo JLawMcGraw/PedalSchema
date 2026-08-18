@@ -30,29 +30,45 @@ const cases: Array<[BoardKind, PedalSetKind, boolean, boolean]> = [
 
 /**
  * How far the lane router is allowed to lose to the strategy router, per case.
- * One everywhere - a single extra crossing is noise - except where a worse
- * number was measured and explained.
  *
- * Widened for wide/twelve+4cm when OBSTACLE_MARGIN dropped 8 -> 6: usable row
- * corridors mean the lane router now routes cables it previously handed to the
- * cascade, and on that board its coordinated detours cross twice more than the
- * cascade's independent ones (7 against 5).
+ * BOTH THE TABLE AND THE DEFAULT ARE ZERO, and that is the whole point: the
+ * corridor model is not permitted to draw a worse board than the cascade at
+ * all. `routeAllCables` routes BOTH ways and keeps the picture with fewer
+ * crossings (see the guard in cables/route-cables.ts), so this is a property
+ * to enforce rather than a tolerance to budget.
  *
- * A "never worse than the cascade" guard was BUILT AND REVERTED for this on
- * 2026-08-18. Routing both ways and keeping the better picture costs 1.6x on
- * the routing-heavy suites and fixes nothing here: where the lane router
- * loses, the cascade's alternative contains DIAGONAL segments, and trading a
- * crossing for a diagonal cable is not a trade worth making. Make the cascade
- * orthogonal first and the guard becomes worth revisiting.
+ * It read `?? 1` until 2026-08-18 - a blanket allowance of one extra crossing
+ * on every case, left behind when the per-case entries were deleted. That is
+ * the thing the guard's own comment calls "a hope rather than a guarantee",
+ * still encoded in the test that was supposed to be checking it. Measured when
+ * it was tightened: all 8 cases pass at 0, so the allowance had been
+ * protecting nothing and hiding a regression of exactly 1.
  *
- * jr/seven+4cm: 11 against 8, measured 2026-08-18. Both routers get worse on
- * this case than they used to (3 and 3), because dirty modulation puts the
- * modulation pedals in front of the drives and all seven pedals become one
- * front run on an 18in board. The wiring is what the owner asked for; the
- * crossings are the lane router losing ground on a genuinely harder input,
- * which is the P4 "lane separation on dense boards" gap and not something the
- * modulation switch can fix. Pinned rather than widened to a blanket number,
- * so any OTHER case that regresses still fails at 1.
+ * The two entries this table used to hold are worth remembering, because both
+ * are now IMPOSSIBLE rather than merely absent:
+ *
+ *   wide/twelve+4cm   7 against 5   when OBSTACLE_MARGIN dropped 8 -> 6 the
+ *                                   lane router took cables the cascade used
+ *                                   to get, and its coordinated detours crossed
+ *                                   more often than their independent ones
+ *   jr/seven+4cm     11 against 8   dirty modulation makes all seven pedals one
+ *                                   front run on an 18in board; both routers do
+ *                                   worse on a genuinely harder input
+ *
+ * Neither can recur as a FAILURE now: if the corridor model loses on a board,
+ * the guard hands back the cascade's picture and those cables report the
+ * `outrouted` outcome.
+ *
+ * WHAT THE TIGHTENING ACTUALLY BUYS, measured by deleting the guard and
+ * re-running: both cases come back at a gap of TWO (7 against 5, 10 against
+ * 8), so `?? 1` would have caught a guard removal too. What it would NOT have
+ * caught is a regression of exactly one crossing - a cable the corridor model
+ * starts losing quietly - and that is the class this now covers. Worth being
+ * precise about: the change closes a one-crossing blind spot, it does not
+ * newly detect the guard disappearing.
+ *
+ * Do NOT reintroduce a non-zero default to make a new board pass. A case that
+ * loses is the guard failing, not the board being hard.
  */
 const LANE_CROSSING_ALLOWANCE: Record<string, number> = {};
 
@@ -109,7 +125,7 @@ describe('lane router acceptance', () => {
       const crossings = (rcs: typeof withLanes) =>
         detectCableCrossings(rcs.map((rc) => ({ id: rc.cable.id, points: rc.path }))).length;
       const label = `${boardKind}/${setKind} loop=${useEffectsLoop} 4cm=${use4CableMethod}`;
-      const allowance = LANE_CROSSING_ALLOWANCE[label] ?? 1;
+      const allowance = LANE_CROSSING_ALLOWANCE[label] ?? 0;
       expect(
         crossings(withLanes),
         `${label}: lane router lost to the strategy router by more than its allowance of ${allowance}`
