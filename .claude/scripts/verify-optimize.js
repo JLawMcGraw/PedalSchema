@@ -41,9 +41,34 @@ const BUDGET_MS = 20000;
 async function optimizeOnce(page, href) {
   await page.goto(BASE_URL + href);
   await page.waitForFunction(
-    () => !!window.__getPedalSchemaSnapshot && window.__getPedalSchemaSnapshot().pedals.length > 0,
+    () => typeof window.__getPedalSchemaSnapshot === 'function',
     null, { timeout: 30000 }
   );
+
+  /*
+   * AN EMPTY CONFIGURATION IS A BOARD, NOT A HANG.
+   *
+   * This used to wait for `pedals.length > 0` as part of the readiness
+   * condition, which conflated "the editor has not finished loading" with
+   * "this board has no pedals on it". The caller below already means to skip
+   * an empty one (`if (!before.pedals) continue`) but never got the chance:
+   * waitForFunction threw first, and the throw escapes the per-board loop, so
+   * ONE empty configuration killed the whole run.
+   *
+   * Measured 2026-08-18: the account holds three configurations and the empty
+   * one (`dadfad`) sorts second, so `node verify-optimize.js` with no argument
+   * - the way the gate is meant to be run - crashed after the first board and
+   * never reached J$ Home. It passed when pointed at a config id by hand,
+   * which is exactly how a harness stays broken without anyone noticing.
+   *
+   * So the hook is the readiness condition, and pedals are polled separately
+   * on a short budget whose expiry MEANS empty rather than failing.
+   */
+  const hasPedals = await page
+    .waitForFunction(() => window.__getPedalSchemaSnapshot().pedals.length > 0, null, { timeout: 10000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!hasPedals) return { before: { pedals: 0 }, outcome: null, after: null };
 
   const before = await page.evaluate(() => {
     const s = window.__getPedalSchemaSnapshot();
