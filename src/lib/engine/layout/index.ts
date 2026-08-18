@@ -1,5 +1,5 @@
 import type { Amp, Board, Pedal, PlacedPedal, RoutingConfig, JointOptimizationResult, PedalPlacement, SwappableGroup } from '@/types';
-import { deriveSignalTopology, primaryChain, ampClusters, hubClusters, resolvePedalLoop } from '../topology';
+import { deriveSignalTopology, primaryChain, ampClusters, resolvePedalLoop } from '../topology';
 import { calculateRoutingCost, type RoutingCostResult } from './routing-cost';
 import { identifySwappableGroups } from '../signal-chain';
 import { COLLISION_SPACING } from '../collision';
@@ -27,12 +27,18 @@ interface PlacedBox {
  * 1. AMP-SIDE CLUSTERS (amp effects loop, 4CM after-hub run): packed
  *    right-to-left against the amp edge on the row nearest their amp
  *    jacks, then inflated so their cables get a corridor.
- * 2. PRIMARY CHAIN (guitar -> ... -> amp input, hub pedal inline): placed
- *    right-to-left, row by row; overflow packs the remaining chain against
- *    the amp side (strip-aware around clusters already placed).
- * 3. HUB CLUSTERS (NS-2 pedal-loop members): packed on the row adjacent to
- *    the hub, right-aligned to the hub so send (right jack) and return
- *    (left jack) runs stay short.
+ * 2. PRIMARY CHAIN (guitar -> ... -> amp input): placed right-to-left, row by
+ *    row; overflow packs the remaining chain against the amp side
+ *    (strip-aware around clusters already placed).
+ *
+ * A LOOP HUB AND ITS MEMBERS ARE PART OF GROUP 2, not a group of their own.
+ * `primaryChain` returns them inline, hub first, so they pack as one
+ * contiguous run and the send/return stay short by construction. There was a
+ * third group that placed them separately; it was removed on 2026-08-18 after
+ * its topology function had been a stub returning [] for long enough that this
+ * comment describing it sent two sessions chasing a two-pass bug that could
+ * not exist. If a member ever needs to leave the run, give it a real group -
+ * do not resurrect a dead one.
  */
 export interface GreedyPlacementResult {
   placements: PedalPlacement[];
@@ -220,9 +226,10 @@ export function calculateGreedyPlacementWithDiagnostics(
   /**
    * The hub and its members are ONE CONTIGUOUS RUN, not two placements.
    * `primaryChain` returns them inline (topology/index.ts, the 'pedal-loop'
-   * case) and `hubClusters` is a stub returning [] - so a split group is never
-   * a second pass disagreeing with the first, it is simply the row filling up
-   * part-way through the run. That is what `wrapBeforeGroup` below acts on.
+   * case), and nothing places them again afterwards - so a split group is
+   * never a second pass disagreeing with the first, it is simply the row
+   * filling up part-way through the run. That is what `wrapBeforeGroup` below
+   * acts on.
    */
   const groupHeadId = (seq: PlacedPedal[]): string | undefined =>
     loopGroupIds.length >= 2 ? seq.find((p) => loopGroupIds.includes(p.id))?.id : undefined;
@@ -607,32 +614,6 @@ export function calculateGreedyPlacementWithDiagnostics(
     0
   );
 
-  // === 3. HUB CLUSTERS (NS-2 pedal-loop members) ==============================
-  for (const cluster of hubClusters(topology)) {
-    if (cluster.pedals.length === 0 || !topology.hub) continue;
-
-    const hubPlacement = placements.find((p) => p.id === topology.hub!.id);
-    if (!hubPlacement) continue;
-    const hubDims = dims(topology.hub);
-    const hubRight = hubPlacement.x + hubDims.width;
-
-    const clusterDepth = cluster.pedals.reduce((max, p) => Math.max(max, dims(p).depth), 0);
-    let total = 0;
-    cluster.pedals.forEach((p, j) => {
-      total += dims(p).width + (j > 0 ? COLLISION_SPACING : 0);
-    });
-
-    // Rows nearest the hub's own row, EXCLUDING the hub's row first choice
-    // would be ideal, but simply sorting by proximity to the hub row and
-    // letting collision checks resolve works: the hub occupies its own row.
-    const hubRowCenter = hubPlacement.y + hubDims.depth / 2;
-    const rowOrder = rowsNearestY(hubRowCenter, clusterDepth);
-
-    // Right-align the member strip to the hub's right edge (send jack side):
-    // first member above the send jack, last member ends near the return
-    const packMinX = Math.max(0, Math.min(hubRight - total, board.widthInches - total));
-    placePackedChain([...cluster.pedals], rowOrder, packMinX, CLUSTER_CABLE_CLEARANCE / 2);
-  }
   };
 
   /**

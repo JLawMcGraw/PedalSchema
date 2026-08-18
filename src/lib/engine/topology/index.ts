@@ -9,8 +9,9 @@
  * Consumers:
  * - calculateCables: walks segments to emit cable connections
  * - routing-cost: walks segments to score candidate placements
- * - the placement planner: places segment-by-segment (primary chain,
- *   amp-anchored clusters, hub-anchored clusters)
+ * - the placement planner: places segment-by-segment (primary chain, then
+ *   amp-anchored clusters). A loop hub and its members are part of the
+ *   primary chain, inline and contiguous - see primaryChain.
  *
  * This replaces three divergent re-derivations of the same flow (cable
  * generation, cost function, and location-based placement zones).
@@ -278,8 +279,9 @@ export function primaryChain(topology: SignalTopology): PlacedPedal[] {
       ];
     }
     case 'pedal-loop': {
-      // beforeLoop -> hub -> afterLoop (ends at amp input); the hub's loop
-      // members are a hub-anchored cluster, not part of the primary run
+      // beforeLoop -> hub -> members -> afterLoop (ends at amp input).
+      // The members ARE part of the primary run, immediately after their hub,
+      // so the group packs contiguously and send/return stay short.
       return [
         ...(byId.get('before-hub')?.pedals ?? []),
         ...(topology.hub ? [topology.hub] : []),
@@ -304,8 +306,3 @@ export function ampClusters(topology: SignalTopology): Segment[] {
   }
 }
 
-/** Segments placed as clusters anchored at a hub pedal */
-export function hubClusters(topology: SignalTopology): Segment[] {
-  void topology;
-  return [];
-}
