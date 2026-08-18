@@ -266,10 +266,53 @@ saved boards), 1.6x on the synthetic suites where routing is nearly all the
 work. Both real boards byte-identical - nothing the owner sees changes; what
 changes is that a denser board can no longer quietly get worse.
 
+### The last two red cables: not a bug, and the app already says why
+
+`Timeline -> BigSky` and `BigSky -> amp_return`. Diagnosed, and the answer is
+that the board is physically full front-to-back.
+
+**BigSky has BOTH jacks on its TOP edge** - input at 80% (x=216), output at 8%
+(x=22). So both of its cables must use the one corridor between row 1 and row
+2, and it needs TWO runs in it.
+
+That corridor, above BigSky:
+
+    row 1 bottom          203.2
+    BigSky top            218.0
+    raw corridor           14.8px
+    usable after margins    2.8px   (y 209.2 .. 212.0)
+    LANE_SPACING            12px    between parallel runs
+
+**2.8px of usable corridor seats exactly one run.** Three cables already use
+it - `HM-2W -> MT-2W` at y=211, `amp_send -> DD-7` at y=212, `DM-2W ->
+Timeline` - and BigSky's two are `evicted`, which is the corridor model
+correctly refusing to draw two cables on top of each other.
+
+Note the outcome CHANGED with the corridor contract fix, from `unattached-*` to
+`evicted`. That is progress, and it is the difference between "there is no
+channel here at all" and "the channel is full". Only the second is true now.
+
+The board leaves no room to fix it by placement: three rows take 203 + 204 +
+204 = 611px of a 640px board, so 29px remain for two corridors. This is the
+16in-board case the roadmap already documented from the other direction.
+
+**The app's own explanation is already exactly right**: "The channel it needs
+is already carrying as many cables as it can hold at 0.15in clearance." Nothing
+to fix in the message either. The real remedies are the owner's, not the
+app's - a shallower pedal in row 1, one fewer row, or running one of BigSky's
+two cables underneath, which is what the collapsed failure line now suggests.
+
+**One genuine code finding, which does NOT cause this.** `sameSideJackPad`
+(layout/index.ts) gives 0.35in of extra clearance to a pedal whose input and
+output land on the same LEFT or RIGHT edge, and zero to one whose jacks share
+the top or bottom, on the stated grounds that "top/bottom shared sides feed the
+wide row channels, which have room". Measured here, that row channel is 14.8px
+and has room for one cable. The reasoning is wrong even though the remedy would
+not help - the pad widens a pedal horizontally, and what a top-jack pedal needs
+is corridor HEIGHT, which no amount of x-padding buys. Worth correcting the
+comment before it is used to justify something.
+
 ### Next Tasks
-- [ ] **The last 2 red cables on `test`** both end at BigSky, a 6.75in pedal on
-      the left edge. Different cause from the corridor contradiction; not yet
-      diagnosed.
 - [ ] **One `+locked` lane budget remains** (`jr/seven` 3). Pinning two pedals
       mid-chain leaves the packer no room to end a row where it would like to;
       the unpinned version of the board is clean, which is the evidence.
