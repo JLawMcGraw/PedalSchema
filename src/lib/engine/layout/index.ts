@@ -706,8 +706,20 @@ export function calculateGreedyPlacementWithDiagnostics(
 }
 
 /**
- * Greedy placement. See calculateGreedyPlacementWithDiagnostics when you need
- * to know whether the placer had to degrade to get there.
+ * Greedy placement, without the diagnostic.
+ *
+ * TEST-ONLY, and deliberately so: nothing in the product calls this. Every
+ * production path goes through calculateGreedyPlacementWithDiagnostics, and
+ * calculateOptimalLayoutJoint surfaces the flag as `placementDegraded`.
+ *
+ * THIS CAN RETURN OVERLAPPING PLACEMENTS. On a board that is genuinely too
+ * full, the last resort clamps a pedal on-board rather than dropping it - a
+ * wrong answer rather than no answer, which was the deliberate choice (see
+ * GreedyPlacementResult.degraded). Callers that need a layout they can trust
+ * must go through calculateOptimalLayoutJoint, which scores any colliding
+ * candidate Infinity and keeps the user's board instead. That guard is
+ * asserted in placement-degraded.test.ts - "the optimizer never prefers an
+ * overlapping layout" - so it cannot be removed quietly.
  */
 export function calculateGreedyPlacement(
   placedPedals: PlacedPedal[],
