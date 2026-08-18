@@ -90,8 +90,23 @@ export function sameSideJackPad(
   };
   const input = effectiveSide('input');
   const output = effectiveSide('output');
-  // Only left/right shared sides pull cables into a narrow SIDE gap;
-  // top/bottom shared sides feed the wide row channels, which have room
+  // WHY ONLY LEFT/RIGHT: this pad is HORIZONTAL. It widens the pedal's
+  // footprint in x, so the only gap it can buy room in is a side gap between
+  // neighbours in the same row. A pedal whose jacks share its TOP or BOTTOM
+  // edge pulls both runs into the row CORRIDOR, and corridor height comes out
+  // of the row bands - no amount of x-padding adds any.
+  //
+  // This used to say that top/bottom shared sides "feed the wide row channels,
+  // which have room". That is not true and the corridors are not wide.
+  // Measured on the 22-pedal board, 2026-08-18: BigSky carries both jacks on
+  // its top edge, the corridor above it is 14.8px raw and 2.8px once both
+  // margins are taken, LANE_SPACING is 12px - so it seats ONE run, three other
+  // cables already use it, and both of BigSky's are evicted and drawn red.
+  //
+  // So the exclusion is right and its stated reason was wrong, which is worse
+  // than either: acting on "those channels have room" would mean widening this
+  // to top/bottom and watching it change nothing. The lever for a top-jack
+  // pedal in a full board is row DEPTH, not pedal padding.
   const sharedSideGap = input !== null && input === output &&
     (input === 'left' || input === 'right');
   return sharedSideGap ? 0.35 : 0;
