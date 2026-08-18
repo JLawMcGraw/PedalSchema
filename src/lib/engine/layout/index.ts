@@ -148,6 +148,12 @@ export function calculateGreedyPlacementWithDiagnostics(
   // When true, pedals too deep for any row band claim their column before the
   // packed run. A RETRY ordering, not the default - see the loop at the end.
   let straddleFirstPass = false;
+  /**
+   * Retry axis: when a row would fill up part-way through the hub's loop
+   * group, end it BEFORE the group instead and start the group on the next
+   * row. See the retry loop at the end of this function.
+   */
+  let wrapBeforeGroupEnabled = false;
 
   /**
    * Place a chain of pedals right-to-left as one packed run:
@@ -210,6 +216,24 @@ export function calculateGreedyPlacementWithDiagnostics(
           ...(topology.segments.find((seg) => seg.id === 'hub-loop')?.pedals ?? []).map((p) => p.id),
         ]
       : [];
+
+  /**
+   * The hub and its members are ONE CONTIGUOUS RUN, not two placements.
+   * `primaryChain` returns them inline (topology/index.ts, the 'pedal-loop'
+   * case) and `hubClusters` is a stub returning [] - so a split group is never
+   * a second pass disagreeing with the first, it is simply the row filling up
+   * part-way through the run. That is what `wrapBeforeGroup` below acts on.
+   */
+  const groupHeadId = (seq: PlacedPedal[]): string | undefined =>
+    loopGroupIds.length >= 2 ? seq.find((p) => loopGroupIds.includes(p.id))?.id : undefined;
+
+  /** Width the whole group needs if it is to sit on one row. */
+  const groupWidth = (seq: PlacedPedal[], effWidth: (p: PlacedPedal) => number): number => {
+    const members = seq.filter((p) => loopGroupIds.includes(p.id));
+    return members.reduce(
+      (total, p, j) => total + effWidth(p) + (j > 0 ? COLLISION_SPACING : 0), 0
+    );
+  };
 
   /** Did a row wrap fall inside the loop group? */
   const loopGroupSplit = (): boolean => {
@@ -279,6 +303,36 @@ export function calculateGreedyPlacementWithDiagnostics(
         const { depth } = dims(placed);
         const pad = padOf(placed);
         const width = effWidth(placed); // padded footprint for hubs/cluster edges
+
+        // END THE ROW BEFORE THE GROUP RATHER THAN THROUGH IT.
+        //
+        // The hub and its members are one contiguous run, so a row that fills
+        // up mid-group strands a member on the next row and the hub's send and
+        // return then both cross the board. Ending the row one pedal early
+        // costs a gap; wrapping through the group costs two board-length
+        // cables, so when both do not fit, the gap is the cheaper thing to buy.
+        //
+        // Only when the group really will not fit in what is left of this row:
+        // checked against the cursor, not modelled, because row capacity
+        // depends on strips and cluster boxes that a closed form gets wrong
+        // exactly when it matters.
+        if (
+          wrapBeforeGroupEnabled && idx > 0 && rowPos < rowOrder.length - 1 &&
+          placed.id === groupHeadId(seq)
+        ) {
+          const needed = groupWidth(seq, effWidth);
+          const spaceLeft = cursorX - packMinX;
+          if (needed > spaceLeft) {
+            rowPos++;
+            // `+ width` because the generic search below starts at
+            // `cursorX - width`, while packedStartX already returns the LEFT
+            // EDGE of this pedal. Without it the whole group is re-anchored
+            // one footprint too far left and its tail lands off the board -
+            // measured as dist at box [-0.5, 3.37] on an 18in row.
+            cursorX = packedStartX(seq, idx, rowYPositions[rowOrder[rowPos]] ?? board.depthInches * 0.5)
+              + width;
+          }
+        }
 
         const rowY = rowYPositions[rowOrder[rowPos]] ?? board.depthInches * 0.5;
         if (DEBUG_PLACEMENT) {
@@ -611,10 +665,27 @@ export function calculateGreedyPlacementWithDiagnostics(
    */
   const padOptions = loopGroupIds.length >= 2 ? [true, false] : [true];
 
+  /*
+   * Wrapping before the group is tried INSIDE the pad axis, after the plain
+   * attempt:
+   *
+   *   pad on,  wrap off    what this did before the wrap axis existed
+   *   pad on,  wrap on     end the row early so the group stays whole
+   *   pad off, wrap off    give up the corridors
+   *   pad off, wrap on     last resort before the unsatisfiable fallback
+   *
+   * Plain-first is what keeps every already-packing board bit-for-bit
+   * unchanged: it settles on the first attempt and never sees the wrap.
+   */
+  const wrapOptions = loopGroupIds.length >= 2 ? [false, true] : [false];
+
   let settled = false;
   for (const padOn of padOptions) {
     if (settled) break;
     hubPadEnabled = padOn;
+    for (const wrapOn of wrapOptions) {
+    if (settled) break;
+    wrapBeforeGroupEnabled = wrapOn;
     for (let tier = 0; tier < CLEARANCE_TIERS.length && !settled; tier++) {
       CLUSTER_CABLE_CLEARANCE = CLEARANCE_TIERS[tier];
       for (const straddlersFirst of orderings) {
@@ -623,13 +694,16 @@ export function calculateGreedyPlacementWithDiagnostics(
         placements.length = 0;
         placedBoxes.length = 0;
         attemptPlacement();
-        // With the pad on, a split group is not good enough - that is the one
-        // outcome dropping the pad exists to avoid.
-        if (!placementDegraded && !(padOn && loopGroupSplit())) { settled = true; break; }
+        // A split group is not good enough while an axis remains untried -
+        // that is the outcome both the wrap and dropping the pad exist to
+        // avoid. Only the final combination accepts one.
+        const lastResort = !padOn && wrapOn;
+        if (!placementDegraded && !(!lastResort && loopGroupSplit())) { settled = true; break; }
       }
       if (!settled && tier < CLEARANCE_TIERS.length - 1 && DEBUG_PLACEMENT) {
         console.log(`[GREEDY] Placement degraded at clearance ${CLUSTER_CABLE_CLEARANCE}, retrying tighter`);
       }
+    }
     }
   }
 
@@ -639,6 +713,7 @@ export function calculateGreedyPlacementWithDiagnostics(
   if (!settled) {
     CLUSTER_CABLE_CLEARANCE = CLEARANCE_TIERS[CLEARANCE_TIERS.length - 1];
     hubPadEnabled = true;
+    wrapBeforeGroupEnabled = false;
     straddleFirstPass = false;
     placementDegraded = false;
     placements.length = 0;
