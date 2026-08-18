@@ -4,12 +4,63 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
-## Session: 2026-08-18 - Dirty modulation is an order, not a location
+## Session: 2026-08-18 - A switch that meant nothing, and four constants that disagreed
 
-The switch had two positions and one behaviour. Fixed, and the fix is twice
-the size the plan predicted because the plan had the wrong definition of the
-feature. Commits: `209eba6` (plan), `b11af32` (the fix), `b558436` (proof in
-the app).
+### Summary
+
+Started on the routing-config toggles and ended up in the geometry. The
+modulation switch had two positions and one behaviour; fixing it properly meant
+learning from the owner that **dirty modulation is an ORDER, not a location**,
+which is the correction the whole session turns on. That exposed a packer bug,
+then a clearance contradiction that had been drawing four cables red on the
+owner's board, then three separate sources of diagonal cables, and finally made
+a routing guarantee possible that had been merely a tolerance.
+
+Nine commits, all measured. **383 tests pass** (up from 356), build clean.
+
+### What Was Accomplished
+- [x] The modulation switch works in both directions, and reorders pedals
+- [x] 4CM honours the switch (owner's decision, recorded in `8-18-plan.md`)
+- [x] Proved it in the running app, not just the engine
+- [x] Loop members no longer stranded on the next row
+- [x] Six pedal fields restored to the offline dump
+- [x] Row corridors a cable can actually use - `test` goes 4 red cables to 2
+- [x] Every cable the cascade draws now turns at right angles
+- [x] The lane router can no longer draw a worse board than the cascade
+- [x] `hubClusters` deleted; the failure list stops covering the board
+- [x] Last 2 red cables diagnosed; `roadmap-next.md` rewritten
+
+### Key Changes
+
+| File | Change |
+|------|--------|
+| `signal-chain/rules.ts` | modulation switch symmetric AND reordering; gated on the loop existing |
+| `topology/index.ts` | 4CM places modulation by `location`, not category; dirty goes before the hub |
+| `layout/index.ts` | wrap-before-group retry axis; `hubClusters` call site deleted; `sameSideJackPad` comment corrected |
+| `geometry/index.ts` | `OBSTACLE_MARGIN` 8 -> 6; `ORTHOGONAL_EPSILON` + `sharesAxis` added |
+| `cables/routing-strategies.ts` | `direct` rung restricted to aligned pairs; overhang capped at a stub's length |
+| `pathfinding/index.ts` | A* early returns gated on alignment; grid path manhattanized |
+| `cables/route-cables.ts` | never-worse guard; new `outrouted` lane outcome |
+| `canvas/cable-legend.tsx` | failure list collapsed by default, under-board remedy named first |
+| `.claude/scripts/dump-configs-offline.js` | six missing pedal fields |
+| `.claude/scripts/verify-modulation-switch.js` | new - nine checks in the real app |
+| `geometry/__tests__/clearance-contract.test.ts` | new - the constants must agree |
+| `cables/__tests__/orthogonal-cascade.test.ts` | new - no diagonals, matrix-wide |
+
+### Technical Decisions
+
+1. **Dirty modulation reorders, it does not merely relocate.** The owner's
+   definition. Category defaults put modulation at 110, behind overdrive 60 /
+   distortion 70 / fuzz 80, so "off" had never moved a pedal.
+2. **The modulation switch beats the 4-cable method** for modulation only;
+   delay and reverb stay post-preamp because that is the point of the method.
+3. **`OBSTACLE_MARGIN` must clear BOTH axes.** Its contract named
+   `COLLISION_SPACING` (side to side) and ignored `ROW_GAP` (row to row), which
+   is how it came to demand 16px in a 14px corridor.
+4. **Enforce the routing property, do not tolerate it.** The lane router routes
+   both ways and keeps the better board, at a measured 1.23x.
+5. **Budgets carry measured counts, not blanket allowances**, so an exception
+   fails when it gets worse AND when it gets fixed.
 
 ### What the plan got wrong, and how
 
@@ -223,6 +274,10 @@ different impossible arrangement. That is what the test now asserts.
 
 ### The "never worse than the cascade" guard: built, measured, reverted
 
+> **Superseded later the same day** - see "The cascade is orthogonal" below.
+> This section records the first attempt and why it failed, which is what made
+> the second one possible. Read both before touching the guard.
+
 The suggested fix for the lane router losing on dense boards was to route both
 ways and keep the picture with fewer crossings. It does not work, and the
 reason is worth keeping: **where the lane router loses, the cascade's
@@ -312,16 +367,62 @@ not help - the pad widens a pedal horizontally, and what a top-jack pedal needs
 is corridor HEIGHT, which no amount of x-padding buys. Worth correcting the
 comment before it is used to justify something.
 
+### Architecture Notes
+
+Durable facts learned today, recorded because each one cost time to establish
+and none of them is obvious from reading the code cold.
+
+**A loop hub and its members are ONE contiguous run.** `primaryChain` returns
+them inline (topology, the `pedal-loop` case). There is no second placement
+pass - `hubClusters` was a stub returning `[]` and is now deleted. A split group
+is the row filling up mid-run, never two passes disagreeing.
+
+**There are two routers and they must agree.** `routeCablePaths` is the single
+entry point; the corridor model runs first and the strategy cascade catches what
+it drops. Both the canvas and the optimizer's scoring loop go through it - that
+is P1.5 and it must stay that way. As of today it routes BOTH ways and keeps the
+board with fewer crossings, so the corridor model can never draw worse.
+
+**The clearance constants describe one physical space across three files** and
+now have a contract test. `OBSTACLE_MARGIN` must clear half of BOTH
+`COLLISION_SPACING` (side to side) and `ROW_GAP` (row to row). It failed the
+second for an unknown length of time because nothing compared them.
+
+**Every cable turns at right angles.** Three producers had to be taught it - the
+cascade's `direct` rung, A*'s early returns, and A*'s join between its
+4-directional grid and off-grid jack standoffs. `ORTHOGONAL_EPSILON` and
+`sharesAxis` live in `geometry` so producers and checkers cannot drift.
+
+**`BOARD_OVERHANG` is for poking out, not travelling.** It exists so a jack on a
+pedal flush against the edge can point its stub off-board; a segment with both
+ends outside the board is capped at a stub's length.
+
 ### Next Tasks
-- [ ] **One `+locked` lane budget remains** (`jr/seven` 3). Pinning two pedals
-      mid-chain leaves the packer no room to end a row where it would like to;
-      the unpinned version of the board is clean, which is the evidence.
-      Likely the wrap-before-group idea applied around pinned pedals.
-- [x] **`roadmap-next.md` refreshed** - rewritten 2026-08-18 against the code
-      rather than against itself. Seven items closed, each with the evidence to
-      re-check it by. It also now carries the question of whether it should
-      exist: it has been confidently wrong twice about finished work, while the
-      per-session task lists have stayed accurate.
+
+- [ ] **Decide what `test` should be.** It is stored at loop+4cm+dirty and has
+      been silently drawn CLEAN. It now draws dirty - 247.9in and 18 crossings
+      against 189.89in and 8. Longer because it IS longer, two pedals moving out
+      of the amp loop into the front run. If clean was the intent, the switch is
+      now the thing that says so. **Owner's call, not a bug.**
+- [ ] **The two red cables on `test` need the owner too.** Fully diagnosed
+      (see above): BigSky carries both jacks on its top edge and the corridor
+      seats one run. A shallower pedal in row 1, one fewer row, or run one of
+      them underneath. **No code action - do not loosen a clearance to make
+      them go away.**
+- [ ] **One `+locked` lane budget remains** (`jr/seven: loop+ns2loop+locked`,
+      3 violations). Two pedals pinned mid-chain leave the packer no room to end
+      a row where it would like to; the unpinned board is clean, which is the
+      evidence. Likely the wrap-before-group retry taught about pinned pedals.
+- [ ] **The optimizer pays 1.23x** for the never-worse guarantee (1.64s -> 2.02s
+      across both saved boards). Worth optimising only if Optimize feels slow;
+      the cheap win is that the second pass only matters where the two routers
+      disagree, and `laneOutcome` already records which cables the corridor
+      served. **Do not "fix" it by scoring with a different router than the one
+      that draws** - that is P1.5.
+- [ ] **Should `roadmap-next.md` exist?** Rewritten today against the code, but
+      it has now been confidently wrong twice about finished work while these
+      per-session lists stayed accurate. Consider deleting it in favour of the
+      newest session entry.
 
 ---
 
