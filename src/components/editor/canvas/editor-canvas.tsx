@@ -51,7 +51,19 @@ interface DragState {
   offsetY: number;
 }
 
-export function EditorCanvas() {
+interface EditorCanvasProps {
+  /**
+   * A viewer, not an owner. Pan and zoom stay - they are how you READ a board -
+   * but nothing that would change it responds. Used by the public /s/[slug]
+   * page, where the store is seeded from someone else's configuration and
+   * there is no save path for an edit to travel down: without this a visitor
+   * could drag another person's pedals around and watch the cables reroute,
+   * which looks exactly like editing and is not.
+   */
+  readOnly?: boolean;
+}
+
+export function EditorCanvas({ readOnly = false }: EditorCanvasProps = {}) {
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
 
@@ -334,6 +346,7 @@ export function EditorCanvas() {
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent) => {
       if (suppressClick.current) { suppressClick.current = false; return; }
+      if (readOnly) return;
       if (mode === 'add-pedal' && pedalToAdd && board) {
         const pedal = pedalsById[pedalToAdd];
         if (!pedal) return;
@@ -395,12 +408,13 @@ export function EditorCanvas() {
         selectPedal(null);
       }
     },
-    [mode, pedalToAdd, board, pedalsById, placedPedals, addPedal, setPedalToAdd, screenToBoard, selectPedal]
+    [mode, pedalToAdd, board, pedalsById, placedPedals, addPedal, setPedalToAdd, screenToBoard, selectPedal, readOnly]
   );
 
   // Handle drag start
   const handleDragStart = useCallback(
     (pedalId: string, e: React.MouseEvent | React.TouchEvent) => {
+      if (readOnly) return;
       e.stopPropagation();
       selectPedal(pedalId);
 
@@ -420,7 +434,7 @@ export function EditorCanvas() {
         offsetY: boardPos.y - placed.yInches,
       });
     },
-    [placedPedals, screenToBoard, selectPedal]
+    [placedPedals, screenToBoard, selectPedal, readOnly]
   );
 
   // Handle drag move
