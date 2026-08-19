@@ -14,6 +14,8 @@ import {
 import { useEditorStore } from '@/store/editor-store';
 import { useConfigurationStore } from '@/store/configuration-store';
 import { getCategoryColor, getCategoryLabel, PEDAL_CATEGORIES } from '@/lib/constants/pedal-categories';
+import { groupPedalsByCategory, groupStartsOpen } from '@/lib/pedal-grouping';
+import { ChevronRight } from 'lucide-react';
 import type { Pedal } from '@/types';
 
 interface PedalLibraryPanelProps {
@@ -50,6 +52,22 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
     });
   }, [pedals, search, selectedCategory]);
 
+  const groups = useMemo(() => groupPedalsByCategory(filteredPedals), [filteredPedals]);
+
+  /*
+   * Which sections are open.
+   *
+   * `openOverrides` holds only what the USER has changed, keyed by category;
+   * everything else falls back to groupStartsOpen. Storing the overrides
+   * rather than the full open-set is what lets a search open the matches
+   * without erasing a section the user deliberately shut - and what stops a
+   * cleared search from leaving every section hanging open.
+   */
+  const [openOverrides, setOpenOverrides] = useState<Record<string, boolean>>({});
+  const defaultOpen = (count: number) => groupStartsOpen(search !== '', selectedCategory, count);
+  const isOpen = (category: string, count: number) =>
+    openOverrides[category] ?? defaultOpen(count);
+
   const handlePedalClick = (pedal: Pedal) => {
     if (!board) return;
 
@@ -67,10 +85,23 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
         <Input
           placeholder="Search pedals..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            // Drop the per-section overrides whenever the filter changes.
+            // Without this a section the user had collapsed stays collapsed
+            // through a search that matches it - which is the wall of shut
+            // headers this design exists to avoid, just harder to reproduce.
+            setOpenOverrides({});
+          }}
           className="h-8"
         />
-        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+        <Select
+          value={selectedCategory}
+          onValueChange={(value) => {
+            setSelectedCategory(value);
+            setOpenOverrides({});
+          }}
+        >
           <SelectTrigger className="h-8 text-xs">
             <SelectValue placeholder="All Categories" />
           </SelectTrigger>
@@ -99,39 +130,91 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
 
       <ScrollArea className="flex-1 min-h-0">
         <div className="p-2 space-y-1">
-          {filteredPedals.map((pedal) => {
-            const isSelected = pedalToAdd === pedal.id;
-            const isOnBoard = placedPedals.some((p) => p.pedalId === pedal.id);
-
+          {groups.map((group) => {
+            const open = isOpen(group.category, groups.length);
             return (
-              <button
-                key={pedal.id}
-                onClick={() => handlePedalClick(pedal)}
-                className={`w-full text-left p-2 rounded-md transition-colors overflow-hidden ${
-                  isSelected
-                    ? 'bg-primary text-primary-foreground'
-                    : 'hover:bg-muted'
-                }`}
+              /*
+               * A native <details>, not a Collapsible component: the semantics
+               * and the keyboard behaviour are already correct and it adds no
+               * dependency. `open` is controlled so a search can reveal its
+               * matches; onToggle records the user's own choice.
+               */
+              <details
+                key={group.category}
+                open={open}
+                onToggle={(e) => {
+                  // Read `open` BEFORE the updater runs. React nulls
+                  // `currentTarget` once the handler returns, so reading it
+                  // inside setState throws - and because this renders during
+                  // the commit it took the whole panel down with it, search
+                  // box and all, on the first click of any section.
+                  const isNowOpen = (e.currentTarget as HTMLDetailsElement).open;
+                  setOpenOverrides((prev) => ({ ...prev, [group.category]: isNowOpen }));
+                }}
               >
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: getCategoryColor(pedal.category) }}
-                    title={getCategoryLabel(pedal.category)}
+                <summary className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer list-none hover:bg-muted transition-colors duration-200 [&::-webkit-details-marker]:hidden">
+                  {/* Rotated from the `open` state we already hold rather than a
+                      CSS variant, so it cannot depend on variant support.
+
+                      Verify it by reading `rotate`, NOT `transform`: Tailwind
+                      v4 compiles rotate-90 to the `rotate` property, so
+                      getComputedStyle(...).transform is "none" whichever way
+                      the chevron is pointing. Reading the wrong property here
+                      produced a confident "NO ROTATION" against code that
+                      worked. */}
+                  <ChevronRight
+                    className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-200 ${
+                      open ? 'rotate-90' : ''
+                    }`}
                   />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-medium truncate text-xs">{pedal.name}</span>
-                      {isOnBoard && (
-                        <span className="text-xs text-muted-foreground shrink-0">✓</span>
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      {pedal.manufacturer} · {pedal.widthInches}&quot;×{pedal.depthInches}&quot;
-                    </div>
-                  </div>
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: group.color }}
+                  />
+                  <span className="text-xs font-medium truncate flex-1">{group.label}</span>
+                  <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                    {group.pedals.length}
+                  </span>
+                </summary>
+
+                <div className="space-y-1 pt-1 pb-2">
+                  {group.pedals.map((pedal) => {
+                    const isSelected = pedalToAdd === pedal.id;
+                    const isOnBoard = placedPedals.some((p) => p.pedalId === pedal.id);
+
+                    return (
+                      <button
+                        key={pedal.id}
+                        onClick={() => handlePedalClick(pedal)}
+                        className={`w-full text-left p-2 rounded-md transition-colors duration-200 overflow-hidden ${
+                          isSelected
+                            ? 'bg-primary text-primary-foreground'
+                            : 'hover:bg-muted'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: getCategoryColor(pedal.category) }}
+                            title={getCategoryLabel(pedal.category)}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-medium truncate text-xs">{pedal.name}</span>
+                              {isOnBoard && (
+                                <span className="text-xs text-muted-foreground shrink-0">✓</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground truncate">
+                              {pedal.manufacturer} · {pedal.widthInches}&quot;×{pedal.depthInches}&quot;
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-              </button>
+              </details>
             );
           })}
 
