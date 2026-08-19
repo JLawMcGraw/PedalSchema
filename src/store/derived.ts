@@ -224,6 +224,14 @@ export interface PedalSchemaSnapshot {
   /** Unsaved work, and why the last save failed - null when it did not */
   isDirty: boolean;
   saveError: string | null;
+  /**
+   * What the board is CALLED. Deliberately here and not on SourceSlice:
+   * `deriveBoardState` does not read either field, and the twin's slice is
+   * defined by what it reads. Adding them there would make the twin claim a
+   * dependency it does not have.
+   */
+  name: string;
+  description: string;
 }
 
 // Debug helpers: extract source + derived state from the browser console.
@@ -381,6 +389,8 @@ if (typeof window !== 'undefined') {
       lastOptimization: s.lastOptimization,
       isDirty: s.isDirty,
       saveError: s.saveError,
+      name: s.name,
+      description: s.description,
     };
   };
 }

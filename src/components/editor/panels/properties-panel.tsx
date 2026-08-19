@@ -17,6 +17,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { getCategoryColor, getCategoryLabel } from '@/lib/constants/pedal-categories';
 import { hasTopOrBottomSignalJack, isFootSwept } from '@/lib/engine/layout/rotation-eligibility';
+import { BoardDetails } from './board-details';
 import type { ChainLocation } from '@/types';
 
 export function PropertiesPanel() {
@@ -43,14 +44,21 @@ export function PropertiesPanel() {
     ? pedalsById[selectedPlaced.pedalId] || selectedPlaced.pedal
     : null;
 
+  // Nothing selected is not an empty state - it is when the BOARD is what you
+  // are looking at. The panel used to spend a whole column on the sentence
+  // "Select a pedal to view properties"; the board's own name and description
+  // had no UI anywhere in the app.
   if (!selectedPlaced || !selectedPedal) {
     return (
       <div className="flex flex-col h-full w-full overflow-hidden">
         <div className="px-3 py-2 border-b shrink-0">
-          <h3 className="font-semibold text-sm">Properties</h3>
+          <h3 className="font-semibold text-sm">Board</h3>
         </div>
-        <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs p-4 text-center">
-          Select a pedal to view properties
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+          <BoardDetails />
+          <p className="px-3 pb-3 text-muted-foreground text-xs">
+            Select a pedal to edit its properties.
+          </p>
         </div>
       </div>
     );

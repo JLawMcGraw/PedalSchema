@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Wand2, Grid3X3, Cable, MoreHorizontal, ZoomIn, ZoomOut, Undo2, Redo2 } from 'lucide-react';
 import { OptimizationSummary } from './optimization-summary';
+import { EditableTitle } from './editable-title';
 
 interface EditorToolbarProps {
   onSave: () => void;
@@ -37,9 +38,8 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
     useEditorStore(
     useShallow((s) => ({ zoom: s.zoom, zoomIn: s.zoomIn, zoomOut: s.zoomOut, fitToContent: s.fitToContent, zoomTo100: s.zoomTo100, gridVisible: s.gridVisible, toggleGrid: s.toggleGrid, cablesVisible: s.cablesVisible, toggleCables: s.toggleCables }))
   );
-  const { name, isDirty, isSaving, isOptimizing, saveError, placedPedals, optimizeLayout, undo, redo, canUndo, canRedo } = useConfigurationStore(
+  const { isDirty, isSaving, isOptimizing, saveError, placedPedals, optimizeLayout, undo, redo, canUndo, canRedo } = useConfigurationStore(
     useShallow((s) => ({
-      name: s.name,
       isDirty: s.isDirty,
       isSaving: s.isSaving,
       isOptimizing: s.isOptimizing,
@@ -133,7 +133,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
       <div className="flex items-center justify-between h-12 px-2 sm:px-4 border-b bg-background gap-2">
         {/* Left side - name and badges */}
         <div className="flex items-center gap-2 min-w-0 shrink">
-          <span className="font-medium truncate">{name}</span>
+          <EditableTitle />
           {isDirty && !saveError && (
             <Badge variant="outline" className="text-xs shrink-0">
               Unsaved
