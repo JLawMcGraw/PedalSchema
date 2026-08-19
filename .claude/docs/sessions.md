@@ -204,6 +204,63 @@ recorded without a re-read, went into a task list as the basis for a decision,
 and described a board that no longer existed within hours. A measurement is
 only current for as long as its inputs are.
 
+### The BigSky cables, re-derived from the board as it is stored
+
+Task 1 of `8-18-next.md`. The earlier diagnosis was measured on a 4cm
+configuration that no longer exists and assumed three rows against numbers
+(14.8px raw, 2.8px usable, 611 of 640) that no longer reproduce. **Its
+conclusion survives. Its stated reason is only half the cause.**
+
+Measured on the current rows, all coordinates in px at 40px/in:
+
+    y=0    row A    IR-2 GEB-7 GE-7 EQ-200 NS-2 FZ-1W MT-2W        204px
+    y=204  corridor A->B   raw 14px   usable 2px (y 210..212)        14px
+    y=218  row B    BigSky Timeline DM-2W DD-7 HM-2W DS-1W          204px
+    y=422  corridor B->C   raw 14px   usable 2px   ZERO runs         14px
+    y=436  row C    DS-1 PH-3 DC-2W PS-6 OC-5 CS-3 CS-3 CP-1X       204px
+    y=640
+
+    204 + 14 + 204 + 14 + 204 = 640  - the board is full TO THE PIXEL
+
+Relocation is arithmetically impossible, which is worth having as a number
+rather than an impression. BigSky is 270px wide and the widest free run in any
+row is:
+
+    row A   225px      row B   50px      row C   74px
+
+**The operative cause is the STUB, not lane capacity.** Both failures route at
+y=208, which is exactly `218 - STANDOFF`:
+
+    corridor above BigSky      14px
+    minus OBSTACLE_MARGIN       6px   ->  8px available for a stub
+    STANDOFF                   10px   ->  10 > 8
+
+A jack on a pedal's TOP edge in a 14px corridor cannot plant its stub legally
+at all, before capacity is considered. The two cables that ARE seated there
+(`HM-2W -> MT-2W` at y=211.0 and `amp -> DD-7` at y=211.6) belong to side-jack
+pedals and the off-board amp; they enter the corridor horizontally and never
+need a vertical stub. So an EMPTY corridor would not save BigSky's two either.
+
+The app's message - "the channel it needs is already carrying as many cables as
+it can hold at 0.15in clearance" - explains the eviction and not the absence of
+any fallback. Accurate as far as it goes; incomplete as a diagnosis. **Not
+changed, because changing it is a product decision and the remedy it names (run
+one underneath) is right either way.**
+
+Note in passing, not chased: those two seated runs sit **0.6px apart** in a 2px
+band and are both valid, because validity means "does not enter a pedal body"
+and lane separation is a separate property. A 2px usable corridor cannot honour
+LANE_TOLERANCE (9px) no matter which cables take it.
+
+**One finding about the harness, found by making the mistake.** The first
+version of the diagnostic read jacks with `pedal.jacks.find(j => j.jackType ===
+'input')` and reported BigSky's input at 68%, while the router used 80%.
+BigSky and Timeline each carry TWO inputs and TWO outputs (`RIGHT IN` 68% /
+`LEFT IN` 80%), and `findJack` sorts by mono affinity so the LEFT jack wins.
+This is precisely the disagreement `sameSideJackPad`'s comment was corrected to
+warn about, reproduced on the first attempt by a tool written to check
+something else. **Any instrument that resolves a jack must call `findJack`.**
+
 ### The stranded member, fixed later the same day (`6f52192`)
 
 **The diagnosis two sections above was wrong, and the wrongness is the lesson.**
@@ -508,15 +565,15 @@ reason (`hubPadMode`, layout/index.ts): tail first, then hub.
       Clean is shorter and scores WORSE. Dirty is what is stored and what the
       cost model prefers. **Owner's call, not a bug** - the switch is a
       wiring preference, and the engine has no opinion worth overriding yours.
-- [ ] **The two red cables on `test`.** INDEPENDENT of the switch, which is a
-      correction: both settings leave exactly two invalid cables, and
-      `BigSky -> amp_return` is red under both. The rows land at the same four
-      y positions either way, so the switch has no lever on the vertical
-      crowding. Diagnosed earlier as physical - BigSky carries both jacks on
-      its top edge and the corridor seats one run. **No code action - do not
-      loosen a clearance to make them go away.** If it is chased, re-derive
-      the "board is full" arithmetic against the CURRENT 4-row layout; the
-      original was measured on a configuration that no longer exists.
+- [x] **The two red cables on `test` - RE-DERIVED and closed as physical**
+      (2026-08-18 evening, see the section above). Rows and corridors consume
+      204+14+204+14+204 = 640px, the board depth exactly, and BigSky needs
+      270px of free width where the widest free run in any row is 225px. The
+      operative cause is sharper than "the channel is full": STANDOFF is 10px
+      and a 14px corridor leaves 8px after OBSTACLE_MARGIN, so a TOP-edge jack
+      cannot plant its stub there at all. An empty corridor would not help.
+      **No code action.** The remedies remain the owner's - a shallower pedal
+      in a row, one fewer row, or run one cable underneath.
 - [x] **The last `+locked` lane budget is closed** (`jr/seven: loop+ns2loop
       +locked`, was 3 violations, `45afa18`). The recorded diagnosis was wrong:
       the packer had room, and had given up 2.0in of hub corridor to recover a
