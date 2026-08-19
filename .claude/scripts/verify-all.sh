@@ -28,6 +28,7 @@ RUN_WRITERS=0
 
 # Gates that only read. Safe to run against anything.
 READ_ONLY=(
+  "verify-palette"
   "verify-pedal-jacks"
   "verify-pedal-dimensions"
   "verify-pedal-images"
@@ -91,7 +92,19 @@ run_one() {
     pass=$((pass + 1))
   else
     printf 'FAIL (exit %s)\n' "$code"
-    echo "$out" | tail -4 | sed 's/^/      /'
+    # Show the lines that FAILED, then the tail.
+    #
+    # `tail -4` on its own was actively misleading: a gate that prints forty
+    # checks ends with its own summary, so the four lines shown WERE the
+    # summary, and the line naming which check failed had already scrolled
+    # past. Both failing gates on 2026-08-19 had to be re-run standalone to
+    # find out why - which is the entire job this runner exists to do.
+    # The tail is kept for gates that die WITHOUT printing a FAIL line - a
+    # stack trace has no such line - and de-duplicated against the grep, since
+    # a gate's summary is usually in both.
+    { echo "$out" | grep -E 'FAIL|Error|error:' | head -8
+      echo "$out" | tail -3
+    } | awk 'NF && !seen[$0]++' | sed 's/^/      /'
     failed=$((failed + 1))
     failures+=("$name")
   fi
