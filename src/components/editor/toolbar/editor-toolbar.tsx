@@ -202,7 +202,14 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
           {/* Undo / Redo */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" onClick={undo} disabled={!canUndo} className="px-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={undo}
+                disabled={!canUndo}
+                aria-label="Undo"
+                className="px-2"
+              >
                 <ArrowCounterClockwise className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
@@ -211,7 +218,14 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="sm" onClick={redo} disabled={!canRedo} className="px-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={redo}
+                disabled={!canRedo}
+                aria-label="Redo"
+                className="px-2"
+              >
                 <ArrowClockwise className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
@@ -247,7 +261,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
           <div className="hidden sm:flex items-center gap-0.5">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="sm" onClick={zoomOut} className="px-2">
+                <Button variant="ghost" size="sm" onClick={zoomOut} aria-label="Zoom out" className="px-2">
                   <MagnifyingGlassMinus className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
@@ -268,7 +282,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
 
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="sm" onClick={zoomIn} className="px-2">
+                <Button variant="ghost" size="sm" onClick={zoomIn} aria-label="Zoom in" className="px-2">
                   <MagnifyingGlassPlus className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
@@ -281,7 +295,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
           {/* Mobile overflow menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="md:hidden px-2">
+              <Button variant="ghost" size="sm" aria-label="More actions" className="md:hidden px-2">
                 <DotsThree className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>

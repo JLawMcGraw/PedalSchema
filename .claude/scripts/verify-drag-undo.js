@@ -90,8 +90,24 @@ async function main() {
       return { w: pd.widthInches, d: pd.depthInches };
     }, target.id);
 
+    // Drag TOWARD THE MIDDLE OF THE BOARD, not a fixed +3/+1.5.
+    //
+    // The fixed offset was pushing this pedal off the edge and the drop was
+    // being rejected: pedals[0] sits at x=28.85 on a 32in board and is 2.9in
+    // wide, so +3 needs 34.75in of board. Every "moved" and "restored exactly"
+    // assertion below was therefore comparing a position to itself - and
+    // `moved` was true only because a round trip through the drag left a
+    // 1e-15 crumb on y. Aiming inward makes the move real.
+    const board = await page.evaluate(() => {
+      const b = window.__getPedalSchemaState().board;
+      return { w: b.widthInches, d: b.depthInches };
+    });
+    const dx = target.x + pedal.w / 2 < board.w / 2 ? 3 : -3;
+    const dy = target.y + pedal.d / 2 < board.d / 2 ? 1.5 : -1.5;
+    result.delta = { dx, dy, board };
+
     const start = await toScreen(target.x + pedal.w / 2, target.y + pedal.d / 2);
-    const end = await toScreen(target.x + pedal.w / 2 + 3, target.y + pedal.d / 2 + 1.5);
+    const end = await toScreen(target.x + pedal.w / 2 + dx, target.y + pedal.d / 2 + dy);
 
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
@@ -126,7 +142,12 @@ async function main() {
 
     const afterDrop = await sample();
     const dropped = afterDrop.pedals.find(p => p.id === target.id);
-    result.afterDrop = { x: dropped.x, y: dropped.y, moved: dropped.x !== target.x || dropped.y !== target.y };
+    // Distance, not inequality. `!==` on a float calls a 1e-15 crumb a move.
+    result.afterDrop = {
+      x: dropped.x,
+      y: dropped.y,
+      movedInches: Math.hypot(dropped.x - target.x, dropped.y - target.y),
+    };
 
     // --- undo via keyboard ---
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
@@ -153,13 +174,69 @@ async function main() {
     await page.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z');
     await page.waitForTimeout(300);
 
-    // toolbar buttons present?
+    // Toolbar buttons present? Selected BY ACCESSIBLE NAME.
+    //
+    // These used to be `button:has(svg.lucide-undo-2)`. Swapping the icon set
+    // made both selectors match nothing - and this script kept reporting PASS,
+    // because it had no assertions at all and only failed if it threw. Two
+    // counts silently went to 0 and the suite said everything was fine.
     result.toolbar = {
-      undoButton: await page.locator('button:has(svg.lucide-undo-2)').count(),
-      redoButton: await page.locator('button:has(svg.lucide-redo-2)').count(),
+      undoButton: await page.locator('button[aria-label="Undo"]').count(),
+      redoButton: await page.locator('button[aria-label="Redo"]').count(),
     };
 
     console.log(JSON.stringify(result, null, 2));
+
+    // --- the assertions -----------------------------------------------------
+    //
+    // Everything above was already measured; none of it was ever CHECKED. A
+    // gate that only fails on an exception is a gate that reports a clean
+    // sweep while the feature is broken, which is the exact failure this
+    // suite's own header warns about.
+    console.log('');
+    let failures = 0;
+    const check = (ok, label, detail) => {
+      console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}`);
+      if (detail !== undefined) console.log(`        ${detail}`);
+      if (!ok) failures++;
+    };
+
+    check(
+      result.midDrag.storePositionUnchanged,
+      'mid-drag: the store position is still uncommitted',
+      JSON.stringify(result.target)
+    );
+    check(
+      result.midDrag.cablesRerouted,
+      'mid-drag: cables rerouted anyway - the preview pipeline moved them, not a store write',
+      `${result.midDrag.changedCableCount} of ${result.midDrag.totalCables} cable paths changed`
+    );
+    check(
+      result.afterDrop.movedInches >= 1,
+      `the drop committed a real move: ${result.afterDrop.movedInches.toFixed(3)}in (needs 1)`,
+      JSON.stringify(result.afterDrop)
+    );
+    check(
+      result.afterUndo.restoredExactly,
+      'undo restored the position exactly',
+      `${result.afterUndo.x}, ${result.afterUndo.y} vs ${result.target.x}, ${result.target.y}`
+    );
+    check(result.afterUndo.cablesRestored, 'undo restored every cable path');
+    check(
+      result.afterRedo.reappliedExactly,
+      'redo reapplied it exactly',
+      `${result.afterRedo.x}, ${result.afterRedo.y} vs ${result.afterDrop.x}, ${result.afterDrop.y}`
+    );
+    check(result.toolbar.undoButton === 1, `the Undo button is findable (${result.toolbar.undoButton})`);
+    check(result.toolbar.redoButton === 1, `the Redo button is findable (${result.toolbar.redoButton})`);
+
+    console.log('\n-----------------------------------------');
+    if (failures) {
+      console.log(`FAIL: ${failures} check(s) failed\n`);
+      process.exitCode = 1;
+    } else {
+      console.log('PASS: drag reroutes live, undo and redo are exact\n');
+    }
   } finally {
     await browser.close();
   }
