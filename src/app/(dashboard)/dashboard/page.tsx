@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { BoardCard } from './board-card';
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -43,26 +44,15 @@ export default async function DashboardPage() {
           {configurations.map((config) => {
             const board = config.boards as unknown as { name: string; manufacturer: string | null } | null;
             return (
-            <Link key={config.id} href={`/editor/${config.id}`}>
-              <Card className="hover:border-primary/50 transition-colors cursor-pointer">
-                <CardHeader>
-                  <CardTitle className="text-lg">{config.name}</CardTitle>
-                  <CardDescription>
-                    {board?.manufacturer && `${board.manufacturer} `}
-                    {board?.name}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    {config.description || 'No description'}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Updated {new Date(config.updated_at).toLocaleDateString()}
-                  </p>
-                </CardContent>
-              </Card>
-            </Link>
-          );
+              <BoardCard
+                key={config.id}
+                id={config.id}
+                name={config.name}
+                description={config.description}
+                updatedAt={config.updated_at}
+                boardLabel={[board?.manufacturer, board?.name].filter(Boolean).join(' ')}
+              />
+            );
           })}
         </div>
       ) : (
