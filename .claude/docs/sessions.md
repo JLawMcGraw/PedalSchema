@@ -4,6 +4,129 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-18 (evening) - Six written claims, none of which survived being measured
+
+### Summary
+
+Picked up the last open engine item (R2, the `+locked` lane budget) and closed
+it - but the durable result of the session is that **six separate written
+claims turned out to be wrong when measured, and every one of them looked
+settled.** A budget with a diagnosis nobody had re-checked, a roadmap item
+pointing at the wrong function, a test allowance that read as empty and was
+not, an assertion no value could fail, a board described by numbers it no
+longer had, and a clearance contract missing the same half it was written to
+add.
+
+Twelve commits. **389 tests pass** (up from 383), build clean, both real boards
+byte-identical, `LANE_VIOLATION_BUDGET` and `LANE_CROSSING_ALLOWANCE` both
+empty tables.
+
+### What Was Accomplished
+- [x] R2 closed - graduated hub padding; the last lane budget is gone
+- [x] Fixed a harness gate that died on any empty configuration
+- [x] `test`'s recorded numbers re-measured; three were wrong
+- [x] Wrote and executed a plan for everything left (`8-18-next.md`)
+- [x] BigSky re-derived from the current board - closed as physical
+- [x] Lane-router allowance tightened from a blanket 1 to 0
+- [x] `fit-explanation` asserted `corridorInches >= 0`; now asserts the corridor
+- [x] Deleted the lenient tier - no members, full set of branches
+- [x] R3 decided against by the owner and moved to "deliberately NOT doing"
+- [x] STANDOFF's row-axis contradiction found and asserted as known
+
+### Key Changes
+
+| File | Change |
+|------|--------|
+| `layout/index.ts` | `hubPadEnabled` -> `hubPadMode`; pad given up in steps, tail before hub |
+| `layout/__tests__/hub-pad-graduated.test.ts` | new - 5 tests, 2 fail without the fix |
+| `__tests__/config-matrix.test.ts` | budget table emptied; lenient tier deleted |
+| `__tests__/lane-router.test.ts` | allowance default `?? 1` -> `?? 0`; 55-line stale docblock rewritten |
+| `layout/__tests__/fit-explanation.test.ts` | corridor assertion made real; mutation-checked |
+| `geometry/__tests__/clearance-contract.test.ts` | new test - the STANDOFF row-axis contradiction, asserted as known |
+| `geometry/index.ts` | STANDOFF's contract states the row axis it was silently missing |
+| `cables/__tests__/fallback-shape.test.ts` | pre-R1 arithmetic marked historical |
+| `.claude/scripts/verify-optimize.js` | an empty configuration is a board, not a hang |
+| `.claude/docs/roadmap-next.md` | stops being a roadmap; keeps only closed + decided |
+| `.claude/docs/8-18-next.md` | new - the plan, now executed and marked so |
+
+### Technical Decisions
+
+1. **The hub pad is given up in steps, tail first.** All-or-nothing surrendered
+   2.0in of row to recover 0.35in. The hub has four jacks and both its gaps
+   carry at least two runs; the tail has two, and when the tail ends the row -
+   exactly when the row is tight - its outer gap is the board edge.
+2. **A budget entry is a defect that has not been read closely enough.** Both
+   tables are now empty and their comments say why that is the point.
+3. **The BigSky cables stay red, and no clearance moves.** Two constraints bind
+   independently; fixing either alone changes nothing.
+4. **R3 is decided against, not deferred.** Recorded in the "deliberately NOT
+   doing" list with the measurement, so it stops reading as pending work.
+5. **"Decide what `test` should be" was never a decision** - the owner's
+   correction. It is a control, flipped by preference.
+
+### The six claims that did not survive measurement
+
+Listed together because the pattern is the finding, not any one of them.
+
+| Claim | Where | What was true |
+|---|---|---|
+| "Pinned pedals leave the packer no room to end a row" | `LANE_VIOLATION_BUDGET`, 2 sessions | The packer had room. A boolean pad spent 2.0in to recover 0.35in |
+| "The allowance table is empty, the property is enforced" | `lane-router.test.ts` | Table empty, default `?? 1` - a blanket allowance on every case |
+| "`corridorInches >= 0`" | `fit-explanation.test.ts` | No value can fail it. The test is named "survives to the surface" |
+| "`test` is stored at loop+4cm+dirty, 247.9in vs 189.89in" | task list | 4cm is FALSE; 147.54 vs 131.22; and clean is shorter AND worse |
+| "Three rows take 611px of 640" | BigSky diagnosis | 204+14+204+14+204 = 640 exactly, and the cause was the stub, not capacity |
+| "STANDOFF: 8 < 10 <= 20 - 8" | `geometry/index.ts` | Margin is 6, and the row axis was never in the contract at all |
+
+**Every one was in writing, dated, and had been read as settled.** The common
+shape: a measurement recorded once, then inherited. The defence that worked
+each time was re-deriving the number from the code rather than reading the
+sentence about it.
+
+### Architecture Notes
+
+**A pedal's packed width includes its pad on BOTH sides**, whether or not a
+neighbour can use it - so clearance given to a pedal at the end of a row still
+costs that row width. This is why the hub pad is worth a graduated retry.
+
+**STANDOFF has R1's blind spot.** Its contract is written against
+COLLISION_SPACING (the side axis) and says nothing about ROW_GAP. A jack on a
+TOP or BOTTOM edge needs `STANDOFF + OBSTACLE_MARGIN` = 16px of corridor where
+ROW_GAP designs 14px, so it cannot plant a legal stub in a corridor the placer
+is happy with. Asserted as a KNOWN contradiction in `clearance-contract.test.ts`
+rather than fixed, because capacity binds independently on the board that found
+it. `clearance-contract.test.ts` was written to close exactly this omission for
+`OBSTACLE_MARGIN` and left STANDOFF in it.
+
+**Any instrument that resolves a jack must call `findJack`.** BigSky and
+Timeline each carry TWO inputs and TWO outputs (`RIGHT IN` 68% / `LEFT IN`
+80%), and `findJack` sorts by mono affinity so LEFT wins. A raw
+`jacks.find(...)` picks the other one. Reproduced on the first attempt this
+session by a diagnostic written to check something else.
+
+**A fixture whose premise depends on a constant must assert that premise.**
+`fallback-shape` survived `OBSTACLE_MARGIN` 8 -> 6 intact because its first
+test asserts "if some strategy solves this the test proves nothing". The
+eviction fixture that went vacuous earlier this month had no such guard.
+
+### Next Tasks
+
+Nothing is blocked, and the 2026-08-18 list above is fully closed.
+
+- [ ] **`STANDOFF` vs `ROW_GAP`, if a board ever needs it.** Currently a known
+      contradiction with a test on it. Resolving it means `STANDOFF <= 8`, or
+      modelling a right-angle plug separately from a straight one - a real
+      distinction, since right-angle plugs exist precisely for top-mounted
+      jacks. **Do not do it to chase the BigSky cables**; capacity binds there
+      independently and they would stay red.
+- [ ] **The 0.6px pair on `test`.** Two cables sit 0.6px apart in a 2px corridor
+      and both are VALID, because validity means "does not enter a pedal body"
+      and lane separation is a separate property. Not chased. A 2px corridor
+      cannot honour LANE_TOLERANCE (9px) whichever cables take it.
+- [ ] **13 non-BOSS pedals still carry unattributed jack rows.** Unchanged from
+      earlier sessions; rotation stays dark for them until sourced.
+
+---
+
 ## Session: 2026-08-18 - A switch that meant nothing, and four constants that disagreed
 
 ### Summary
