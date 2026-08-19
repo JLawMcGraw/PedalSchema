@@ -67,7 +67,11 @@ export function PowerPanel() {
         <h3 className="font-semibold text-sm">Power</h3>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      {/* min-h-0 matches the four sibling panels. It is NOT a bug fix: a flex
+          item that scrolls already has an automatic minimum size of 0, and
+          this panel was measured unclipped at every viewport from 1920x1080
+          down to 1280x560. It is here so the five panels read the same. */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
         {/* Headline. "At least" whenever a pedal's draw is unrecorded - a bare
             number would be read as the whole story. */}
         <div className="border rounded-lg p-3">
