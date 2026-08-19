@@ -4,6 +4,115 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-19 - The frontend audit, and a canvas you can actually navigate
+
+### Summary
+
+Started as "let's discuss a redesign" and became a repair job, because the
+visual problems sat on top of functional ones. The audit found the app still
+wearing the `create-next-app` scaffold and several controls that promise things
+they do not do. Then all of A1 - the canvas viewport - was built and verified.
+
+**Two of the owner's three reported problems are closed, plus one bug nobody
+had reported.** 20 commits. 413 tests (up from 389), build clean, a new
+13-check browser gate.
+
+### What Was Accomplished
+- [x] Frontend audit against `.agents/skills/redesign-existing-projects`
+- [x] Plan written and approved (`.claude/docs/../plans/foamy-napping-falcon.md`)
+- [x] `verify-placement`'s false failure fixed (checker, not the board)
+- [x] A1/P0 - the drag/coordinate defect, with a pure testable module
+- [x] A1/P1 - measured viewport state, aspect-matched viewBox
+- [x] A1/P2 - pan: drag, middle-button, space, wheel
+- [x] A1/P3 - pinch to zoom, two-finger pan
+- [x] A1/P4 - Fit / Actual Size, zoom shortcuts
+- [x] click-to-add now honours where you clicked
+- [ ] A2 CRUD, A3 broken routes, A5 panel density, A4 sharing, then Phase B
+
+### Key Changes
+
+| File | Change |
+|------|--------|
+| `src/lib/canvas/viewport.ts` | NEW - all viewport maths, pure, 24 tests |
+| `src/components/editor/canvas/use-canvas-viewport.ts` | NEW - the only DOM seam for geometry |
+| `src/store/editor-store.ts` | viewportSize/contentBounds/fitBounds/hasFitted; every pan/zoom clamped |
+| `src/components/editor/canvas/editor-canvas.tsx` | measured viewBox, pan/pinch/wheel, click-to-add honoured |
+| `src/components/editor/toolbar/editor-toolbar.tsx` | Fit + Actual Size, Cmd/Ctrl +/-/0/1 |
+| `.claude/scripts/verify-viewport.js` | NEW gate, 13 checks, wired into verify-all.sh |
+| `.claude/scripts/verify-placement.js` | row checks now per signal segment |
+
+### Measured results
+
+    drag rate        ratio = fitScale (0.70 at 1100x800)  ->  1.0000 everywhere
+    click-to-add     up to 16.57in from the pointer       ->  0.02in
+    reachability     far corner unreachable at any zoom   ->  reachable at 4.00x
+    pinch            n/a                                  ->  3x spread = exactly 3x
+    default view     -                                    ->  0.0000px across 31 pedals
+
+### Technical Decisions
+
+1. **All viewport maths is pure, in `lib/canvas/`.** vitest runs in node here
+   and jsdom is absent - and adding it would buy nothing, since jsdom performs
+   no layout and has no `getScreenCTM`. Purity is what makes it testable at all.
+2. **The viewBox aspect matches the element.** This is what keeps
+   `twin.js:toScreen()` byte-identical: with equal aspects its letterbox terms
+   are exactly 0. Pan via `<g transform>` was rejected because twin.js reads
+   only the viewBox, so all ~15 verify scripts would have gone silently wrong.
+3. **`fitBounds` is separate from `contentBounds`.** We FRAME the board box and
+   keep the wider box - including off-board glyphs - REACHABLE. Fitting to the
+   wider one would rescale every board on first paint.
+4. **`zoom` is absolute** (CSS px per world unit), so 100% is genuinely 1:1.
+5. **The pedal drag was NOT migrated to pointer events.** The plan named it as
+   the prerequisite for pinch; it was not. The canvas already receives pointer
+   events for touch. The plan's riskiest edit bought nothing and was skipped.
+6. **Click-to-add honours the click** when it names a legal spot; the
+   chain-position heuristic is now the fallback rather than the override.
+
+### Architecture Notes
+
+**AN EFFECT THAT READS `ref.current` ON MOUNT NEVER RUNS.** `EditorCanvas`
+early-returns before the `<svg>` exists, so the ref is null; the deps never
+change afterwards because a ref object is stable. This silently disabled canvas
+measurement in P1 and the wheel handler in P2 - both times producing code that
+looked correct and behaved exactly like the old version. `useCanvasViewport`
+now returns the attached element as STATE so effects have something that
+changes. **If you need to react to an element attaching, use a callback ref or
+node state, never an effect over a ref.**
+
+**`clampPan` force-centres an axis whose content already fits.** A wheel along
+that axis is correctly a no-op, and a cursor anchor on it cannot be honoured.
+Three of the first six gate checks failed on this and ALL THREE were the test
+being wrong, not the code.
+
+**`.claude/scripts/lib/twin.js` is a contract, not a helper.** ~15 scripts map
+board inches to screen pixels through it. `viewport.test.ts` holds a deliberate
+copy of its expression so drift fails in `npm test`, not in a screenshot gate
+three weeks later.
+
+**Row-order is a PER-SEGMENT property.** The front-of-amp chain and the
+effects-loop chain are independent runs; concatenating them and demanding one
+progression is what made `verify-placement` fail on a board that was fine. The
+engine's `chainOrderViolations` already had this right.
+
+### Next Tasks
+
+- [ ] **A2 - configuration CRUD.** Cheapest value left: `setName`/
+      `setDescription` exist in the store and `handleSave` already writes both
+      columns, so rename needs UI only. Delete needs one confirm dialog;
+      `@radix-ui/react-dialog` is already installed via `ui/sheet.tsx`.
+- [ ] **A3 - broken routes.** `/pedals/[id]` does not exist, so every pedal
+      card 404s. "Add Custom Board"/"Add Custom Amp" are inert. Dashboard is
+      `.limit(10)` with no pagination.
+- [ ] **A5 - panel density.** Library grouped by category collapsed by default;
+      icon-only tabs (5 tabs need 316px in a 256px column); `power-panel.tsx:70`
+      is missing the `min-h-0` its four siblings have.
+- [ ] **A4 - sharing.** `isPublic`/`shareSlug` are in types and RLS already.
+- [ ] **Phase B** - Tactical Telemetry restyle, dark substrate only.
+- [ ] **Optional tidy:** migrate the pedal drag to pointer events. No longer
+      required by anything; `resetZoom` also has no callers left in `src/`.
+
+---
+
 ## Session: 2026-08-18 (evening) - Six written claims, none of which survived being measured
 
 ### Summary
