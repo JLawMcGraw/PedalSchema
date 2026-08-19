@@ -55,6 +55,7 @@ WRITERS=(
   "verify-loop-persist"
   "verify-save-reorder"
   "verify-crud"
+  "verify-routes"
 )
 
 pass=0; failed=0; failures=()
