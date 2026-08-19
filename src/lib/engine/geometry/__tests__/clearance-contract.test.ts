@@ -27,11 +27,48 @@ describe('clearance constants describe the same space', () => {
     expect(2 * OBSTACLE_MARGIN).toBeLessThan(px(ROW_GAP));
   });
 
-  it('the standoff clears its own pedal but fits a minimum-width gap', () => {
+  it('the standoff clears its own pedal but fits a minimum-width SIDE gap', () => {
     // Restated from OBSTACLE_MARGIN's own contract so that changing the margin
     // fails HERE rather than somewhere geometric three modules away.
     expect(STANDOFF).toBeGreaterThan(OBSTACLE_MARGIN);
     expect(STANDOFF).toBeLessThanOrEqual(px(COLLISION_SPACING) - OBSTACLE_MARGIN);
+  });
+
+  it('a stub from a TOP-edge jack does NOT fit a designed row corridor - known', () => {
+    /*
+     * THE SAME BLIND SPOT AS R1, ONE CONSTANT OVER, and this test exists to
+     * stop it being rediscovered a third time.
+     *
+     * The check above - the only one STANDOFF had - measures it against
+     * COLLISION_SPACING, the SIDE axis. Nothing measured it against ROW_GAP,
+     * which is exactly what this file's header says went wrong with
+     * OBSTACLE_MARGIN: "they were only ever compared to COLLISION_SPACING,
+     * which is the OTHER axis."
+     *
+     * A jack on a pedal's TOP or BOTTOM edge points its stub INTO a row
+     * corridor, so it needs STANDOFF to plant plus OBSTACLE_MARGIN to clear
+     * the row opposite:
+     *
+     *     needs  STANDOFF + OBSTACLE_MARGIN = 10 + 6 = 16px
+     *     has    ROW_GAP  = 0.35in          =         14px
+     *     short by 2px (0.05in)
+     *
+     * Measured on the owner's 22-pedal board, 2026-08-18: BigSky carries every
+     * jack on its top edge and sits in the middle row, so both its cables
+     * plant at y=208 in a corridor whose legal band starts at y=210, and both
+     * are drawn red.
+     *
+     * ASSERTED AS A KNOWN CONTRADICTION, not as a target. Fixing it does NOT
+     * turn that board green - the same corridor seats one run and four cables
+     * want it, so capacity binds independently - which is why this is written
+     * down rather than chased. If it is ever resolved (STANDOFF <= 8, or a
+     * right-angle plug modelled separately from a straight one), this test
+     * fails and whoever did it must come back and rewrite the story here.
+     */
+    expect(
+      STANDOFF + OBSTACLE_MARGIN,
+      'the row-axis standoff contradiction is fixed - update this test and the note on it'
+    ).toBeGreaterThan(px(ROW_GAP));
   });
 
   it('the endpoint tolerance is a RELAXATION of the margin, never a tightening', () => {

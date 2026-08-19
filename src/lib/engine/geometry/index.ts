@@ -68,10 +68,26 @@ export const ENDPOINT_TOLERANCE = 4;
 
 /**
  * Distance a cable exits a jack before turning, in pixels (the "stub").
- * Must be > OBSTACLE_MARGIN (so the standoff clears its own pedal's margin)
- * and <= COLLISION_SPACING*scale - OBSTACLE_MARGIN (so a standoff pointing
- * into a minimum-width gap stays clear of the neighboring pedal's margin):
- * 8 < 10 <= 20 - 8.
+ *
+ * SIDE axis (satisfied): must be > OBSTACLE_MARGIN, so the stub clears its own
+ * pedal's margin, and <= COLLISION_SPACING*scale - OBSTACLE_MARGIN, so a stub
+ * pointing into a minimum-width gap between two side-by-side pedals stays
+ * clear of the neighbour's margin: 6 < 10 <= 20 - 6.
+ *
+ * ROW axis (NOT satisfied, and known): a jack on a TOP or BOTTOM edge points
+ * its stub into a row corridor, needing STANDOFF + OBSTACLE_MARGIN = 16px
+ * where ROW_GAP designs 14px. Short by 2px, so such a jack cannot plant a
+ * legal stub in a corridor the placer is happy with.
+ *
+ * This is the same shape of omission that had OBSTACLE_MARGIN demanding 16px
+ * in a 14px corridor until 2026-08-18 - a contract written against
+ * COLLISION_SPACING alone, with the row axis simply not mentioned. It is
+ * asserted as a known contradiction in clearance-contract.test.ts rather than
+ * fixed, because fixing it does not make the board that found it green:
+ * corridor capacity binds independently there.
+ *
+ * The arithmetic above used to read `8 < 10 <= 20 - 8`, quoting an
+ * OBSTACLE_MARGIN of 8 that has been 6 since 2026-08-18.
  */
 export const STANDOFF = 10;
 
