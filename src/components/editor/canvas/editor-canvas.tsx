@@ -9,7 +9,7 @@ import { BoardRenderer } from './board-renderer';
 import { PedalRenderer } from './pedal-renderer';
 import { CableRenderer } from './cable-renderer';
 import { CableLegend } from './cable-legend';
-import { snapToRail, findEmptySpot } from '@/lib/engine/collision';
+import { snapToRail, findEmptySpot, isValidPlacement } from '@/lib/engine/collision';
 import { getCategoryDefaultOrder } from '@/lib/constants/pedal-categories';
 import { getExternalEndpointPx } from '@/lib/engine/cables/endpoints';
 import { routeAllCables } from '@/lib/engine/cables/route-cables';
@@ -155,10 +155,34 @@ export function EditorCanvas() {
         const pedal = pedalsById[pedalToAdd];
         if (!pedal) return;
 
-        const pos = screenToBoard(e.clientX, e.clientY);
+        /*
+         * PLACE IT WHERE THE USER CLICKED.
+         *
+         * This used to read `findEmptySpot(...) || snapped`, which meant the
+         * click position was DISCARDED whenever any empty spot existed - i.e.
+         * almost always. The pedal went wherever the chain-position heuristic
+         * wanted it, while the library panel said "Click on the board to
+         * place". The affordance was a lie.
+         *
+         * The click now wins whenever it names a legal spot; the heuristic is
+         * the fallback for a click that does not (off the board, or on top of
+         * something). Auto-placement is still there, it is just no longer
+         * overruling a deliberate act.
+         */
+        const click = screenToBoard(e.clientX, e.clientY);
+
+        // Centre the pedal on the pointer. "Here" means here - not "here is
+        // the top-left corner", which would drop it down and to the right.
+        const size = rotatedFootprint(pedal, 0);
+        const clamped = {
+          x: Math.min(Math.max(click.x - size.widthInches / 2, 0), Math.max(0, board.widthInches - size.widthInches)),
+          y: Math.min(Math.max(click.y - size.depthInches / 2, 0), Math.max(0, board.depthInches - size.depthInches)),
+        };
 
         // Snap to rail if close
-        const snapped = snapToRail(pos, pedal.depthInches, board);
+        const snapped = snapToRail(clamped, size.depthInches, board);
+        const clickedSpot = { x: snapped.x, y: snapped.y };
+        const clickIsLegal = isValidPlacement(clickedSpot, pedal, 0, placedPedals, pedalsById, board).valid;
 
         // Estimate chain position based on category default order
         const newPedalOrder = getCategoryDefaultOrder(pedal.category);
@@ -173,8 +197,10 @@ export function EditorCanvas() {
           }
         }
 
-        // Find optimal position based on chain position
-        const finalPos = findEmptySpot(pedal, placedPedals, pedalsById, board, estimatedChainPos) || snapped;
+        // Chain-position heuristic, used only when the click cannot be honoured.
+        const finalPos = clickIsLegal
+          ? clickedSpot
+          : findEmptySpot(pedal, placedPedals, pedalsById, board, estimatedChainPos) || clickedSpot;
 
         if (finalPos) {
           addPedal(pedal, finalPos);
