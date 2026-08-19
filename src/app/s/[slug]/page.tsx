@@ -37,7 +37,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const config = await load(slug);
   if (!config) return { title: 'Board not found' };
   return {
-    title: `${config.name} - PedalSchema`,
+    title: config.name,
     description:
       config.description ||
       `A ${config.board.name} with ${config.placedPedals.length} pedals.`,
