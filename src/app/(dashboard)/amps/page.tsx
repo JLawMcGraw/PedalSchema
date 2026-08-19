@@ -22,7 +22,12 @@ export default async function AmpsPage() {
             Select your amp to configure effects loop routing
           </p>
         </div>
-        <Button>Add Custom Amp</Button>
+        {/* Disabled, not hidden: custom amps are planned and the button says
+            so. What it must not do is what it did - look completely ordinary,
+            take the click, and do nothing at all. */}
+        <Button disabled title="Custom amps aren't available yet">
+          Add Custom Amp
+        </Button>
       </div>
 
       {amps && amps.length > 0 ? (

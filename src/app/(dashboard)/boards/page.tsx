@@ -24,7 +24,11 @@ export default async function BoardsPage() {
             Select or create a pedalboard to design
           </p>
         </div>
-        <Button>Add Custom Board</Button>
+        {/* See the note on the amps page: disabled and honest beats enabled
+            and inert. */}
+        <Button disabled title="Custom boards aren't available yet">
+          Add Custom Board
+        </Button>
       </div>
 
       {boards && boards.length > 0 ? (
