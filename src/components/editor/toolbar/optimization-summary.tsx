@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useConfigurationStore } from '@/store/configuration-store';
 import { Button } from '@/components/ui/button';
-import { X, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, CaretDown, CaretRight } from '@phosphor-icons/react';
 
 /** One decimal, without rendering "-0" */
 function fmt(n: number): string {
@@ -53,7 +53,7 @@ export function OptimizationSummary() {
             onClick={() => setExpanded((v) => !v)}
             aria-expanded={expanded}
           >
-            {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            {expanded ? <CaretDown className="h-3.5 w-3.5" /> : <CaretRight className="h-3.5 w-3.5" />}
             <span className="hidden sm:inline">
               {summary.changes.length} {summary.changes.length === 1 ? 'change' : 'changes'}
             </span>

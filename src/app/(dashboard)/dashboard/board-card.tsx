@@ -13,7 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, Trash2 } from 'lucide-react';
+import { DotsThree, Trash } from '@phosphor-icons/react';
 
 export interface BoardCardProps {
   id: string;
@@ -147,7 +147,7 @@ export function BoardCard({ id, name, description, updatedAt, boardLabel }: Boar
               className="px-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 transition-opacity duration-200"
               aria-label={`Actions for ${name}`}
             >
-              <MoreHorizontal className="h-4 w-4" />
+              <DotsThree className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -155,7 +155,7 @@ export function BoardCard({ id, name, description, updatedAt, boardLabel }: Boar
               variant="destructive"
               onSelect={() => setConfirming(true)}
             >
-              <Trash2 className="h-4 w-4 mr-2" />
+              <Trash className="h-4 w-4 mr-2" />
               Delete
             </DropdownMenuItem>
           </DropdownMenuContent>

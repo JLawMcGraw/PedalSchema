@@ -21,7 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Wand2, Grid3X3, Cable, MoreHorizontal, ZoomIn, ZoomOut, Undo2, Redo2 } from 'lucide-react';
+import { MagicWand, GridFour, PlugsConnected, DotsThree, MagnifyingGlassPlus, MagnifyingGlassMinus, ArrowCounterClockwise, ArrowClockwise } from '@phosphor-icons/react';
 import { OptimizationSummary } from './optimization-summary';
 import { EditableTitle } from './editable-title';
 
@@ -174,7 +174,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
                   onClick={toggleGrid}
                   className="gap-1.5"
                 >
-                  <Grid3X3 className="h-4 w-4" />
+                  <GridFour className="h-4 w-4" />
                   <span className="hidden lg:inline">Grid</span>
                 </Button>
               </TooltipTrigger>
@@ -189,7 +189,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
                   onClick={toggleCables}
                   className="gap-1.5"
                 >
-                  <Cable className="h-4 w-4" />
+                  <PlugsConnected className="h-4 w-4" />
                   <span className="hidden lg:inline">Cables</span>
                 </Button>
               </TooltipTrigger>
@@ -203,7 +203,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="sm" onClick={undo} disabled={!canUndo} className="px-2">
-                <Undo2 className="h-4 w-4" />
+                <ArrowCounterClockwise className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Undo (⌘Z)</TooltipContent>
@@ -212,7 +212,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="sm" onClick={redo} disabled={!canRedo} className="px-2">
-                <Redo2 className="h-4 w-4" />
+                <ArrowClockwise className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Redo (⇧⌘Z)</TooltipContent>
@@ -230,7 +230,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
                 disabled={placedPedals.length === 0 || isOptimizing}
                 className="gap-1.5"
               >
-                <Wand2 className={`h-4 w-4 ${isOptimizing ? 'animate-spin' : ''}`} />
+                <MagicWand className={`h-4 w-4 ${isOptimizing ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">
                   {isOptimizing ? 'Optimizing...' : 'Optimize Layout'}
                 </span>
@@ -248,7 +248,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="sm" onClick={zoomOut} className="px-2">
-                  <ZoomOut className="h-4 w-4" />
+                  <MagnifyingGlassMinus className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Zoom out</TooltipContent>
@@ -269,7 +269,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="sm" onClick={zoomIn} className="px-2">
-                  <ZoomIn className="h-4 w-4" />
+                  <MagnifyingGlassPlus className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Zoom in</TooltipContent>
@@ -282,21 +282,21 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="md:hidden px-2">
-                <MoreHorizontal className="h-4 w-4" />
+                <DotsThree className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={toggleGrid}>
-                <Grid3X3 className="h-4 w-4 mr-2" />
+                <GridFour className="h-4 w-4 mr-2" />
                 {gridVisible ? 'Hide Grid' : 'Show Grid'}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={toggleCables}>
-                <Cable className="h-4 w-4 mr-2" />
+                <PlugsConnected className="h-4 w-4 mr-2" />
                 {cablesVisible ? 'Hide Cables' : 'Show Cables'}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={zoomOut}>
-                <ZoomOut className="h-4 w-4 mr-2" />
+                <MagnifyingGlassMinus className="h-4 w-4 mr-2" />
                 Zoom Out
               </DropdownMenuItem>
               <DropdownMenuItem onClick={fitToContent}>
@@ -306,7 +306,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
                 Actual Size (100%)
               </DropdownMenuItem>
               <DropdownMenuItem onClick={zoomIn}>
-                <ZoomIn className="h-4 w-4 mr-2" />
+                <MagnifyingGlassPlus className="h-4 w-4 mr-2" />
                 Zoom In
               </DropdownMenuItem>
             </DropdownMenuContent>

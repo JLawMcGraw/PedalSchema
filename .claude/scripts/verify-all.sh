@@ -31,6 +31,7 @@ READ_ONLY=(
   "verify-palette"
   "verify-nav-state"
   "verify-readouts"
+  "verify-icons"
   "verify-pedal-jacks"
   "verify-pedal-dimensions"
   "verify-pedal-images"

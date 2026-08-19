@@ -20,7 +20,7 @@ import {
   PEDAL_CATEGORIES,
 } from '@/lib/constants/pedal-categories';
 import { groupPedalsByCategory, groupStartsOpen } from '@/lib/pedal-grouping';
-import { ChevronRight } from 'lucide-react';
+import { CaretRight } from '@phosphor-icons/react';
 import type { Pedal } from '@/types';
 
 interface PedalLibraryPanelProps {
@@ -167,7 +167,7 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
                       the chevron is pointing. Reading the wrong property here
                       produced a confident "NO ROTATION" against code that
                       worked. */}
-                  <ChevronRight
+                  <CaretRight
                     className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-200 ${
                       open ? 'rotate-90' : ''
                     }`}

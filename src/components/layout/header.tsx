@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Menu } from 'lucide-react';
+import { List } from '@phosphor-icons/react';
 import type { User } from '@supabase/supabase-js';
 
 interface HeaderProps {
@@ -68,7 +68,7 @@ export function Header({ user }: HeaderProps) {
           <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="sm" className="mr-2 md:hidden px-2">
-                <Menu className="h-5 w-5" />
+                <List className="h-5 w-5" />
                 <span className="sr-only">Toggle menu</span>
               </Button>
             </SheetTrigger>

@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
-import { PlusCircle, List } from 'lucide-react';
+import { PlusCircle, ListBullets } from '@phosphor-icons/react';
 import { describeSaveError, failIf } from '@/lib/save-error';
 import type { Board, Amp, Pedal, PlacedPedal, RoutingConfig, PowerSupply } from '@/types';
 
@@ -354,7 +354,7 @@ export function EditorClient({
               className="pointer-events-auto shadow-lg gap-2"
               onClick={() => setRightPanelOpen(true)}
             >
-              <List className="h-4 w-4" />
+              <ListBullets className="h-4 w-4" />
               <span className="hidden sm:inline">Details</span>
             </Button>
           </div>

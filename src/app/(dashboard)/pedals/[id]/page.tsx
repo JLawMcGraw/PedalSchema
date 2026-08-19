@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { createClient } from '@/lib/supabase/server';
 import { Badge } from '@/components/ui/badge';
-import { ChevronLeft } from 'lucide-react';
+import { CaretLeft } from '@phosphor-icons/react/ssr';
 import { getCategoryColor, getCategoryLabel } from '@/lib/constants/pedal-categories';
 import {
   formatCurrentDraw,
@@ -130,7 +130,7 @@ export default async function PedalDetailPage({ params }: PageProps) {
         href="/pedals"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors duration-200 mb-6"
       >
-        <ChevronLeft className="h-4 w-4" />
+        <CaretLeft className="h-4 w-4" />
         All pedals
       </Link>
 

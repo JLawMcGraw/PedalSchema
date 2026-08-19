@@ -9,7 +9,7 @@ import { generateShareSlug, shareUrl } from '@/lib/share-link';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy } from '@phosphor-icons/react';
 
 /**
  * Publishing a board, and the link it gets.

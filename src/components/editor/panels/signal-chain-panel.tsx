@@ -7,7 +7,7 @@ import { useEditorStore } from '@/store/editor-store';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { getCategoryColor } from '@/lib/constants/pedal-categories';
-import { AlertTriangle, Lightbulb, Lock, ChevronUp, ChevronDown } from 'lucide-react';
+import { Warning, Lightbulb, Lock, CaretUp, CaretDown } from '@phosphor-icons/react';
 import type { PlacedPedal } from '@/types';
 
 export function SignalChainPanel() {
@@ -95,7 +95,7 @@ export function SignalChainPanel() {
                 moveUp?.();
               }}
             >
-              <ChevronUp className="h-3.5 w-3.5" />
+              <CaretUp className="h-3.5 w-3.5" />
             </button>
             <button
               title="Move later in chain"
@@ -106,7 +106,7 @@ export function SignalChainPanel() {
                 moveDown?.();
               }}
             >
-              <ChevronDown className="h-3.5 w-3.5" />
+              <CaretDown className="h-3.5 w-3.5" />
             </button>
           </div>
           <Button
@@ -214,7 +214,7 @@ export function SignalChainPanel() {
                   }`}
                 >
                   <div className="flex items-start gap-2">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <Warning className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                     <div className="min-w-0 flex-1">
                       <div className="font-medium leading-snug">{warning.message}</div>
                       {warning.suggestion && (
