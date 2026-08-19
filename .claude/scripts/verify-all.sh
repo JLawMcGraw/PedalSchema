@@ -29,6 +29,7 @@ RUN_WRITERS=0
 # Gates that only read. Safe to run against anything.
 READ_ONLY=(
   "verify-palette"
+  "verify-nav-state"
   "verify-pedal-jacks"
   "verify-pedal-dimensions"
   "verify-pedal-images"

@@ -2,7 +2,7 @@
 
 import { useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,6 +27,16 @@ const getServerSnapshot = () => false;
 
 export function Header({ user }: HeaderProps) {
   const router = useRouter();
+  const pathname = usePathname();
+
+  /**
+   * Which nav entry the current URL belongs to.
+   *
+   * startsWith, not equality: /pedals/abc and /pedals/new are still the Pedals
+   * section, and an exact match would leave the header blank on every detail
+   * page - the pages where "where am I" is the actual question.
+   */
+  const isCurrent = (href: string) => pathname === href || pathname.startsWith(href + '/');
   // Hydration guard: false during SSR/first paint, true after hydration.
   // The dropdown (radix ids) only renders client-side to avoid mismatches.
   const mounted = useSyncExternalStore(subscribeNoop, getClientSnapshot, getServerSnapshot);
@@ -69,7 +79,12 @@ export function Header({ user }: HeaderProps) {
                     key={link.href}
                     href={link.href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className="text-lg font-medium transition-colors hover:text-foreground/80 text-foreground/60"
+                    aria-current={isCurrent(link.href) ? 'page' : undefined}
+                    className={`text-lg font-medium transition-colors duration-200 ${
+                      isCurrent(link.href)
+                        ? 'text-primary'
+                        : 'text-foreground/60 hover:text-foreground/90'
+                    }`}
                   >
                     {link.label}
                   </Link>
@@ -93,9 +108,22 @@ export function Header({ user }: HeaderProps) {
               <Link
                 key={link.href}
                 href={link.href}
-                className="transition-colors hover:text-foreground/80 text-foreground/60"
+                aria-current={isCurrent(link.href) ? 'page' : undefined}
+                className={`relative py-4 transition-colors duration-200 ${
+                  isCurrent(link.href)
+                    ? 'text-primary'
+                    : 'text-foreground/60 hover:text-foreground/90'
+                }`}
               >
                 {link.label}
+                {/* The tick under the current section. An instrument panel
+                    marks its selected channel with a rule, not a pill. */}
+                {isCurrent(link.href) && (
+                  <span
+                    aria-hidden
+                    className="absolute inset-x-0 -bottom-px h-px bg-primary"
+                  />
+                )}
               </Link>
             ))}
           </nav>

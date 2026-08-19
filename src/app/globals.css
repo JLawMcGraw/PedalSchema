@@ -92,3 +92,28 @@
 .container {
   @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
 }
+
+/* An instrument panel does not bounce. Motion here is short and functional:
+   long enough to be seen (the skill asks for 200-300ms), short enough that a
+   dense panel never feels like it is catching up with the pointer.
+
+   The opt-out is not decoration. Vestibular disorders make transform and
+   scroll animation genuinely unpleasant, and `prefers-reduced-motion` is how
+   the operating system says so. Note it kills DURATION, not the state itself -
+   hover and pressed styles still apply, they just arrive instantly. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
