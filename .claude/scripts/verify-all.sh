@@ -57,6 +57,7 @@ WRITERS=(
   "verify-save-reorder"
   "verify-crud"
   "verify-routes"
+  "verify-sharing"
 )
 
 pass=0; failed=0; failures=()
