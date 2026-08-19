@@ -4,6 +4,108 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-19 (fifth) - A4, sharing, and which layer actually enforces it
+
+### Summary
+
+A4 closed, and with it the whole of Phase A. `isPublic` and `shareSlug` had
+been in the types and in the RLS policies since the FIRST migration
+(20240101000001) and nothing in `src/` referenced either one - the database
+had been ready to share boards for as long as the project has existed.
+
+The result worth keeping is not the feature: it is that mutation-testing the
+gate showed **RLS and the loader enforce sharing for different people**, and
+neither one covers both.
+
+Four commits. **467 tests** (up from 458), build clean, `verify-all.sh --all`
+**23 passed, 0 failed**.
+
+### What Was Accomplished
+- [x] One configuration loader, shared by `/editor/[id]` and `/s/[slug]`
+- [x] Publish/unpublish with a copyable link, in the Board panel
+- [x] `/s/[slug]` - the real canvas, read-only, no account needed
+- [x] `readOnly` on EditorCanvas
+- [x] `verify-sharing` - 15 checks in a session-less browser, mutation-checked
+- [x] **Phase A complete.** Next is Phase B, the restyle
+
+### Key Changes
+
+| File | Change |
+|------|--------|
+| `src/lib/load-configuration.ts` | NEW - the one loader, keyed by id or share_slug |
+| `src/lib/share-link.ts` | NEW - slug alphabet and URL, 9 tests |
+| `src/components/editor/panels/share-board.tsx` | NEW - publish, link, copy |
+| `src/app/s/[slug]/` | NEW - the public route and its viewer |
+| `src/components/editor/canvas/editor-canvas.tsx` | `readOnly` prop |
+| `src/store/configuration-store.ts` | isPublic/shareSlug + setSharing |
+| `.claude/scripts/verify-sharing.js` | NEW gate, in the writers list |
+
+### Technical Decisions
+
+1. **Publishing writes immediately**, outside the dirty/save flow that name and
+   description use. A share link that 404s until you remember to press Save is
+   worse than no share link.
+2. **The UI does not say "anyone with the link".** The policy is
+   `FOR SELECT USING (is_public = true)` with no slug condition, and the anon
+   key ships in the client bundle - so a published board is readable by
+   anyone, full stop. It says so.
+3. **The slug survives unpublishing.** Re-publishing restores the same link
+   rather than orphaning every copy already sent.
+4. **The shared page renders the REAL canvas.** EditorCanvas takes no data
+   props, so a viewer is the same store seeded from a different row. A second,
+   simpler renderer would drift, and a share link whose picture disagrees with
+   the editor is worse than none.
+5. **`includeLibrary: false` for viewers** - the 67-pedal catalogue and the amp
+   list feed the editor's panels, and this page has none.
+
+### Architecture Notes
+
+**RLS AND THE LOADER ENFORCE SHARING FOR DIFFERENT PEOPLE.** Measured by
+mutation, not reasoned:
+
+| Who | What refuses an unpublished board |
+|---|---|
+| a stranger | **RLS.** Dropping `.eq('is_public', true)` from the loader still 404s - "Public configurations are viewable" is the only policy that can match them and it requires is_public |
+| the OWNER | **only the loader.** "Users can view their own configurations" has no is_public condition, so RLS lets them straight in |
+
+So without that `.eq`, the person who just unpublished would load their own
+share page perfectly and conclude the link was closed for everybody. **The
+wrong direction for a sharing mistake to point**, and invisible from the
+authoring tab. The gate now asserts the owner case specifically, and it is the
+check that fails when the `.eq` is removed.
+
+**A SHARING GATE MUST RUN WITHOUT A SESSION.** Every check here passes
+trivially while logged in as the owner, because the owner reads their own row
+through a different policy. The viewer half runs in a fresh browser context
+and asserts it holds 0 cookies before it asserts anything else.
+
+**AN EFFECT THAT SEEDS A MODULE STORE PAINTS ONE WRONG FRAME FIRST.** The
+store is a singleton and the canvas reads it directly, so seeding in an effect
+shows whatever the store already held - the empty default, or the last board
+this tab had open. Seeded during the first render behind a ref guard instead;
+`initConfiguration` is idempotent, which is what makes that safe under
+StrictMode. (Note this is the OPPOSITE conclusion to A1's "never use an effect
+over a ref" note - that was about reacting to a DOM node ATTACHING, this is
+about having state ready before first paint. Different problems.)
+
+### Next Tasks
+
+- [ ] **Phase B - the restyle.** Tactical Telemetry, dark substrate only. Read
+      `.agents/skills/redesign-existing-projects` FIRST - nothing loads it, and
+      its fix-priority order starts at fonts, then colour, then hover/active
+      states, then layout.
+- [ ] **Duplicate a board** - still the one missing CRUD verb.
+- [ ] **A share link has no preview image.** `generateMetadata` sets title and
+      description but no `og:image`, so every shared board unfurls as plain
+      text in chat. The skill flags missing social meta.
+- [ ] **`pedal-card.tsx`** duplicates CATEGORY_COLORS/LABELS and collapses the
+      currentMa three-state with a truthy check (latent - no pedal has a real 0).
+- [ ] **`verify-all.sh` truncates failures to `tail -4`**, which hides the FAIL
+      line; both failing gates had to be re-run standalone to see why.
+- [ ] **Lint does not cover `.claude/scripts`** - 100 pre-existing errors.
+
+---
+
 ## Session: 2026-08-19 (fourth) - A5, and one of its three items was real
 
 ### Summary
