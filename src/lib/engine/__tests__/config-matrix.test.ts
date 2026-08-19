@@ -15,16 +15,20 @@
  *  5. determinism: identical output on repeat runs
  *  6. idempotence: re-running the pipeline on its own output is a no-op
  *
- * THERE IS NO LENIENT TIER ANY MORE. There was one, for combos whose
+ * EVERY COMBO IS STRICT. There used to be a LENIENT tier, for combos whose
  * placement was naive until the topology-driven placer landed: they had to
  * avoid collisions and flag any cable drawn through a pedal, but were allowed
- * invalid cables, lane crowding and non-monotonic order. The placer now
- * understands 4-cable-method and NS-2 pedal-loop topology, so every combo is
- * STRICT and `isLenient` returns false unconditionally.
+ * invalid cables, lane crowding and non-monotonic order.
  *
- * The branching it feeds is vestigial and kept only so the strict/lenient
- * split can be reinstated for a new class of board without rebuilding it.
- * Nothing in the matrix takes the lenient path today.
+ * The placer understands 4-cable-method and NS-2 pedal-loop topology now, so
+ * the tier emptied and `isLenient` became an unconditional `false` with the
+ * whole strict/lenient split still wired through the body underneath it -
+ * every assertion behind a branch that could not be taken. Removed 2026-08-18;
+ * all 66 scenarios were byte-identical across the removal, which is what you
+ * would expect of deleting a branch nothing reached.
+ *
+ * If a future class of board needs a lenient tier, write the tier it needs
+ * rather than reviving this one.
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
@@ -141,12 +145,6 @@ function buildScenario(combo: Combo): Scenario | null {
 }
 
 /**
- * Permanently false - see the header. Topology-driven placement flipped every
- * combo to STRICT; this is the switch, not a live tier.
- */
-const isLenient = (_f: ScenarioFlags): boolean => false;
-
-/**
  * Scenarios that knowingly run cables closer together than MIN spacing.
  *
  * THIS TABLE IS EMPTY, and keeping it empty is the point - every entry it
@@ -218,64 +216,61 @@ describe(`configuration matrix (${scenarios.length} scenarios)`, () => {
   });
 
   for (const { combo, scenario } of scenarios) {
-    const lenient = isLenient(combo.flags);
-
-    it(`${scenario.label}${lenient ? ' [lenient]' : ''}`, () => {
+    it(`${scenario.label}`, () => {
       const r1 = simulateConfiguration(scenario);
 
       // 1. Placement: no collisions, in bounds - ALWAYS
       expect(placementViolations(r1.pedals, scenario.pedalsById, scenario.board)).toEqual([]);
       expect(r1.derived.collisions).toEqual([]);
 
-      // 2. No cable physically enters a pedal body.
-      //    Strict: no cable at all. Lenient: cables that do must at least be
-      //    FLAGGED invalid (rendered red) - never silently wrong.
+      // 2. No cable physically enters a pedal body. A cable that does must at
+      //    the very least be FLAGGED invalid (rendered red) - never silently
+      //    wrong - which is what onlyValidCables checks. 2b then requires that
+      //    there are no invalid ones either.
       expect(
         cableBodyViolations(r1.derived.routedCables, r1.pedals, scenario.pedalsById, scenario.board, {
           onlyValidCables: true,
         })
       ).toEqual([]);
 
-      if (!lenient) {
-        // 2b. ...and in strict mode every cable must actually be valid
-        const invalid = r1.derived.routedCables.filter((rc) => !rc.valid);
-        expect(
-          invalid.map((rc) => `${rc.cable.fromType}:${rc.cable.fromPedalId ?? ''}→${rc.cable.toType}:${rc.cable.toPedalId ?? ''}`)
-        ).toEqual([]);
+      // 2b. ...and every cable must actually be valid
+      const invalid = r1.derived.routedCables.filter((rc) => !rc.valid);
+      expect(
+        invalid.map((rc) => `${rc.cable.fromType}:${rc.cable.fromPedalId ?? ''}→${rc.cable.toType}:${rc.cable.toPedalId ?? ''}`)
+      ).toEqual([]);
 
-        // 3. Lane separation between different cables
-        //
-        // Zero everywhere except the scenarios in LANE_VIOLATION_BUDGET, and
-        // there the count is pinned to what was measured - a scenario that
-        // gets worse still fails, and one that gets fixed fails too, so the
-        // budget cannot rot quietly.
-        const budget = LANE_VIOLATION_BUDGET[scenario.label] ?? 0;
-        const lanes = laneViolations(r1.derived.routedCables);
-        if (budget === 0) {
-          expect(lanes).toEqual([]);
-        } else {
-          expect(lanes.length, `lane violations for ${scenario.label}:\n${lanes.join('\n')}`)
-            .toBe(budget);
-        }
-
-        // 4. Physical chain order per topology chain
-        const topology = deriveSignalTopology(
-          r1.pedals, scenario.pedalsById, scenario.amp,
-          combo.flags.useEffectsLoop, combo.flags.use4CableMethod,
-          {
-            useLoopPedals: true,
-            use4CableMethod: combo.flags.use4CableMethod,
-            useEffectsLoop: combo.flags.useEffectsLoop,
-            pedalConfigs: [],
-          }
-        );
-        // No budget: a stranded loop member is never acceptable. The one
-        // scenario that used to need an exception is fixed by the packer's
-        // wrap-before-group retry (layout/index.ts).
-        expect(
-          chainOrderViolations(topology, r1.pedals, scenario.pedalsById, scenario.board)
-        ).toEqual([]);
+      // 3. Lane separation between different cables
+      //
+      // Zero everywhere except the scenarios in LANE_VIOLATION_BUDGET, and
+      // there the count is pinned to what was measured - a scenario that
+      // gets worse still fails, and one that gets fixed fails too, so the
+      // budget cannot rot quietly.
+      const budget = LANE_VIOLATION_BUDGET[scenario.label] ?? 0;
+      const lanes = laneViolations(r1.derived.routedCables);
+      if (budget === 0) {
+        expect(lanes).toEqual([]);
+      } else {
+        expect(lanes.length, `lane violations for ${scenario.label}:\n${lanes.join('\n')}`)
+          .toBe(budget);
       }
+
+      // 4. Physical chain order per topology chain
+      const topology = deriveSignalTopology(
+        r1.pedals, scenario.pedalsById, scenario.amp,
+        combo.flags.useEffectsLoop, combo.flags.use4CableMethod,
+        {
+          useLoopPedals: true,
+          use4CableMethod: combo.flags.use4CableMethod,
+          useEffectsLoop: combo.flags.useEffectsLoop,
+          pedalConfigs: [],
+        }
+      );
+      // No budget: a stranded loop member is never acceptable. The one
+      // scenario that used to need an exception is fixed by the packer's
+      // wrap-before-group retry (layout/index.ts).
+      expect(
+        chainOrderViolations(topology, r1.pedals, scenario.pedalsById, scenario.board)
+      ).toEqual([]);
 
       // 5. Determinism - ALWAYS
       const r2 = simulateConfiguration(scenario);
