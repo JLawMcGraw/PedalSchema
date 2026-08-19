@@ -24,6 +24,8 @@ interface EditorClientProps {
   configId: string;
   configName: string;
   configDescription: string;
+  isPublic: boolean;
+  shareSlug: string | null;
   board: Board;
   amp: Amp | null;
   useEffectsLoop: boolean;
@@ -43,6 +45,8 @@ export function EditorClient({
   configId,
   configName,
   configDescription,
+  isPublic,
+  shareSlug,
   board,
   amp,
   useEffectsLoop,
@@ -81,6 +85,8 @@ export function EditorClient({
       id: configId,
       name: configName,
       description: configDescription,
+      isPublic,
+      shareSlug,
       board,
       amp,
       useEffectsLoop,
@@ -102,6 +108,8 @@ export function EditorClient({
     configId,
     configName,
     configDescription,
+    isPublic,
+    shareSlug,
     board,
     amp,
     useEffectsLoop,

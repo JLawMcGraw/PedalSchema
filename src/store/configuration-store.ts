@@ -31,6 +31,14 @@ interface ConfigurationState {
   id: string | null;
   name: string;
   description: string;
+  /**
+   * Sharing. Deliberately OUTSIDE the dirty/save flow: publishing is its own
+   * act with its own confirmation, and a share link that 404s until you
+   * remember to press Save would be worse than no share link. The panel writes
+   * these to the database itself and calls setSharing on success.
+   */
+  isPublic: boolean;
+  shareSlug: string | null;
 
   // References
   board: Board | null;
@@ -85,6 +93,8 @@ interface ConfigurationState {
     id?: string;
     name: string;
     description?: string;
+    isPublic?: boolean;
+    shareSlug?: string | null;
     board: Board;
     amp?: Amp | null;
     useEffectsLoop?: boolean;
@@ -109,6 +119,8 @@ interface ConfigurationState {
   assignPedalToOutput: (placedPedalId: string, outputId: string | null) => void;
   setName: (name: string) => void;
   setDescription: (description: string) => void;
+  /** Record the sharing state the database already holds. Never sets isDirty. */
+  setSharing: (isPublic: boolean, shareSlug: string | null) => void;
   setUseEffectsLoop: (use: boolean) => void;
   setUse4CableMethod: (use: boolean) => void;
   setAllowRotation: (allow: boolean) => void;
@@ -200,6 +212,8 @@ export const useConfigurationStore = create<ConfigurationState>()(
       id: null,
       name: 'Untitled Board',
       description: '',
+      isPublic: false,
+      shareSlug: null,
       board: null,
       amp: null,
       useEffectsLoop: false,
@@ -226,6 +240,8 @@ export const useConfigurationStore = create<ConfigurationState>()(
           state.id = config.id || null;
           state.name = config.name;
           state.description = config.description || '';
+          state.isPublic = config.isPublic ?? false;
+          state.shareSlug = config.shareSlug ?? null;
           state.board = config.board;
           state.amp = config.amp || null;
           state.useEffectsLoop = config.useEffectsLoop || false;
@@ -311,6 +327,14 @@ export const useConfigurationStore = create<ConfigurationState>()(
         set((state) => {
           state.description = description;
           state.isDirty = true;
+        });
+      },
+
+      setSharing: (isPublic, shareSlug) => {
+        // No isDirty: the row is already written when this is called.
+        set((state) => {
+          state.isPublic = isPublic;
+          state.shareSlug = shareSlug;
         });
       },
 

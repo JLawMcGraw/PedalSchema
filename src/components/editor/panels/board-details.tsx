@@ -6,6 +6,7 @@ import { useConfigurationStore } from '@/store/configuration-store';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { ShareBoard } from './share-board';
 import {
   resolveNameEdit,
   resolveDescriptionEdit,
@@ -107,6 +108,10 @@ export function BoardDetails() {
         <p className="text-[11px] text-muted-foreground">
           Shown on the dashboard. Saved with the board.
         </p>
+      </div>
+
+      <div className="border-t pt-3">
+        <ShareBoard />
       </div>
     </section>
   );
