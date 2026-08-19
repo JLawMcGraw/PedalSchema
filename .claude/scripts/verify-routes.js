@@ -53,6 +53,28 @@ const SEED_PREFIX = 'route gate seed';
     const { data } = await sb.from('configurations').select('id,name').order('id');
     return data ?? [];
   };
+  // SWEEP ANY STALE SEEDS BEFORE THE CENSUS.
+  //
+  // The finally block below removes what this run creates, but it does not run
+  // if the process is killed outright - and it is: piping this script into
+  // `head` or `sed` closes stdout and node dies on the write without unwinding.
+  // (An EPIPE handler was tried and does NOT prevent that; the finally still
+  // never runs.) Eleven throwaway boards were left in the database exactly this
+  // way on 2026-08-19.
+  //
+  // So the gate heals rather than hoping. This has to happen BEFORE the census,
+  // or the leftovers are counted as real boards and then deleted, and the gate
+  // reports that it lost eleven of the user's boards - which is the single
+  // most alarming thing it could say, and it would be wrong.
+  const { data: stale } = await sb
+    .from('configurations')
+    .select('id')
+    .like('name', `${SEED_PREFIX}%`);
+  if (stale && stale.length) {
+    await sb.from('configurations').delete().in('id', stale.map((r) => r.id));
+    console.log(`swept ${stale.length} seed row(s) left by an earlier run that was killed`);
+  }
+
   const censusBefore = await census();
 
   try {
@@ -152,6 +174,13 @@ const SEED_PREFIX = 'route gate seed';
     check(missing.status() === 404, 'an unknown pedal id is a 404', `-> ${missing.status()}`);
 
     // ================= 4. the 404 is not a dead end =================
+    // WAIT FOR THE PAGE TO ARRIVE BEFORE COUNTING ITS LINKS. `page.goto()`
+    // resolves on the response, and the App Router streams - measured on
+    // 2026-08-19, this page had 0 anchors at that moment and 7 a beat later.
+    // The check read the empty moment and reported that the 404 was a dead
+    // end, which is the single most alarming thing it could say, and it was
+    // wrong. It had been passing on timing alone.
+    await page.locator('h1').first().waitFor({ timeout: 15000 }).catch(() => {});
     const exits = await page.evaluate(() =>
       [...document.querySelectorAll('a')].map((a) => a.getAttribute('href'))
     );
@@ -165,6 +194,7 @@ const SEED_PREFIX = 'route gate seed';
     // URL does NOT - it renders outside that layout, so the page's own exits
     // are the only way out. That is the case a stale link lands on.
     const bare = await page.goto(`${BASE_URL}/nonsense`);
+    await page.locator('h1').first().waitFor({ timeout: 15000 }).catch(() => {});
     const bareExits = await page.evaluate(() => ({
       status: document.querySelector('h1')?.textContent?.trim(),
       links: [...document.querySelectorAll('a')].map((a) => a.getAttribute('href')),
@@ -215,7 +245,7 @@ const SEED_PREFIX = 'route gate seed';
     // 13 total is the smallest number that needs a second page at 12 a page.
     const need = Math.max(0, 13 - existing);
     for (let i = 0; i < need; i++) {
-      const { data: made } = await sb
+      const { data: made, error: insErr } = await sb
         .from('configurations')
         .insert({
           name: `${SEED_PREFIX} ${String(i + 1).padStart(2, '0')}`,
@@ -224,6 +254,15 @@ const SEED_PREFIX = 'route gate seed';
         })
         .select('id')
         .single();
+      // The error was previously ignored and `made.id` dereferenced straight
+      // away, so a single failed insert became "Cannot read properties of
+      // null" from inside the gate - which reads like a broken gate rather
+      // than a database that refused a write. It also left the row it HAD
+      // written untracked, and therefore uncleaned.
+      if (insErr || !made) {
+        check(false, `seeding row ${i + 1} failed`, insErr?.message ?? 'insert returned no row');
+        break;
+      }
       seeded.push(made.id);
     }
     console.log(`\nseeded ${seeded.length} configurations (had ${existing}, need 13)`);
@@ -275,9 +314,24 @@ const SEED_PREFIX = 'route gate seed';
         : `${censusBefore.length} boards before this gate`
     );
 
+    // Delete BY PREFIX, not only by the ids this run tracked.
+    //
+    // Tracking is not enough: a row can be written and then not recorded - an
+    // insert whose `.select()` comes back empty leaves a real row with no id
+    // in `seeded`, and it survived the cleanup and failed the next run. The
+    // prefix is the gate's own namespace, so sweeping it is exactly as safe as
+    // the ids were, and it covers the rows tracking missed.
     if (seeded.length) {
-      const { error } = await sb.from('configurations').delete().in('id', seeded);
-      check(!error, `removed the ${seeded.length} seeded configurations`, error?.message);
+      const { data: mine, error } = await sb
+        .from('configurations')
+        .delete()
+        .like('name', `${SEED_PREFIX}%`)
+        .select('id');
+      check(
+        !error,
+        `removed ${mine?.length ?? 0} seeded configuration(s) (${seeded.length} tracked)`,
+        error?.message
+      );
       const { count: leftovers } = await sb
         .from('configurations')
         .select('id', { count: 'exact', head: true })

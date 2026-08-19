@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PedalSearch } from '@/components/pedals/pedal-search';
+import { Skeleton } from '@/components/ui/skeleton';
 import { PedalCard } from '@/components/pedals/pedal-card';
 
 interface PageProps {
@@ -61,7 +62,19 @@ export default async function PedalsPage({ searchParams }: PageProps) {
         </Link>
       </div>
 
-      <Suspense fallback={<div>Loading filters...</div>}>
+      {/* A placeholder in the shape of the filter row, not the words
+          "Loading filters...". The row is a search box and two selects; a
+          line of text there moves everything below it when the real controls
+          arrive. */}
+      <Suspense
+        fallback={
+          <div className="flex flex-wrap gap-2" role="status" aria-busy="true" aria-label="Loading filters">
+            <Skeleton className="h-9 w-full max-w-sm" />
+            <Skeleton className="h-9 w-40" />
+            <Skeleton className="h-9 w-40" />
+          </div>
+        }
+      >
         <PedalSearch manufacturers={manufacturers} />
       </Suspense>
 
