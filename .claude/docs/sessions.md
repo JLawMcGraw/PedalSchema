@@ -555,16 +555,21 @@ reason (`hubPadMode`, layout/index.ts): tail first, then hub.
 
 ### Next Tasks
 
-- [ ] **Decide what `test` should be.** Re-measured on the current database
-      rows (see "Re-measured 2026-08-18 evening" above - the older numbers in
-      this entry are stale, and the board is NOT stored at 4cm):
+- [x] **"Decide what `test` should be" was never a decision.** Closed on the
+      owner's correction, 2026-08-18: *the point is for this to be switched on
+      and off if preferred.* It is a CONTROL, not a stored verdict - the switch
+      works in both directions (nine checks in the real app,
+      `verify-modulation-switch.js`), so the stored value is just wherever it
+      was last left. Three sessions carried it as an open task owing an answer.
+
+      What the measurement is actually for is knowing what each position costs
+      when you flip it:
 
           DIRTY (stored)   147.54in   8 crossings   score 480.74
           CLEAN            131.22in  12 crossings   score 496.42
 
-      Clean is shorter and scores WORSE. Dirty is what is stored and what the
-      cost model prefers. **Owner's call, not a bug** - the switch is a
-      wiring preference, and the engine has no opinion worth overriding yours.
+      Clean is shorter and scores WORSE - fewer inches is not a better board.
+      Neither is a defect, and the engine has no opinion worth overriding.
 - [x] **The two red cables on `test` - RE-DERIVED and closed as physical**
       (2026-08-18 evening, see the section above). Rows and corridors consume
       204+14+204+14+204 = 640px, the board depth exactly, and BigSky needs
@@ -579,16 +584,17 @@ reason (`hubPadMode`, layout/index.ts): tail first, then hub.
       the packer had room, and had given up 2.0in of hub corridor to recover a
       0.35in overflow because the pad was a boolean. Now graduated - tail's pad
       first, then the hub's. `LANE_VIOLATION_BUDGET` is an empty table.
-- [ ] **The optimizer pays 1.23x** for the never-worse guarantee (1.64s -> 2.02s
-      across both saved boards). Worth optimising only if Optimize feels slow;
-      the cheap win is that the second pass only matters where the two routers
-      disagree, and `laneOutcome` already records which cables the corridor
-      served. **Do not "fix" it by scoring with a different router than the one
-      that draws** - that is P1.5. Corroborated in the real browser on
-      2026-08-18: Optimize settles in 1923ms on the 22-pedal board and 116ms
-      on the 9-pedal one, both reporting "already optimal". That is the engine
-      figure, measured through the worker, and it is not slow enough to be
-      worth spending the guarantee on.
+- [x] **The optimizer's 1.23x - DECIDED AGAINST** by the owner, 2026-08-18,
+      and moved to the "deliberately NOT doing" list in `roadmap-next.md` so it
+      stops reading as pending work. Measured through the worker in a real
+      browser: 1923ms on the 22-pedal board and 116ms on the 9-pedal one, both
+      already optimal - not slow enough to spend a correctness guarantee on.
+      The guard is what makes `LANE_CROSSING_ALLOWANCE` an empty table with a
+      ZERO default rather than a hope. If it is ever reopened, the cheap win is
+      that the second pass only matters where the two routers disagree, and
+      `laneOutcome` already records which cables the corridor served. **Do not
+      reopen it by making the drawing path cheaper than the scoring path** -
+      that is P1.5.
 - [x] **`roadmap-next.md` is no longer a roadmap.** It was wrong a third time
       (R2's diagnosis pointed at the wrong function), so its forward-looking
       items are gone and these per-session lists are the roadmap. What it keeps

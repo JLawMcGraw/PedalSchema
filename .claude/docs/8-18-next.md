@@ -19,6 +19,21 @@ only TS runner in `node_modules/.bin` — there is no `tsx`, `ts-node` or
 
 ---
 
+## STATUS — executed 2026-08-18
+
+| Task | Outcome |
+|---|---|
+| 1. Re-derive BigSky | **CLOSED at gate (a)** — physical, no code. `5892ed4`. Conclusion survived; every number behind it did not, and the operative cause turned out to be the STANDOFF, not lane capacity. |
+| 2. Comment sweep | **DONE**, and the plan's "low yield" estimate was wrong. `fit-explanation` asserted `corridorInches >= 0`, which nothing can fail. `7f893b3`, `0d7bf47`. Follow-on: the dead lenient tier removed in `217e8f7`. |
+| 3. R3 / the 1.23x | **DECIDED AGAINST** by the owner. Moved to the "deliberately NOT doing" list in `roadmap-next.md`. Do not execute the steps below without a fresh decision. |
+| 4. Owner decisions | Resolved. The red cables closed as physical (Task 1). "Decide what `test` should be" was **not a decision** — the modulation switch is a control the owner flips by preference, and had been carried as an open task for three sessions. |
+
+**Kept rather than deleted** because the standing rules, the verification
+ladder and the two harness traps below are what the next session needs, and
+Task 3 is the record of a decision rather than a queue item.
+
+---
+
 ## Standing rules for every task
 
 **These are not optional and they are why the engine is in the state it is.**
@@ -242,9 +257,12 @@ two skipped FILES are `skipIf(!DUMP)` opt-in harnesses
 
 ---
 
-## Task 3 — R3: the optimizer's 1.23x
+## Task 3 — R3: the optimizer's 1.23x  (DECIDED AGAINST 2026-08-18)
 
-**RECOMMENDED AGAINST. Do not start this without the owner saying so.**
+**The owner decided against this on 2026-08-18. It now lives in the
+"deliberately NOT doing" list in `roadmap-next.md`. What follows is kept as the
+write-up of HOW it would be done if that decision is ever revisited — it is not
+a pending task, and it should not be picked up as one.**
 
 Measured through the worker in a real browser on 2026-08-18: Optimize settles in
 **1923ms** on the 22-pedal board and **116ms** on the 9-pedal one, both reporting

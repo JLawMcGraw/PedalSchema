@@ -66,10 +66,22 @@ plausible to someone arriving fresh.
   needs a corridor the board does not have.
 
 - **Scoring with a cheaper router than the one that draws.** This is the P1.5
-  defect by another name. If Optimize is ever worth speeding up, the second
-  pass only matters where the two routers disagree, and `laneOutcome` already
-  records which cables the corridor served. Measured 2026-08-18: 1923ms on the
-  22-pedal board through the worker, which is not slow.
+  defect by another name.
+
+- **Optimising away the never-worse guard's 1.23x (was "R3").** DECIDED
+  AGAINST 2026-08-18 by the owner. The guard routes every candidate both ways
+  and keeps the board with fewer crossings, which is what makes
+  `LANE_CROSSING_ALLOWANCE` an empty table with a zero default rather than a
+  hope. Measured through the worker in a real browser: **1923ms on the
+  22-pedal board and 116ms on the 9-pedal one**, both already optimal. That is
+  not slow enough to spend a correctness guarantee on.
+
+  If it is ever reopened, the cheap win is that the second pass only matters
+  where the two routers disagree, and `laneOutcome` already records which
+  cables the corridor served - so it can be skipped when every cable came back
+  `lane-routed` or `shortcut`. The full write-up is in `8-18-next.md` Task 3.
+  Do not reopen it by making the DRAWING path cheaper than the SCORING path;
+  that rebuilds P1.5.
 
 ---
 
