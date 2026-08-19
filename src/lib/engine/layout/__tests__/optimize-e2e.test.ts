@@ -259,6 +259,12 @@ describe('optimize never returns an illegal layout', () => {
 });
 
 describe('when nothing legal can be placed', () => {
+  /*
+   * The second-heaviest test in the suite: 1113ms locally, which on CI's two
+   * shared cores lands within a second or so of the 5s default. It has not
+   * failed yet; placement-property did, and this was next. Same 30s budget,
+   * same reasoning - see the note there.
+   */
   it('says so instead of claiming the board is already optimal', () => {
     // 21 standard pedals on a Pedaltrain Classic Jr (18x12.5in): two rows of
     // five is a real capacity of ~10, so no legal arrangement exists. That is
@@ -293,7 +299,7 @@ describe('when nothing legal can be placed', () => {
     expect(r.noLegalCandidate).toBe(true);
     expect(s.headline).not.toMatch(/already optimal/i);
     expect(s.headline).toMatch(/could not fit/i);
-  });
+  }, 30_000);
 });
 
 

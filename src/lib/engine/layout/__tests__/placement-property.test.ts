@@ -98,6 +98,21 @@ describe('placement property sweep', () => {
   beforeAll(() => { vi.spyOn(console, 'warn').mockImplementation(() => {}); });
   afterAll(() => { vi.restoreAllMocks(); });
 
+  /*
+   * 700 seeded trials of the full joint optimizer, so this is the heaviest
+   * test in the suite by an order of magnitude - and vitest's default budget
+   * is 5s per test, which is a budget written against whatever machine ran it
+   * first.
+   *
+   * Measured: 1487ms alone, 2340ms under full-suite contention, on an
+   * M-series Mac. It FAILED on CI (ubuntu-latest, 2 shared cores) at the 5s
+   * default. The work is fixed and deterministic - makeRandom(999) - so this
+   * is purely how fast the machine is, not how much there is to do.
+   *
+   * 30s, not "trials reduced": the point of a property sweep is the breadth
+   * of the random space, and buying CI headroom by testing less is buying it
+   * with the only thing this test has. A real hang still surfaces in 30s.
+   */
   it('a legal board in is always a legal board out', () => {
     const rng = makeRandom(999);
     const failures: string[] = [];
@@ -161,7 +176,7 @@ describe('placement property sweep', () => {
     // test would pass by testing nothing.
     expect(tested).toBeGreaterThan(200);
     expect(failures).toEqual([]);
-  });
+  }, 30_000);
 
   /**
    * WHY the baseline collision guard never fires, measured rather than assumed.
