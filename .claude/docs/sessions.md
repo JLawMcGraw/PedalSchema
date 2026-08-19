@@ -4,6 +4,130 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-19 (later) - A2, and a runner that could not report
+
+### Summary
+
+Built A2 - naming a board and deleting one - and found on the way that
+**`verify-all.sh` has never worked on this machine.** `timeout` is GNU
+coreutils and is not on a stock macOS, so every gate exited 127 and the runner
+printed "0 passed, 16 failed". Two real gate failures were sitting underneath
+that, invisible, because the runner was failing everything anyway.
+
+The feature itself was nearly free - `setName`/`setDescription` were already in
+the store and `handleSave` already wrote both columns. What was missing was
+entirely UI, and the RLS policy and cascade for delete were already there too.
+
+Five commits. **424 tests** (up from 413), build clean, and `verify-all.sh
+--all` reports **20 passed, 0 failed** - the first time it has reported
+anything.
+
+### What Was Accomplished
+- [x] A2 rename - inline in the toolbar, not a dialog
+- [x] A2 description - fills the Properties panel's dead empty state
+- [x] A2 delete - dashboard card, confirmed in place
+- [x] `verify-all.sh`'s timeout made portable; the runner works
+- [x] `verify-round-trip` fixed - died on any configuration with no pedals
+- [x] `verify-gear-images` fixed - lost the documented `networkidle` race
+- [x] A grid-item wrap defect on the dashboard card, found by measuring
+- [x] `verify-crud` - 19 checks, mutation-checked twice
+- [ ] A3 broken routes, A5 panel density, A4 sharing, then Phase B
+
+### Key Changes
+
+| File | Change |
+|------|--------|
+| `src/lib/config-identity.ts` | NEW - the commit rules for name/description, pure, 11 tests |
+| `src/components/editor/toolbar/editable-title.tsx` | NEW - inline rename |
+| `src/components/editor/panels/board-details.tsx` | NEW - name + description |
+| `src/app/(dashboard)/dashboard/board-card.tsx` | NEW - card, menu, in-place confirm |
+| `src/components/editor/panels/properties-panel.tsx` | no selection = the Board, not an empty state |
+| `src/store/derived.ts` | snapshot gains name/description (NOT SourceSlice) |
+| `.claude/scripts/verify-all.sh` | portable time limit - it had never run a gate |
+| `.claude/scripts/verify-round-trip.js` | an empty configuration is a board |
+| `.claude/scripts/verify-gear-images.js` | networkidle given a budget, not authority |
+| `.claude/scripts/verify-crud.js` | NEW gate, 19 checks, in the writers list |
+
+### The skill was not being used, and it changed the design
+
+The owner asked "are you using the redesign skill?" while the first file was
+being written. It was not. `.agents/skills/redesign-existing-projects` vetoed
+what was about to be built:
+
+> **Modals for everything.** Use inline editing, slide-over panels, or
+> expandable sections instead of popups for simple actions.
+
+A `ui/dialog.tsx` primitive and a rename modal were one tool call away. What
+shipped instead has no dialog primitive at all: rename is inline in the
+toolbar, the destructive confirm happens on the card itself. Three more of its
+rules bit - no `window.alert` for errors, a real pending state, and "no empty
+states", which is what turned the Properties panel's dead column into the
+board's own details.
+
+**The skill is in the repo and is not loaded by anything.** It has to be opened
+deliberately, and this session did not until asked.
+
+### Technical Decisions
+
+1. **The commit rules are a pure module.** The interesting cases are the
+   DISCARDED ones - a click-in-click-out must not mark the board Unsaved - and
+   that is invisible in the UI: the wrong behaviour looks identical until you
+   read the badge. Both guards mutation-checked; removing either fails 2 and 3
+   tests respectively.
+2. **Empty is legal for a description and not for a name.** `name` is NOT NULL
+   and is the board's only handle on the dashboard, so a blank draft reverts.
+   Clearing a description is a thing people mean.
+3. **`name`/`description` went on the debug snapshot, not `SourceSlice`.** The
+   twin's slice is defined by what `deriveBoardState` READS. Adding fields it
+   does not read would make the twin claim a dependency it has not got.
+4. **The card is an `<article>` with a stretched link.** It was one big `<Link>`
+   wrapping everything, so a menu button inside it was invalid HTML and
+   unclickable. One anchor, `after:absolute after:inset-0`, menu above it.
+5. **Focus-on-attach is a callback ref.** Not an effect over a ref - this
+   codebase has shipped that bug twice already.
+
+### Architecture Notes
+
+**A RUNNER THAT CANNOT REPORT A PASS IS WORSE THAN NO RUNNER.** `verify-all.sh`
+was added in 3d8df0a specifically so a broken gate would not be found by
+accident weeks later. It then spent its whole life reporting every gate as
+failed, which trains you to ignore it - and underneath that noise sat two gates
+that really were broken: `verify-round-trip` had been dying since 2026-08-14 on
+`dadfad`, an empty board the owner created, and `verify-gear-images` was losing
+a race the codebase had already diagnosed and documented in `twin.js`. **Two
+defects hiding each other.** Check that a green suite can go red.
+
+**`min-width: auto` is why `break-words` does nothing in a grid.** `CardHeader`
+is a grid; its title is a grid item, and a grid item's default `min-width:auto`
+lets it grow to max-content rather than wrap. An unbreakable 80-character name
+ran 258px past the card edge and under the menu button. Adding `break-words`
+changed the measurement by exactly zero - the computed style said
+`overflow-wrap: break-word` and the box was still 765px wide. `min-w-0` is the
+fix. Same family as the `min-h-0` note in A5.
+
+**Screenshots would have shown none of this.** The overlap only appears with a
+long name, and the menu only appears on hover. It was found by setting a
+worst-case string and reading four numbers, and the first check written for it
+compared the wrong two edges and passed while the defect was live.
+
+### Next Tasks
+
+- [ ] **A3 - broken routes.** `/pedals/[id]` does not exist, so every pedal
+      card 404s. "Add Custom Board"/"Add Custom Amp" are inert. Dashboard is
+      still `.limit(10)` with no pagination.
+- [ ] **A5 - panel density.** Library grouped by category collapsed by default;
+      `power-panel.tsx:70` is missing the `min-h-0` its four siblings have.
+- [ ] **A4 - sharing.** `isPublic`/`shareSlug` are in types and RLS already.
+- [ ] **Phase B** - Tactical Telemetry restyle, dark substrate only. Read the
+      redesign skill FIRST; it has a fix-priority order that starts at fonts.
+- [ ] **Lint does not cover `.claude/scripts`** - 100 errors there predate this
+      session, all of the "Node CommonJS parsed as browser TS" kind. Either
+      configure it or exclude it; right now `npx eslint .` is unreadable.
+- [ ] **Optional tidy:** migrate the pedal drag to pointer events; `resetZoom`
+      still has no callers in `src/`.
+
+---
+
 ## Session: 2026-08-19 - The frontend audit, and a canvas you can actually navigate
 
 ### Summary
