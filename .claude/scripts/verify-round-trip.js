@@ -124,7 +124,17 @@ async function readDerived(page) {
       //
       // The original rows are put back from the snapshot taken above before
       // this script exits, so it is re-runnable and leaves no trace.
+      // An empty configuration is a BOARD, not an error - the owner can make
+      // one and leave it, and "dadfad" (created 2026-08-14) is exactly that.
+      // There is no pedal to drag, so the write half has nothing to say; it
+      // used to index [0] of an empty list and die on `undefined.id`, failing
+      // the whole gate over a board that was fine. The same fix verify-optimize
+      // needed, for the same reason.
       const target = [...before.values()][0];
+      if (!target) {
+        console.log('  ----  no pedals to drag; write half skipped');
+        continue;
+      }
       await dragPedalByInches(page, target.id, 0.25, 0);
 
       const edited = await readDerived(page);

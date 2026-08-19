@@ -39,7 +39,23 @@ const EXPECTED_IMAGELESS = new Set(['JCM2000 DSL']);
 
 async function auditPage(page, route) {
   await page.goto(`${BASE_URL}${route}`);
-  await page.waitForLoadState('networkidle');
+  /*
+   * `networkidle` is a GUESS at readiness, and on these two routes it is a bad
+   * one: every card pulls a photo from Supabase storage, so the network is
+   * busy for reasons that have nothing to do with whether the grid rendered.
+   * It timed out at 30s here on a page that had in fact painted - the same
+   * race twin.js:openEditor documents after verify-jack-render lost it.
+   *
+   * So give it a short budget and let the real condition - the grid, with
+   * cards in it - be the judge. The scroll-and-decode below is what actually
+   * guarantees the images are loaded.
+   */
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+  await page.waitForFunction(
+    () => !!document.querySelector('.grid')?.children.length,
+    null,
+    { timeout: 30000 }
+  );
   // Images are lazy; scroll the whole grid so every card decodes.
   await page.evaluate(async () => {
     for (let y = 0; y < document.body.scrollHeight; y += 400) {
