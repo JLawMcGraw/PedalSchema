@@ -14,7 +14,8 @@ import { getCategoryDefaultOrder } from '@/lib/constants/pedal-categories';
 import { getExternalEndpointPx } from '@/lib/engine/cables/endpoints';
 import { routeAllCables } from '@/lib/engine/cables/route-cables';
 import { rotatedFootprint } from '@/lib/engine/geometry/rotation';
-import { offsetToInches, PADDING_INCHES, PADDING_PX } from '@/lib/canvas/viewport';
+import { contentBounds as computeContentBounds } from '@/lib/canvas/viewport';
+import { useCanvasViewport } from './use-canvas-viewport';
 
 /** How often cables reroute while a pedal is being dragged (ms) */
 const DRAG_REROUTE_INTERVAL_MS = 90;
@@ -51,13 +52,14 @@ interface DragState {
 }
 
 export function EditorCanvas() {
-  const svgRef = useRef<SVGSVGElement>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null);
 
-  const { zoom, pan, gridVisible, cablesVisible, selectedPedalId, selectPedal, mode, pedalToAdd, setPedalToAdd } =
+  // NB: zoom and pan are deliberately NOT read here - `useCanvasViewport` owns
+  // them, so there is exactly one place that turns them into geometry.
+  const { gridVisible, cablesVisible, selectedPedalId, selectPedal, mode, pedalToAdd, setPedalToAdd } =
     useEditorStore(
-    useShallow((s) => ({ zoom: s.zoom, pan: s.pan, gridVisible: s.gridVisible, cablesVisible: s.cablesVisible, selectedPedalId: s.selectedPedalId, selectPedal: s.selectPedal, mode: s.mode, pedalToAdd: s.pedalToAdd, setPedalToAdd: s.setPedalToAdd }))
+    useShallow((s) => ({ gridVisible: s.gridVisible, cablesVisible: s.cablesVisible, selectedPedalId: s.selectedPedalId, selectPedal: s.selectPedal, mode: s.mode, pedalToAdd: s.pedalToAdd, setPedalToAdd: s.setPedalToAdd }))
   );
 
   const { board, placedPedals, pedalsById, addPedal, movePedal, amp, useEffectsLoop } =
@@ -74,6 +76,26 @@ export function EditorCanvas() {
   }));
 
   const fxLoopActive = useEffectsLoop && !!amp?.hasEffectsLoop;
+
+  /*
+   * What must stay reachable when zoomed in. NOT just the board: the guitar
+   * and amp glyphs are drawn outside the padded board box, so bounding the pan
+   * to board+padding would let a user zoom in and lose them for good.
+   */
+  const canvasContentBounds = useMemo(() => {
+    if (!board) return computeContentBounds(32, 16);
+    const external = (['guitar', 'amp_input', 'amp_send', 'amp_return'] as const).map((t) =>
+      getExternalEndpointPx(t, board, INCHES_TO_PIXELS, fxLoopActive)
+    );
+    return computeContentBounds(board.widthInches, board.depthInches, external);
+  }, [board, fxLoopActive]);
+
+  const { svgRef, viewBox, viewBoxAttr, clientToInches } = useCanvasViewport(
+    board?.widthInches ?? 32,
+    board?.depthInches ?? 16,
+    canvasContentBounds,
+    !!board
+  );
 
   // Live rerouting while dragging: run the router against the dragged
   // pedal's preview position (throttled - mousemove fires per frame).
@@ -122,22 +144,8 @@ export function EditorCanvas() {
    * This function is the ONLY place the canvas reads getBoundingClientRect.
    */
   const screenToBoard = useCallback(
-    (screenX: number, screenY: number): { x: number; y: number } => {
-      if (!svgRef.current || !board) return { x: 0, y: 0 };
-
-      const rect = svgRef.current.getBoundingClientRect();
-      // Reconstruct the viewBox exactly as rendered below. Kept in this shape
-      // deliberately for now: this change fixes the mapping ONLY, so a
-      // regression here cannot be blamed on a simultaneous viewBox change.
-      const vb = {
-        minX: -PADDING_PX + pan.x,
-        minY: -PADDING_PX + pan.y,
-        width: (board.widthInches * INCHES_TO_PIXELS + PADDING_PX * 2) / zoom,
-        height: (board.depthInches * INCHES_TO_PIXELS + PADDING_PX * 2) / zoom,
-      };
-      return offsetToInches(vb, { width: rect.width, height: rect.height }, screenX - rect.left, screenY - rect.top);
-    },
-    [zoom, pan, board]
+    (screenX: number, screenY: number): { x: number; y: number } => clientToInches(screenX, screenY),
+    [clientToInches]
   );
 
   // Handle clicking to add pedal
@@ -278,11 +286,7 @@ export function EditorCanvas() {
     );
   }
 
-  const boardWidth = board.widthInches * INCHES_TO_PIXELS;
   const boardHeight = board.depthInches * INCHES_TO_PIXELS;
-  const padding = PADDING_INCHES * INCHES_TO_PIXELS;
-  const totalWidth = boardWidth + padding * 2;
-  const totalHeight = boardHeight + padding * 2;
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-neutral-900">
@@ -295,7 +299,12 @@ export function EditorCanvas() {
         data-pedal-canvas=""
         width="100%"
         height="100%"
-        viewBox={`${-padding + pan.x} ${-padding + pan.y} ${totalWidth / zoom} ${totalHeight / zoom}`}
+        viewBox={viewBoxAttr}
+        // EXPLICIT, not relied upon as a default: twin.js and
+        // lib/canvas/viewport both assume xMidYMid meet, and the
+        // pre-measurement fallback frame genuinely does have a different aspect
+        // from the element, so the centring must be defined rather than lucky.
+        preserveAspectRatio="xMidYMid meet"
         onClick={handleCanvasClick}
         className={`select-none ${mode === 'add-pedal' ? 'cursor-crosshair' : 'cursor-default'}`}
         style={{ touchAction: 'none' }}
@@ -331,16 +340,25 @@ export function EditorCanvas() {
           </pattern>
         </defs>
 
-        {/* Grid background */}
-        {gridVisible && (
-          <rect
-            x={-padding}
-            y={-padding}
-            width={totalWidth}
-            height={totalHeight}
-            fill="url(#grid-large)"
-          />
-        )}
+        {/* Grid background.
+            Covers the VISIBLE box, not the board box: once the view can pan and
+            zoom, a grid sized to the board leaves bare backdrop wherever the
+            user looks past its edge. Snapped outward to the 40px pattern origin
+            so the lines stay aligned to the inch as it moves. */}
+        {gridVisible && (() => {
+          const cell = INCHES_TO_PIXELS;
+          const gx = Math.floor(viewBox.minX / cell) * cell - cell;
+          const gy = Math.floor(viewBox.minY / cell) * cell - cell;
+          return (
+            <rect
+              x={gx}
+              y={gy}
+              width={viewBox.minX + viewBox.width - gx + cell * 2}
+              height={viewBox.minY + viewBox.height - gy + cell * 2}
+              fill="url(#grid-large)"
+            />
+          );
+        })()}
 
         {/* Board */}
         <BoardRenderer board={board} scale={INCHES_TO_PIXELS} />
