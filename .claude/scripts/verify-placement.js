@@ -42,11 +42,20 @@ function signalOrder(snapshot) {
     }
     for (const to of next.get(node) || []) walk(to);
   };
-  for (const start of ['guitar', 'amp_send']) walk(start);
+  const segmentOf = new Map();
+  let currentSegment = null;
+  const walkSegment = (start) => {
+    currentSegment = start;
+    const before = new Set(order.keys());
+    walk(start);
+    for (const id of order.keys()) if (!before.has(id)) segmentOf.set(id, start);
+  };
+  for (const start of ['guitar', 'amp_send']) walkSegment(start);
   // Anything the walk did not reach keeps its list order, after the rest
   for (const p of [...snapshot.pedals].sort((a, b) => a.chainPosition - b.chainPosition)) {
-    if (!order.has(p.id)) order.set(p.id, n++);
+    if (!order.has(p.id)) { order.set(p.id, n++); segmentOf.set(p.id, 'unreached'); }
   }
+  order.segmentOf = segmentOf;
   return order;
 }
 
@@ -131,10 +140,39 @@ async function checkConfig(page, href) {
   const seq = (p) => order.get(p.id) ?? p.chainPosition;
   const straddling = straddlers(after.pedals);
   const rows = rowsOf(after.pedals.filter((p) => !straddling.has(p.id)));
+  /*
+   * BOTH CHECKS BELOW RUN PER SIGNAL SEGMENT, NOT OVER THE WHOLE WALK.
+   *
+   * `signalOrder` walks from 'guitar' and then from 'amp_send' and numbers the
+   * result continuously, but those are two INDEPENDENT runs: the front-of-amp
+   * chain ends at the amp input, and the effects-loop chain starts again at the
+   * amp send. Concatenating them and demanding one continuous progression
+   * asserts something no part of the engine promises.
+   *
+   * It produced a false failure on the owner's 22-pedal board (2026-08-19).
+   * Measured there:
+   *
+   *   segment guitar    sig 0-17   rows y10.9 -> y5.45 -> y0.0   monotonic
+   *   segment amp_send  sig 18-21  row  y5.45 only               monotonic
+   *
+   * ...and the reported "violation" was exactly the join between the two -
+   * IR-2 (last before the amp input) followed by DD-7 (first in the loop).
+   * Nothing was misplaced.
+   *
+   * The engine's own invariant already had this right:
+   * `src/lib/engine/__tests__/support/invariants.ts` chainOrderViolations calls
+   * checkRowMonotonic once for the primary chain and once per non-primary
+   * segment, and never across a boundary. This script now matches that
+   * definition rather than inventing a second, stricter one.
+   */
+  const segmentOf = (p) => order.segmentOf.get(p.id) ?? 'unreached';
   const rowOfChain = [];
   rows.forEach((r, ri) => {
     const byChain = [...r.pedals].sort((a, b) => seq(a) - seq(b));
     for (let i = 1; i < byChain.length; i++) {
+      // Only compare neighbours from the SAME run - two runs sharing a row are
+      // not required to interleave right-to-left with each other.
+      if (segmentOf(byChain[i]) !== segmentOf(byChain[i - 1])) continue;
       if (byChain[i].xInches > byChain[i - 1].xInches + 0.01) {
         fails.push(
           `row y=${r.y.toFixed(1)}: ${byChain[i].name} sits RIGHT of ${byChain[i - 1].name}, ` +
@@ -142,28 +180,32 @@ async function checkConfig(page, href) {
         );
       }
     }
-    for (const p of r.pedals) rowOfChain.push({ chain: seq(p), row: ri, y: r.y });
+    for (const p of r.pedals) rowOfChain.push({ chain: seq(p), row: ri, y: r.y, segment: segmentOf(p) });
   });
-  // The chain must walk rows in ONE direction. Front-to-back (y decreasing)
-  // is what the packer intends; either direction is acceptable, but hopping
-  // front -> back -> middle is the bug this exists to catch, and it is not
-  // caught by "never revisit a row" alone.
-  rowOfChain.sort((a, b) => a.chain - b.chain);
-  const visitOrder = [];
-  for (const e of rowOfChain) {
-    if (visitOrder.length === 0 || visitOrder[visitOrder.length - 1].y !== e.y) {
-      visitOrder.push({ y: e.y, chain: e.chain });
+
+  // The chain must walk rows in ONE direction WITHIN a segment. Front-to-back
+  // (y decreasing) is what the packer intends; either direction is acceptable,
+  // but hopping front -> back -> middle is the bug this exists to catch, and it
+  // is not caught by "never revisit a row" alone.
+  for (const segment of new Set(rowOfChain.map((e) => e.segment))) {
+    const inSegment = rowOfChain.filter((e) => e.segment === segment).sort((a, b) => a.chain - b.chain);
+    const visitOrder = [];
+    for (const e of inSegment) {
+      if (visitOrder.length === 0 || visitOrder[visitOrder.length - 1].y !== e.y) {
+        visitOrder.push({ y: e.y, chain: e.chain });
+      }
     }
-  }
-  const ys = visitOrder.map((v) => v.y);
-  const monotonic =
-    ys.every((y, i) => i === 0 || y <= ys[i - 1] + 0.01) ||
-    ys.every((y, i) => i === 0 || y >= ys[i - 1] - 0.01);
-  if (!monotonic) {
-    fails.push(
-      `rows are visited out of order: ${visitOrder.map((v) => `chain${v.chain}@y${v.y.toFixed(1)}`).join(' -> ')}` +
-      ` - the chain must move through rows in one direction`
-    );
+    const ys = visitOrder.map((v) => v.y);
+    const monotonic =
+      ys.every((y, i) => i === 0 || y <= ys[i - 1] + 0.01) ||
+      ys.every((y, i) => i === 0 || y >= ys[i - 1] - 0.01);
+    if (!monotonic) {
+      fails.push(
+        `[${segment}] rows are visited out of order: ` +
+        `${visitOrder.map((v) => `chain${v.chain}@y${v.y.toFixed(1)}`).join(' -> ')}` +
+        ` - the chain must move through rows in one direction`
+      );
+    }
   }
 
   return {
