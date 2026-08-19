@@ -188,9 +188,139 @@ check(
   'the dark class is on <html>, so shadcn dark: utilities resolve'
 );
 
+// --- the pedal FAMILY palette ----------------------------------------------
+//
+// Ported here on purpose. These four hues were chosen by running the dataviz
+// skill's validator, which lives in a bundled skill directory that this repo
+// does not own and cannot count on finding later. A guarantee whose only proof
+// lives outside the repo is the same mistake that lost the Phase B direction -
+// so the arithmetic moves in.
+//
+// Machado, Oliveira & Fernandes (2009) CVD transforms at severity 1.0, applied
+// in LINEAR rgb. Thresholds are OKLab dE x100 and are calibrated to this model.
+const MACHADO = {
+  protan: [
+    [0.152286, 1.052583, -0.204868],
+    [0.114503, 0.786281, 0.099216],
+    [-0.003882, -0.048116, 1.051998],
+  ],
+  deutan: [
+    [0.367322, 0.860646, -0.227968],
+    [0.280085, 0.672501, 0.047413],
+    [-0.01182, 0.04294, 0.968881],
+  ],
+};
+const CVD_TARGET = 8.0; // adjacent/all-pairs floor under simulated protan+deutan
+const NORMAL_FLOOR = 15.0; // worst pair under unsimulated vision
+const CHROMA_FLOOR = 0.1; // below this a hue reads as grey
+
+const hexToLinear = (h) => {
+  const n = parseInt(h.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255;
+    return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+};
+const linearToOklab = ([r, g, b]) => {
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+};
+const simulate = (lin, m) => m.map((row) => row[0] * lin[0] + row[1] * lin[1] + row[2] * lin[2]);
+const deltaE = (a, b) => {
+  const x = linearToOklab(a);
+  const y = linearToOklab(b);
+  return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]) * 100;
+};
+const chromaOf = (lin) => {
+  const [, A, B] = linearToOklab(lin);
+  return Math.hypot(A, B);
+};
+
+console.log('\n=== the pedal family palette ===');
+const famSrc = fs.readFileSync(
+  path.join(ROOT, 'src', 'lib', 'constants', 'pedal-categories.ts'),
+  'utf8'
+);
+
+// Read the families out of the source, so this cannot drift from what ships.
+const fams = [];
+for (const m of famSrc.matchAll(
+  /value:\s*'([a-z_]+)',\s*\n\s*label:\s*'[^']*',\s*\n\s*description:[\s\S]*?color:\s*'(#[0-9a-f]{6})'/g
+)) {
+  fams.push({ name: m[1], hex: m[2], lin: hexToLinear(m[2]) });
+}
+check(fams.length >= 2, `read ${fams.length} families out of pedal-categories.ts`);
+
+// Every category must land in a family that exists, or a pedal renders with
+// `undefined` for a colour and no test would notice.
+const declared = new Set(fams.map((f) => f.name));
+const mapped = [...famSrc.matchAll(/value:\s*'([a-z_]+)',\s*label:[^\n]*family:\s*'([a-z]+)'/g)];
+check(mapped.length === 18, `all 18 categories declare a family (found ${mapped.length})`);
+const orphans = mapped.filter(([, , fam]) => !declared.has(fam));
+check(
+  orphans.length === 0,
+  'every category points at a family that exists',
+  orphans.map((o) => `${o[1]} -> ${o[2]}`).join(', ')
+);
+
+// utility is the deliberate neutral: it says "not one effect". The rest must
+// carry real colour.
+const chromatic = fams.filter((f) => f.name !== 'utility');
+const neutral = fams.find((f) => f.name === 'utility');
+if (neutral) {
+  const c = chromaOf(neutral.lin);
+  check(c < CHROMA_FLOOR, `utility stays neutral (chroma ${c.toFixed(3)} < ${CHROMA_FLOOR})`);
+}
+for (const f of chromatic) {
+  const c = chromaOf(f.lin);
+  check(c >= CHROMA_FLOOR, `${f.name} carries real colour (chroma ${c.toFixed(3)})`);
+}
+
+// All pairs, not just adjacent: these dots are scattered across a board and a
+// list, never laid out in a fixed series order.
+let worstCvd = Infinity;
+let worstCvdPair = '';
+let worstNormal = Infinity;
+let worstNormalPair = '';
+for (let i = 0; i < chromatic.length; i++) {
+  for (let j = i + 1; j < chromatic.length; j++) {
+    const a = chromatic[i];
+    const b = chromatic[j];
+    const cvd = Math.min(
+      deltaE(simulate(a.lin, MACHADO.protan), simulate(b.lin, MACHADO.protan)),
+      deltaE(simulate(a.lin, MACHADO.deutan), simulate(b.lin, MACHADO.deutan))
+    );
+    const nrm = deltaE(a.lin, b.lin);
+    if (cvd < worstCvd) { worstCvd = cvd; worstCvdPair = `${a.name}/${b.name}`; }
+    if (nrm < worstNormal) { worstNormal = nrm; worstNormalPair = `${a.name}/${b.name}`; }
+  }
+}
+check(
+  worstCvd >= CVD_TARGET,
+  `worst pair under protan/deutan: ${worstCvd.toFixed(1)} dE (needs ${CVD_TARGET}) - ${worstCvdPair}`
+);
+check(
+  worstNormal >= NORMAL_FLOOR,
+  `worst pair in normal vision: ${worstNormal.toFixed(1)} dE (needs ${NORMAL_FLOOR}) - ${worstNormalPair}`
+);
+
+// The dots sit on panels and on the canvas board; both have to hold them.
+for (const surface of [tokens.card.lin, tokens.background.lin]) {
+  for (const f of fams) {
+    const r = contrast(f.lin, surface);
+    check(r >= 3, `${f.name} ${f.hex} reads against ${hex(surface)}: ${r.toFixed(2)}:1 (needs 3)`);
+  }
+}
+
 console.log('\n-----------------------------------------');
 if (failures) {
   console.log(`FAIL: ${failures} check(s) failed\n`);
   process.exit(1);
 }
-console.log('PASS: palette is legible, one grey family, one accent\n');
+console.log('PASS: palette is legible, one grey family, one accent, families separate\n');

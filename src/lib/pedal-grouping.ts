@@ -7,7 +7,7 @@
  * PEDAL_CATEGORIES.defaultOrder. Getting that wrong looks like a working panel
  * with the reverbs above the overdrives.
  */
-import { PEDAL_CATEGORIES } from '@/lib/constants/pedal-categories';
+import { PEDAL_CATEGORIES, getFamilyColor } from '@/lib/constants/pedal-categories';
 import type { Pedal, PedalCategory } from '@/types';
 
 export interface PedalGroup {
@@ -35,7 +35,12 @@ export function groupPedalsByCategory(pedals: Pedal[]): PedalGroup[] {
   for (const cat of [...PEDAL_CATEGORIES].sort((a, b) => a.defaultOrder - b.defaultOrder)) {
     const found = byCategory.get(cat.value);
     if (!found || found.length === 0) continue;
-    groups.push({ category: cat.value, label: cat.label, color: cat.color, pedals: found });
+    groups.push({
+      category: cat.value,
+      label: cat.label,
+      color: getFamilyColor(cat.family),
+      pedals: found,
+    });
     byCategory.delete(cat.value);
   }
 
@@ -43,7 +48,8 @@ export function groupPedalsByCategory(pedals: Pedal[]): PedalGroup[] {
   // otherwise vanish from the panel entirely - a pedal you cannot add and no
   // sign that it exists. Show it last, labelled with its raw value.
   for (const [category, found] of byCategory) {
-    groups.push({ category, label: category, color: '#6b7280', pedals: found });
+    // An unknown category has no family, so it gets the neutral one.
+    groups.push({ category, label: category, color: getFamilyColor('utility'), pedals: found });
   }
 
   return groups;

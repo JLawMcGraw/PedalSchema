@@ -13,7 +13,12 @@ import {
 } from '@/components/ui/select';
 import { useEditorStore } from '@/store/editor-store';
 import { useConfigurationStore } from '@/store/configuration-store';
-import { getCategoryColor, getCategoryLabel, PEDAL_CATEGORIES } from '@/lib/constants/pedal-categories';
+import {
+  getCategoryColor,
+  getCategoryLabel,
+  getFamilyColor,
+  PEDAL_CATEGORIES,
+} from '@/lib/constants/pedal-categories';
 import { groupPedalsByCategory, groupStartsOpen } from '@/lib/pedal-grouping';
 import { ChevronRight } from 'lucide-react';
 import type { Pedal } from '@/types';
@@ -112,7 +117,7 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
                 <div className="flex items-center gap-2">
                   <div
                     className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: cat.color }}
+                    style={{ backgroundColor: getFamilyColor(cat.family) }}
                   />
                   {cat.label}
                 </div>

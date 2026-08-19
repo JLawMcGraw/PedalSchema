@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import type { PedalCategory } from '@/types';
+import { getCategoryColor, getCategoryShortLabel } from '@/lib/constants/pedal-categories';
 
 interface PedalCardProps {
   pedal: {
@@ -18,48 +19,6 @@ interface PedalCardProps {
   onClick?: () => void;
   selected?: boolean;
 }
-
-const CATEGORY_COLORS: Record<PedalCategory, string> = {
-  tuner: 'bg-slate-500',
-  filter: 'bg-purple-500',
-  compressor: 'bg-blue-500',
-  pitch: 'bg-cyan-500',
-  boost: 'bg-yellow-500',
-  overdrive: 'bg-green-500',
-  distortion: 'bg-orange-500',
-  fuzz: 'bg-red-500',
-  noise_gate: 'bg-gray-500',
-  eq: 'bg-indigo-500',
-  modulation: 'bg-pink-500',
-  tremolo: 'bg-rose-500',
-  delay: 'bg-teal-500',
-  reverb: 'bg-sky-500',
-  looper: 'bg-lime-500',
-  volume: 'bg-amber-500',
-  utility: 'bg-stone-500',
-  multi_fx: 'bg-violet-500',
-};
-
-const CATEGORY_LABELS: Record<PedalCategory, string> = {
-  tuner: 'Tuner',
-  filter: 'Filter',
-  compressor: 'Comp',
-  pitch: 'Pitch',
-  boost: 'Boost',
-  overdrive: 'OD',
-  distortion: 'Dist',
-  fuzz: 'Fuzz',
-  noise_gate: 'Gate',
-  eq: 'EQ',
-  modulation: 'Mod',
-  tremolo: 'Trem',
-  delay: 'Delay',
-  reverb: 'Verb',
-  looper: 'Loop',
-  volume: 'Vol',
-  utility: 'Util',
-  multi_fx: 'Multi',
-};
 
 export function PedalCard({ pedal, onClick, selected }: PedalCardProps) {
   return (
@@ -84,11 +43,16 @@ export function PedalCard({ pedal, onClick, selected }: PedalCardProps) {
             <CardTitle className="text-base truncate">{pedal.name}</CardTitle>
             <CardDescription className="truncate">{pedal.manufacturer}</CardDescription>
           </div>
-          <Badge
-            variant="secondary"
-            className={`text-xs text-white shrink-0 ${CATEGORY_COLORS[pedal.category]}`}
-          >
-            {CATEGORY_LABELS[pedal.category]}
+          {/* The colour is a MARK beside the text, not the text's own colour:
+              the dot carries the signal family, the label carries the exact
+              category, and the words stay in ordinary ink. */}
+          <Badge variant="secondary" className="text-xs shrink-0 gap-1.5">
+            <span
+              aria-hidden
+              className="size-2 rounded-full shrink-0"
+              style={{ backgroundColor: getCategoryColor(pedal.category) }}
+            />
+            {getCategoryShortLabel(pedal.category)}
           </Badge>
         </div>
       </CardHeader>
@@ -97,13 +61,16 @@ export function PedalCard({ pedal, onClick, selected }: PedalCardProps) {
           <p>
             {pedal.width_inches}&quot; × {pedal.depth_inches}&quot; × {pedal.height_inches}&quot;
           </p>
-          <p>
-            {pedal.voltage}V{pedal.current_ma ? ` / ${pedal.current_ma}mA` : ''}
+          <p className="tabular-nums">
+            {/* current_ma has three states and a truthy check collapses two of
+                them: null is "nobody has measured it", 0 would be a real
+                reading. No pedal in the catalogue is 0 today, which is exactly
+                why this would have gone unnoticed. */}
+            {pedal.voltage}V
+            {pedal.current_ma === null ? '' : ` / ${pedal.current_ma}mA`}
           </p>
         </div>
       </CardContent>
     </Card>
   );
 }
-
-export { CATEGORY_COLORS, CATEGORY_LABELS };
