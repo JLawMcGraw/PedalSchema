@@ -47,7 +47,8 @@ const SEED_PREFIX = 'route gate seed';
 
   const seeded = [];
   // See the note in verify-crud: this gate also deletes rows, so it counts
-  // what was here before and proves it is all still here afterwards.
+  // what was here before and proves it is all still here afterwards. A
+  // precaution - no gate has ever been shown to lose a board.
   const census = async () => {
     const { data } = await sb.from('configurations').select('id,name').order('id');
     return data ?? [];

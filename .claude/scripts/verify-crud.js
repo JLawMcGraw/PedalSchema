@@ -70,10 +70,12 @@ async function save(page) {
    * A census, taken before and checked after.
    *
    * This gate deletes a board through the UI, and a delete that hits the
-   * wrong row is silent - the gate's own checks would still pass, because
-   * they only ever look at the board it created. An empty configuration
-   * ("dadfad") went missing from this database during a run of the suite and
-   * could not be attributed to any gate afterwards. Counting is cheap; being
+   * wrong row is SILENT - the gate's own checks would still pass, because
+   * they only ever look at the board it created.
+   *
+   * A precaution, not a response to a known loss: a board did once vanish
+   * mid-session and the gates were suspected, but the owner had deleted it.
+   * The reasoning survives the correction - counting is cheap, and being
    * unable to answer "did we delete something of yours" is not.
    */
   const sb = createClient(

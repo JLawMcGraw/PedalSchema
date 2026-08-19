@@ -26,7 +26,7 @@ Five commits. **458 tests** (up from 448), build clean, `verify-all.sh --all`
 - [x] Icon-only tabs CLOSED - measured, already fixed by A1
 - [x] `power-panel` min-h-0 added for consistency, documented as not-a-bug
 - [x] `verify-round-trip`'s intermittent failure diagnosed and fixed
-- [x] Both writing gates now prove they deleted nothing they should not have
+- [x] Both writing gates now census the boards they did not create (precaution)
 - [x] `verify-library-density` - 11 checks, mutation-checked
 - [ ] A4 sharing, then Phase B
 
@@ -83,12 +83,17 @@ worked, and nearly caused a second rewrite of a working thing. The gate reads
 `rotate` and says why in a comment.
 
 **A GATE THAT ONLY INSPECTS WHAT IT CREATED CANNOT SEE WHAT IT DESTROYED.**
-`dadfad`, an empty configuration created 2026-08-14, went missing from this
-database during the suite runs and could not be attributed afterwards. Both
-deleting gates were audited and both scope by id, so neither explains it. The
-fix is not a better delete - it is that both gates now census the
+`dadfad`, an empty configuration, disappeared from the database between two
+measurements in this session. **CORRECTED: the owner deleted it. No gate did,
+and nothing was lost.** The audit was right that both deleting gates scope by
+id - the wrong inference was reading an unexplained absence as a defect.
+
+The census guard was kept anyway, and the reason is the one part of that
+episode which holds: each gate only ever inspects the board it made, so a
+delete landing on the wrong row would be SILENT. Both gates now count the
 configurations table before they run and prove every pre-existing board
-survived, naming any that did not.
+survived. That is worth having whether or not it has ever fired - but it is a
+precaution, not a fix for something that happened.
 
 **AN INTERMITTENT FAILURE WITH NOTHING WRONG BEHIND IT.** `verify-round-trip`
 compared in-memory float positions against `DECIMAL(5,2)`. The drag landed at
