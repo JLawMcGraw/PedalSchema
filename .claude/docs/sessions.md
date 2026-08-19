@@ -4,6 +4,141 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-19 (eighth) - B5, B6, and Phase B closed
+
+### Summary
+
+Phase B is **complete**. B5 (surfaces) and B6 (loading and error states)
+landed, and the suite went from 23 gates to **29, all passing**.
+
+Both steps were smaller than expected and both turned up something larger than
+themselves. B5's real content was that **a tinted shadow below L 0.04 resolves
+to exactly black** - the first attempt shipped one. B6's was that **a
+`loading.tsx` one directory too high turns every unknown id into a soft 404**,
+which took three checks in `verify-routes` down with it.
+
+Three commits. **467 tests**, `verify-all.sh --all` **29 passed, 0 failed**,
+build and tsc clean.
+
+### What Was Accomplished
+- [x] **B5** - shadows tinted and mostly switched off, grain overlay
+- [x] **B6** - four route skeletons, error boundary, global error boundary
+- [x] **Phase B closed.** All six steps done, six gates added
+- [x] `verify-routes`: fixed a DOM race, a swallowed insert error, and made it
+      heal from a killed run
+- [x] Removed 11 orphaned rows I left in the database
+
+### Key Changes
+
+| File | Change |
+|------|--------|
+| `src/app/globals.css` | tinted shadow scale (small steps flat); `.grain` |
+| `src/app/layout.tsx` | the grain overlay element |
+| `src/components/ui/skeleton.tsx` | NEW |
+| `src/components/skeletons/list-page-skeleton.tsx` | NEW - shared list placeholder |
+| `src/app/(dashboard)/{dashboard,boards,amps}/loading.tsx` | NEW |
+| `src/app/(dashboard)/pedals/(list)/` | page + loading MOVED into a route group |
+| `src/app/(dashboard)/error.tsx` | NEW - the error boundary |
+| `src/app/global-error.tsx` | NEW - root layout failure, inline styles |
+| `.claude/scripts/verify-surfaces.js` | NEW gate |
+| `.claude/scripts/verify-states.js` | NEW gate |
+| `.claude/scripts/verify-routes.js` | race fixed, insert error checked, self-healing sweep |
+
+### Technical Decisions
+
+1. **Most of the shadow scale is switched off.** `--shadow-2xs/xs/sm` are
+   `0 0 #0000`. A button on an instrument face is not floating above anything
+   and already has a hairline. Only dropdowns, selects and sheets cast
+   anything, all downward, so the light source stays in one place.
+2. **The tint sits at L 0.08 and not lower.** Not taste - arithmetic. See below.
+3. **Skeletons, not spinners, and the gate asserts the column counts match.**
+   That equality IS the feature; without it a skeleton is just a fancy spinner.
+4. **The pedals list lives in a `(list)` route group.** Load-bearing, not
+   tidiness. See below.
+5. **`global-error.tsx` is styled with inline properties.** If the root layout
+   threw, the stylesheet it imports may be exactly what is missing. A fallback
+   that depends on the thing that just broke is not a fallback. Its palette
+   values are hard-coded copies and say so.
+6. **The error boundary offers `reset()`, not a reload.** A reload discards the
+   whole client, including an editor's unsaved store.
+
+### Architecture Notes
+
+**A TINTED SHADOW BELOW ABOUT L 0.04 IS EXACTLY BLACK.** The first attempt used
+`oklch(0.02 0.02 250)`, which cannot survive 8-bit quantisation and resolves to
+`rgb(0,0,0)` - a "tinted" shadow that was the very thing being replaced. At
+L 0.08 it resolves to `rgb(0,2,5)`: still darker than the `rgb(8,10,13)`
+substrate, so it darkens, and still carries the hue. Measured, not judged.
+
+**A `loading.tsx` COMMITS HTTP 200 BEFORE THE PAGE CAN CALL notFound().** It
+wraps every CHILD segment in a Suspense boundary, so a file at `pedals/` also
+wraps `pedals/[id]` - and a streaming segment has already flushed its status
+line by the time the page decides it is a 404. Every unknown and malformed
+pedal id started answering 200 with a not-found page inside it. The fix is a
+route group: `pedals/(list)/loading.tsx` keeps the boundary on the list and
+off `[id]`, and the URL is unchanged because route groups do not appear in the
+path. **`verify-states` now asserts both halves**, because moving that file one
+directory up is precisely what brings the bug back.
+
+**THE GATES KEEP PASSING ON TIMING.** `verify-routes` read the not-found page's
+links immediately after `page.goto()`. The App Router streams: measured, that
+page had **0 anchors at that moment and 7 a beat later**. It had been passing
+by luck for weeks, and the moment it lost the race it announced that the 404
+was a dead end - the most alarming thing it could say, and false. This is the
+same family as the three checks caught last session: *wait for the condition,
+never for the clock*.
+
+**A KILLED GATE LEAVES ROWS, AND THE FINALLY BLOCK DOES NOT SAVE YOU.** Piping
+`verify-routes` into `head` closes stdout; node dies on the write without
+unwinding, so the cleanup in `finally` never runs. Eleven throwaway boards were
+left in the database this way and had to be removed by hand. **An EPIPE handler
+does NOT fix it** - tried, and disproved with a minimal repro. What works is
+healing rather than hoping: the gate now sweeps anything carrying its own seed
+prefix at startup. That sweep must run BEFORE the census, or the leftovers are
+counted as real boards, deleted, and reported as eleven of the user's boards
+going missing.
+
+**CLEANUP BY PREFIX, NOT BY TRACKED IDS.** An insert whose `.select()` came
+back empty left a real row with no id in `seeded`, so it survived cleanup and
+failed the next run. The prefix is the gate's own namespace; sweeping it is
+exactly as safe as the ids were and covers what tracking missed.
+
+### Verification
+
+    npx tsc --noEmit         clean
+    npm run build            Compiled successfully
+    npm test                 467 passed, 4 skipped
+    verify-all.sh --all      29 passed, 0 failed
+    database                 2 configurations, 0 seed rows - as found
+
+Measured in the running app:
+
+    shadow layers   rgba(0,1,5,.8) rgba(0,2,5,.651) rgba(0,1,6,.722) rgba(0,2,5,.6)
+    grain           1 fixed pointer-events-none overlay, inert at screen centre
+    borders         every visible one still a 1px hairline
+    skeleton        38 placeholders, "Loading pedals", 32 across 4 columns
+    real grid       4 columns - no jump
+
+### Next Tasks
+
+- [ ] **The canvas legend still uses raw Tailwind hues** - `#f59e0b`,
+      `#22c55e`, `#3b82f6` for instrument / patch / will-not-fit. That is a
+      STATUS palette (reserved, never reused for a category), and it is the
+      last colour in the app outside the system. `verify-cable-legend` gates
+      its MEANING, so changing the colours means updating that gate
+      deliberately - which is the point of doing it as its own piece of work.
+- [ ] **Duplicate a board** - still the one missing CRUD verb.
+- [ ] **`og:image` for shared boards** - they still unfurl as plain text.
+- [ ] **Lint does not cover `.claude/scripts`** - 100 pre-existing errors, and
+      the directory grew by six files this phase.
+- [ ] **`/editor/[id]` and `/pedals/[id]` have no loading state.** Deliberately
+      skipped: both call `notFound()`, and per the note above a loading.tsx
+      above either one reintroduces the soft 404. Doing it properly means a
+      route group per detail page, and it was not worth bundling into B6
+      unnoticed.
+
+---
+
 ## Session: 2026-08-19 (seventh) - Phase B unblocked, and four of its six steps
 
 ### Summary

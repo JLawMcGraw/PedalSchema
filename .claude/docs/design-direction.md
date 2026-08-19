@@ -95,12 +95,15 @@ already Geist, which is on the skill's recommended list - **do not churn it**).
 | B2 | Hover / active / focus / transition states | **done** 2026-08-19 |
 | B3 | Typography: tabular numerals | **done** 2026-08-19 - set on `body`, inherited |
 | B4 | Icon swap off lucide | **done** 2026-08-19 - Phosphor, 14 files, dep dropped |
-| B5 | HUD surfaces: hairlines, grain overlay, readouts | open |
-| B6 | Empty / loading / error states | open |
+| B5 | HUD surfaces: hairlines, grain overlay, tinted shadows | **done** 2026-08-19 |
+| B6 | Loading / error states (empty states already existed) | **done** 2026-08-19 |
+
+**Phase B is complete.**
 
 Each step ends green on `npx tsc --noEmit`, `npm run build`, `npm test`, and
-`.claude/scripts/verify-all.sh --all`. The gates added by B1-B4 are
-`verify-palette`, `verify-nav-state`, `verify-readouts` and `verify-icons`.
+`.claude/scripts/verify-all.sh --all`. The gates added by Phase B are
+`verify-palette`, `verify-nav-state`, `verify-readouts`, `verify-icons`,
+`verify-surfaces` and `verify-states` - six, taking the suite from 23 to 29.
 
 ## Explicitly out of scope
 
