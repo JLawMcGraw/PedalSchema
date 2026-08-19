@@ -75,6 +75,7 @@ async function readDerived(page) {
       isDirty: snap.isDirty,
       saveError: snap.saveError,
       chain: s.placedPedals.map((p) => [p.id, p.chainPosition]),
+      positions: s.placedPedals.map((p) => [p.id, p.xInches, p.yInches]),
       geometry: d.routedCables.map((rc) =>
         `${rc.strategy}|${rc.valid}|${rc.path.map((pt) => `${Math.round(pt.x)},${Math.round(pt.y)}`).join(' ')}`
       ),
@@ -157,8 +158,37 @@ async function readDerived(page) {
       check(reloaded.isDirty === false, 'clean after reloading a board that was just saved');
       check(JSON.stringify(reloaded.chain) === JSON.stringify(edited.chain),
         'the chain order that was saved is the chain order that comes back');
-      check(JSON.stringify(reloaded.geometry) === JSON.stringify(edited.geometry),
-        'the geometry that was saved is the geometry that comes back');
+      /*
+       * POSITIONS, AT STORAGE PRECISION - not the geometry.
+       *
+       * Comparing `edited.geometry` to `reloaded.geometry` cannot hold, and
+       * failed intermittently for as long as this check existed. x_inches is
+       * DECIMAL(5,2); a drag lands wherever the pointer maths puts it, so the
+       * in-memory value carries full float precision and the stored one does
+       * not. Measured on the `test` board: the drag landed at
+       * x=10.732727272727272, Postgres kept 10.73, and that 0.0027in - 0.109px
+       * at 40px/in - moved two cable path points across a Math.round boundary
+       * (663.509 -> 663.400). 2 of 24 cables "differed". Nothing was wrong.
+       *
+       * So compare what the database can actually hold. Rounding the saved
+       * side to 2dp makes this EXACT rather than tolerant, and nothing is
+       * lost: routed geometry is a pure function of position and chain order,
+       * and both are now compared exactly - the ordering bug this gate was
+       * built for still cannot get past it.
+       */
+      const q = (n) => Math.round(n * 100) / 100;
+      const savedPos = new Map(edited.positions.map(([id, x, y]) => [id, [q(x), q(y)]]));
+      const drifted = reloaded.positions.filter(([id, x, y]) => {
+        const was = savedPos.get(id);
+        return !was || was[0] !== x || was[1] !== y;
+      });
+      check(
+        drifted.length === 0,
+        `every position saved is the position that comes back, at storage precision (${drifted.length} of ${reloaded.positions.length} drifted)` +
+          (drifted.length
+            ? ': ' + drifted.map(([id, x, y]) => `${id.slice(0, 8)} shows ${x},${y}, saved ${savedPos.get(id)}`).join(', ')
+            : '')
+      );
       check(reloaded.invalid === edited.invalid,
         `unroutable count survives the round trip (${edited.invalid} -> ${reloaded.invalid})`);
 
