@@ -4,6 +4,166 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-19 (seventh) - Phase B unblocked, and four of its six steps
+
+### Summary
+
+The blocker cleared: the owner picked the direction, and **it is written into
+`.claude/docs/design-direction.md` before any code was cut** - which is the
+whole point, since the last definition was lost by living only in a chat.
+
+B1 through B4 are done. The theme that keeps recurring is not colour: **four
+separate checks in this repo were passing while measuring nothing**, and three
+of them were mine, written this session. They are listed under Architecture
+Notes because the pattern is more useful than any of the fixes.
+
+Eight commits. **467 tests** (unchanged - this phase adds gates, not units),
+`verify-all.sh --all` **27 passed, 0 failed** (was 23), build and tsc clean.
+
+### What Was Accomplished
+- [x] **The direction, decided and committed.** Instrument panel; dark,
+      committed; icon set swapped
+- [x] **B1** - one palette on `:root`, dark switched on, `verify-palette`
+- [x] **B1b** - 18 category hues down to 4 families and a neutral
+- [x] **B2** - current-page state in the header, pressed states, motion opt-out
+- [x] **B3** - tabular figures, set once on body
+- [x] **B4** - lucide -> Phosphor, all 14 files, dependency dropped
+- [x] Scaffold metadata ("Create Next App") replaced - it was live
+- [x] `verify-all.sh` no longer hides the FAIL line behind `tail -4`
+- [x] `pedal-card.tsx` duplication and its currentMa three-state
+- [x] **`verify-drag-undo` had no assertions and its drag moved 0.000in**
+- [ ] **B5** - HUD surfaces: hairlines, grain overlay, readouts
+- [ ] **B6** - empty / loading / error states
+
+### Key Changes
+
+| File | Change |
+|------|--------|
+| `.claude/docs/design-direction.md` | NEW - the direction, the palette, the work order, the out-of-scope list |
+| `src/app/globals.css` | one palette, cool hue 250 + signal green; tabular figures on body; motion policy |
+| `src/app/layout.tsx` | real metadata with a title template; `dark` on `<html>` |
+| `src/lib/constants/pedal-categories.ts` | colour comes from a signal FAMILY, not the category |
+| `src/lib/pedal-grouping.ts`, `pedal-library-panel.tsx` | read the family colour |
+| `src/components/pedals/pedal-card.tsx` | second copy of the colour/label maps deleted; uses `format-pedal` |
+| `src/components/editor/panels/properties-panel.tsx` | uses `format-pedal` (was rendering "9V0" for a measured zero) |
+| `src/components/layout/header.tsx` | `aria-current`, signal green, hairline tick |
+| `src/components/ui/button.tsx` | 200ms, `active:scale-[0.97]` |
+| `src/components/editor/toolbar/editor-toolbar.tsx` | accessible names on five icon-only buttons |
+| 14 files | lucide -> Phosphor |
+| `.claude/scripts/verify-palette.js` | NEW - 40+ checks incl. a ported CVD simulation |
+| `.claude/scripts/verify-nav-state.js` | NEW - 15 checks |
+| `.claude/scripts/verify-readouts.js` | NEW - walks the DOM for measured values |
+| `.claude/scripts/verify-icons.js` | NEW - 6 checks, source and runtime |
+| `.claude/scripts/verify-drag-undo.js` | assertions, at last |
+
+### Technical Decisions
+
+1. **Committed dark, no toggle.** The skill's rule is "either commit to a full
+   dark mode or keep a consistent background tone". The canvas was ALREADY
+   dark - `#1f2937` board, white-alpha grid - inside light chrome, which is
+   exactly the "random dark section in a light page" it warns about. One
+   palette lives on `:root`; the `dark` class stays on `<html>` only because
+   shadcn's own 22 `dark:` utilities key off it.
+2. **Colour encodes the signal family, and the label carries the category.**
+   18 hues is past what colour can carry and far past what survives protanopia.
+   Composite encoding is the skill's prescribed answer, and a label is already
+   present at every site a dot is.
+3. **`utility` is deliberately below the chroma floor.** It is the "not one
+   effect" bucket - tuner, gate, volume, looper, multi-FX - and grey says that
+   better than a fifth hue would.
+4. **The CVD arithmetic was PORTED INTO the repo.** The four hues were chosen
+   with the dataviz skill's validator, which lives in a bundled directory this
+   repo does not own. A guarantee whose only proof lives outside the repo is
+   the same mistake that lost the Phase B direction. The port reproduces the
+   external tool exactly: 9.9 dE deutan, 16.9 dE normal.
+5. **Tabular figures on `body`, not per component.** The per-component version
+   had already been tried - 16 `tabular-nums` classes across 8 files, and 67
+   rendered values still proportional. A rule you have to remember is a rule
+   that gets forgotten.
+6. **Icon weight is enforced at the source, not at runtime.** See below.
+
+### Architecture Notes
+
+**FOUR CHECKS IN THIS REPO WERE PASSING WHILE MEASURING NOTHING.** Three were
+written this session and caught within minutes of being written; the fourth
+had been in the suite for weeks. They fail in different ways and the list is
+worth more than any single fix:
+
+| Check | Why it could not fail |
+|---|---|
+| pressed-state (mine) | scanned stylesheets for any `:active` rule mentioning scale - **passed before the feature existed**, satisfied by a vendor rule |
+| pressed-state, take two (mine) | read the value on the same tick as mousedown, catching `scale: 1` - the START of the animation. Differs from resting, so it passed |
+| icon stroke weight (mine) | compared `stroke-width` and reported "(none)" - Phosphor's regular weight draws FILLED paths, so there was nothing to compare |
+| `verify-drag-undo` (old) | **had no assertions at all.** Computed every boolean, printed them as JSON, exited 0 unless it threw |
+
+The remedies rhyme: **press the real button, wait for the value to SETTLE
+(three identical frames), and if a property is not observable at runtime,
+enforce it at the source instead.** Phosphor bakes `weight` into the path
+data, so a stray `weight="bold"` is invisible in the DOM - the gate therefore
+forbids per-site overrides rather than pretending to measure them.
+
+**A CHECK THAT CANNOT FAIL SHOULD BE DELETED, NOT KEPT FOR COMFORT.**
+`verify-readouts` briefly asserted that no readout ends in a stray `0` from a
+`&&` guard. No pedal in the catalogue draws a real 0, so it could never fail.
+It was removed and the guarantee lives in `format-pedal.test.ts`, where a 0
+can simply be passed in.
+
+**`verify-drag-undo` WAS ALSO DRAGGING OFF THE BOARD.** It moved `pedals[0]`
+by a fixed +3in/+1.5in. That pedal sits at x=28.85 on a 32in board and is
+2.9in wide, so the drop needed 34.75in and was rejected every time. `moved`
+was `dropped.x !== target.x`, true only because the round trip left a 1e-15
+crumb on y - so "undo restored the position exactly" was comparing a position
+to itself. Now it aims at the middle of the board and asserts a DISTANCE with
+a 1in floor. Same gate, both scenarios:
+
+    fixed +3/+1.5 outward   FAIL  the drop committed a real move: 0.000in
+    aimed inward            PASS  the drop committed a real move: 3.354in
+
+**SELECTING ON AN ICON CLASS IS SELECTING ON A LIBRARY.** The two selectors
+that broke were `svg.lucide-undo-2` and `svg.lucide-redo-2`. They existed
+because the buttons had **no accessible name** - icon-only, with a tooltip,
+and a tooltip is not an accessible name: it never reaches a screen reader and
+it is not a selector either. Five toolbar buttons now carry `aria-label`.
+
+**DENSITY IS STILL CORRECT HERE.** Repeating it because it will be tempting in
+B5: the skill's "double the spacing" line is scoped in its own text to
+marketing pages. A5 tuned the panel density deliberately. Do not undo it.
+
+### Verification
+
+    npx tsc --noEmit         clean
+    npm run build            Compiled successfully
+    npm test                 467 passed, 4 skipped
+    verify-all.sh --all      27 passed, 0 failed
+    console.log in src/      all pre-existing, behind DEBUG flags; none added
+    TODO/FIXME added         none
+
+Read back out of the RUNNING app, not the stylesheet:
+
+    html class "dark", color-scheme dark
+    body background lab(2.75%), body color lab(95.36%)
+    painted category colours: exactly the five declared hexes, nothing else
+    67/67 measured values report font-variant-numeric: tabular-nums
+    74 rendered icons, all on Phosphor's 256 grid, 0 left on the 24x24 grid
+
+### Next Tasks
+
+- [ ] **B5 - HUD surfaces.** Hairlines, a grain overlay, the readout treatment.
+      Read `.agents/skills/redesign-existing-projects` FIRST - re-open it at
+      the start of the phase, not from memory.
+- [ ] **B6 - empty / loading / error states.**
+- [ ] **The canvas legend still uses raw Tailwind hues** - `#f59e0b`,
+      `#22c55e`, `#3b82f6` for instrument/patch/will-not-fit. That is a STATUS
+      palette (reserved, never reused for a category) and it has not been
+      brought into the system yet. `verify-cable-legend` gates its meaning, so
+      changing the colours means updating that gate deliberately.
+- [ ] **Duplicate a board** - still the one missing CRUD verb.
+- [ ] **`og:image` for shared boards** - they still unfurl as plain text.
+- [ ] **Lint does not cover `.claude/scripts`** - 100 pre-existing errors, and
+      the directory just grew by four files.
+
+---
+
 ## Session: 2026-08-19 (sixth) - Phase B opened, measured, and stopped on a missing definition
 
 ### Summary

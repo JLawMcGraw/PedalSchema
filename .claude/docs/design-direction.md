@@ -89,17 +89,18 @@ Contrast is verified numerically, not by eye - see the phase's session entry.
 Follows the skill's own fix-priority list, skipping step 1 (the font is
 already Geist, which is on the skill's recommended list - **do not churn it**).
 
-| Step | What | Why here |
+| Step | What | Status |
 |---|---|---|
-| B1 | Switch dark on, install the palette | colour cleanup is the skill's step 2, and nothing else can be judged until the substrate is right |
-| B2 | Hover / active / focus / transition states | skill step 3, "makes the interface feel alive" |
-| B3 | Typography: tabular mono numerals, label tracking | the HUD's actual legibility |
-| B4 | Icon swap off lucide | flagged by name in the skill |
-| B5 | HUD surfaces: hairlines, grain overlay, readouts | the direction's own look |
-| B6 | Empty / loading / error states | skill step 6, "makes it feel finished" |
+| B1 | Switch dark on, install the palette | **done** 2026-08-19 - plus the category palette, 18 hues to 4 |
+| B2 | Hover / active / focus / transition states | **done** 2026-08-19 |
+| B3 | Typography: tabular numerals | **done** 2026-08-19 - set on `body`, inherited |
+| B4 | Icon swap off lucide | **done** 2026-08-19 - Phosphor, 14 files, dep dropped |
+| B5 | HUD surfaces: hairlines, grain overlay, readouts | open |
+| B6 | Empty / loading / error states | open |
 
 Each step ends green on `npx tsc --noEmit`, `npm run build`, `npm test`, and
-`.claude/scripts/verify-all.sh --all`.
+`.claude/scripts/verify-all.sh --all`. The gates added by B1-B4 are
+`verify-palette`, `verify-nav-state`, `verify-readouts` and `verify-icons`.
 
 ## Explicitly out of scope
 
