@@ -54,15 +54,34 @@ WRITERS=(
   "verify-round-trip"
   "verify-loop-persist"
   "verify-save-reorder"
+  "verify-crud"
 )
 
 pass=0; failed=0; failures=()
+
+# A per-gate time limit, portably.
+#
+# `timeout` is GNU coreutils. It is NOT on a stock macOS, which is where this
+# runs - and the consequence was not a missing time limit, it was that EVERY
+# gate exited 127 and the runner printed "0 passed, 16 failed" while the gates
+# themselves were fine. A runner that cannot tell you a gate passed is worse
+# than no runner: this one reported a clean sweep of failures for weeks.
+#
+# perl ships with macOS and its alarm+exec does the same job in one process.
+# Every branch takes the seconds as its FIRST argument, supplied at the call site.
+if command -v timeout >/dev/null 2>&1; then
+  LIMIT=(timeout)
+elif command -v gtimeout >/dev/null 2>&1; then
+  LIMIT=(gtimeout)
+else
+  LIMIT=(perl -e 'alarm shift @ARGV; exec @ARGV')
+fi
 
 run_one() {
   local name="$1"; shift
   printf '%-26s ' "$name"
   local out
-  out=$(timeout 300 node ".claude/scripts/${name}.js" "$@" 2>&1)
+  out=$("${LIMIT[@]}" 300 node ".claude/scripts/${name}.js" "$@" 2>&1)
   local code=$?
   if [ $code -eq 0 ]; then
     printf 'PASS\n'
