@@ -26,6 +26,7 @@
  * Usage: node .claude/scripts/verify-crud.js
  */
 const { chromium } = require('playwright');
+const { createClient } = require('@supabase/supabase-js');
 const { loadEnv, login, openEditor, waitForCanvas, BASE_URL } = require('./lib/twin');
 
 let failures = 0;
@@ -64,6 +65,26 @@ async function save(page) {
 
   let originalName = null;
   let editorUrl = null;
+
+  /*
+   * A census, taken before and checked after.
+   *
+   * This gate deletes a board through the UI, and a delete that hits the
+   * wrong row is silent - the gate's own checks would still pass, because
+   * they only ever look at the board it created. An empty configuration
+   * ("dadfad") went missing from this database during a run of the suite and
+   * could not be attributed to any gate afterwards. Counting is cheap; being
+   * unable to answer "did we delete something of yours" is not.
+   */
+  const sb = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+  const census = async () => {
+    const { data } = await sb.from('configurations').select('id,name').order('id');
+    return data ?? [];
+  };
+  const censusBefore = await census();
 
   try {
     await login(page);
@@ -272,6 +293,19 @@ async function save(page) {
         check(false, 'restored the original name', err.message);
       }
     }
+
+    // Every board that existed before this gate ran must still exist.
+    const censusAfter = await census();
+    const afterIds = new Set(censusAfter.map((c) => c.id));
+    const vanished = censusBefore.filter((c) => !afterIds.has(c.id));
+    check(
+      vanished.length === 0,
+      'no board that existed before this gate ran has gone missing',
+      vanished.length
+        ? `LOST: ${vanished.map((c) => `${c.id.slice(0, 8)} ${JSON.stringify(c.name)}`).join(', ')}`
+        : `${censusBefore.length} boards before, ${censusAfter.length} after`
+    );
+
     await browser.close();
   }
 

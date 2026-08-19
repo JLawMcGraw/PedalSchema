@@ -46,6 +46,13 @@ const SEED_PREFIX = 'route gate seed';
     .then((c) => c.newPage());
 
   const seeded = [];
+  // See the note in verify-crud: this gate also deletes rows, so it counts
+  // what was here before and proves it is all still here afterwards.
+  const census = async () => {
+    const { data } = await sb.from('configurations').select('id,name').order('id');
+    return data ?? [];
+  };
+  const censusBefore = await census();
 
   try {
     await login(page);
@@ -256,6 +263,17 @@ const SEED_PREFIX = 'route gate seed';
   } catch (err) {
     check(false, 'gate ran to completion', err.stack || err.message);
   } finally {
+    const censusAfter = await census();
+    const afterIds = new Set(censusAfter.map((c) => c.id));
+    const vanished = censusBefore.filter((c) => !afterIds.has(c.id));
+    check(
+      vanished.length === 0,
+      'no board that existed before this gate ran has gone missing',
+      vanished.length
+        ? `LOST: ${vanished.map((c) => `${c.id.slice(0, 8)} ${JSON.stringify(c.name)}`).join(', ')}`
+        : `${censusBefore.length} boards before this gate`
+    );
+
     if (seeded.length) {
       const { error } = await sb.from('configurations').delete().in('id', seeded);
       check(!error, `removed the ${seeded.length} seeded configurations`, error?.message);
