@@ -4,6 +4,116 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-19 (fourth) - A5, and one of its three items was real
+
+### Summary
+
+A5 closed. **Of its three items, one was a real improvement, one was already
+fixed, and one was true as a fact but not a defect** - and the only way to
+tell was to measure all three before touching anything.
+
+The library went from 2950px of flat scrolling to 684px that fits the panel.
+On the way, a crash that would have shipped: clicking any section heading took
+the whole panel down. And an unrelated intermittent gate failure turned out to
+be a decimal-precision mismatch that had never had anything wrong behind it.
+
+Five commits. **458 tests** (up from 448), build clean, `verify-all.sh --all`
+**22 passed, 0 failed**.
+
+### What Was Accomplished
+- [x] Pedal library grouped by category, collapsed by default
+- [x] The panel-destroying `currentTarget` crash, caught before it shipped
+- [x] Icon-only tabs CLOSED - measured, already fixed by A1
+- [x] `power-panel` min-h-0 added for consistency, documented as not-a-bug
+- [x] `verify-round-trip`'s intermittent failure diagnosed and fixed
+- [x] Both writing gates now prove they deleted nothing they should not have
+- [x] `verify-library-density` - 11 checks, mutation-checked
+- [ ] A4 sharing, then Phase B
+
+### The three A5 items, measured
+
+| Item | Verdict |
+|---|---|
+| Library flat, 67 items | **REAL.** 2950px of scroll in a 684px panel -> 684px collapsed |
+| "5 tabs need 316px in a 256px column", make them icon-only | **ALREADY FIXED.** Measured at six viewports: overflow=false everywhere. 2 rows at 1024px, 1 row at 1280+. A1's wrap fix did this |
+| `power-panel.tsx:70` missing `min-h-0` | **TRUE, NOT A DEFECT.** Class absent, but clipped=false at every viewport down to 1280x560 |
+
+Making the tabs icon-only would have removed readable labels to solve a
+problem that stopped existing two sessions ago.
+
+### Key Changes
+
+| File | Change |
+|------|--------|
+| `src/lib/pedal-grouping.ts` | NEW - grouping + open-state rules, 10 tests |
+| `src/components/editor/panels/pedal-library-panel.tsx` | collapsible `<details>` sections |
+| `src/components/editor/panels/power-panel.tsx` | `min-h-0` for family consistency |
+| `.claude/scripts/verify-library-density.js` | NEW gate, 11 checks |
+| `.claude/scripts/verify-round-trip.js` | positions at storage precision, not geometry |
+| `.claude/scripts/verify-crud.js`, `verify-routes.js` | board census before/after |
+
+### Technical Decisions
+
+1. **A search opens what it matched, and filter changes clear the overrides.**
+   Collapsed-by-default has one failure mode - you type "kl" and get a wall of
+   shut headers - and it has a subtle second form: a section the user
+   collapsed by hand staying shut through a search that matches it. The
+   overrides map holds only what the user changed, and is dropped whenever the
+   filter changes.
+2. **A native `<details>`**, not a Collapsible component. Correct semantics and
+   keyboard behaviour already, and no new dependency.
+3. **`min-h-0` was added anyway**, with a comment saying it fixed nothing, so
+   the next reader does not go hunting for the bug it addressed.
+4. **round-trip now compares positions, not geometry.** Exact, not tolerant.
+
+### Architecture Notes
+
+**READING `e.currentTarget` INSIDE A setState UPDATER TAKES THE COMPONENT
+DOWN.** React nulls `currentTarget` once the handler returns, and the updater
+runs later - so the throw lands during the commit and unmounts the whole
+subtree. The library panel lost its sections AND its search box on the first
+click of any heading. The markup was fine, the default state screenshotted
+perfectly, and every unit test passed. Read event fields into a local
+BEFORE calling setState.
+
+**TAILWIND v4 COMPILES `rotate-90` TO THE `rotate` PROPERTY, NOT `transform`.**
+Measuring `getComputedStyle(el).transform` returns "none" whichever way the
+chevron points. That produced a confident "NO ROTATION" against code that
+worked, and nearly caused a second rewrite of a working thing. The gate reads
+`rotate` and says why in a comment.
+
+**A GATE THAT ONLY INSPECTS WHAT IT CREATED CANNOT SEE WHAT IT DESTROYED.**
+`dadfad`, an empty configuration created 2026-08-14, went missing from this
+database during the suite runs and could not be attributed afterwards. Both
+deleting gates were audited and both scope by id, so neither explains it. The
+fix is not a better delete - it is that both gates now census the
+configurations table before they run and prove every pre-existing board
+survived, naming any that did not.
+
+**AN INTERMITTENT FAILURE WITH NOTHING WRONG BEHIND IT.** `verify-round-trip`
+compared in-memory float positions against `DECIMAL(5,2)`. The drag landed at
+x=10.732727272727272, Postgres kept 10.73, and 0.0027in - 0.109px at 40px/in -
+carried two path points across a `Math.round` boundary. It failed on `test`
+(24 cables) and passed on J$ Home (11) because more cables mean more chances
+to sit within a tenth of a pixel of x.5. **Diagnose the number before
+believing the failure**: the app had been correct the whole time.
+
+### Next Tasks
+
+- [ ] **A4 - sharing.** `isPublic`/`shareSlug` are in types and RLS already.
+- [ ] **Phase B** - Tactical Telemetry restyle, dark substrate only. Read
+      `.agents/skills/redesign-existing-projects` FIRST - nothing loads it.
+- [ ] **Duplicate a board** - still the one missing CRUD verb.
+- [ ] **`pedal-card.tsx` duplicates CATEGORY_COLORS/LABELS** from
+      `lib/constants/pedal-categories`, and its `current_ma ? ...` collapses
+      the three-state (latent: no pedal has a real 0 today).
+- [ ] **`verify-all.sh` truncates failures to `tail -4`**, which hid the actual
+      FAIL line on both gates this session - the summary said which gate failed
+      but not why, and both had to be re-run standalone.
+- [ ] **Lint does not cover `.claude/scripts`** - 100 pre-existing errors.
+
+---
+
 ## Session: 2026-08-19 (later still) - A3, the dead ends
 
 ### Summary
