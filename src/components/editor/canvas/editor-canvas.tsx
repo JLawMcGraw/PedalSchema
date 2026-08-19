@@ -14,8 +14,7 @@ import { getCategoryDefaultOrder } from '@/lib/constants/pedal-categories';
 import { getExternalEndpointPx } from '@/lib/engine/cables/endpoints';
 import { routeAllCables } from '@/lib/engine/cables/route-cables';
 import { rotatedFootprint } from '@/lib/engine/geometry/rotation';
-
-const PADDING_INCHES = 2;
+import { offsetToInches, PADDING_INCHES, PADDING_PX } from '@/lib/canvas/viewport';
 
 /** How often cables reroute while a pedal is being dragged (ms) */
 const DRAG_REROUTE_INTERVAL_MS = 90;
@@ -93,17 +92,52 @@ export function EditorCanvas() {
   const displayedCables = previewRoutedCables ?? routedCables;
 
   // Convert screen coordinates to board coordinates
+  /**
+   * Screen point -> board inches.
+   *
+   * THIS USED TO BE WRONG IN THREE WAYS, and the errors hid each other:
+   *
+   *   const x = (screenX - rect.left) / zoom / INCHES_TO_PIXELS
+   *             - PADDING_INCHES - pan.x / INCHES_TO_PIXELS;
+   *
+   *   1. it divided by `zoom`, but px-per-world-unit is `zoom * fitScale`;
+   *   2. it ignored the xMidYMid letterbox offset entirely;
+   *   3. it SUBTRACTED pan where the viewBox definition requires adding it.
+   *
+   * (2) and (3) cancelled because handleDragStart and handleDragMove both went
+   * through the same wrong mapping and `pan` was permanently {0,0}. (1) did
+   * not cancel - it is multiplicative - so a dragged pedal tracked the cursor
+   * at exactly `fitScale` of its distance. Measured on J$ Home with an 80px
+   * drag, before this change:
+   *
+   *     viewport 1440x900  fitScale 1.0182  moved 2.00in  (correct 1.96in)
+   *     viewport 1100x800  fitScale 0.7045  moved 2.00in  (correct 2.84in)
+   *     viewport  700x900  fitScale 0.7955  moved 2.00in  (correct 2.51in)
+   *
+   * measured/correct equalled fitScale in every case: on a 1100x800 window the
+   * pedal lagged the cursor by 30%.
+   *
+   * The mapping now lives in `@/lib/canvas/viewport` as pure arithmetic - the
+   * only form this repo can unit-test, since vitest runs in node with no DOM.
+   * This function is the ONLY place the canvas reads getBoundingClientRect.
+   */
   const screenToBoard = useCallback(
     (screenX: number, screenY: number): { x: number; y: number } => {
-      if (!svgRef.current) return { x: 0, y: 0 };
+      if (!svgRef.current || !board) return { x: 0, y: 0 };
 
       const rect = svgRef.current.getBoundingClientRect();
-      const x = (screenX - rect.left) / zoom / INCHES_TO_PIXELS - PADDING_INCHES - pan.x / INCHES_TO_PIXELS;
-      const y = (screenY - rect.top) / zoom / INCHES_TO_PIXELS - PADDING_INCHES - pan.y / INCHES_TO_PIXELS;
-
-      return { x, y };
+      // Reconstruct the viewBox exactly as rendered below. Kept in this shape
+      // deliberately for now: this change fixes the mapping ONLY, so a
+      // regression here cannot be blamed on a simultaneous viewBox change.
+      const vb = {
+        minX: -PADDING_PX + pan.x,
+        minY: -PADDING_PX + pan.y,
+        width: (board.widthInches * INCHES_TO_PIXELS + PADDING_PX * 2) / zoom,
+        height: (board.depthInches * INCHES_TO_PIXELS + PADDING_PX * 2) / zoom,
+      };
+      return offsetToInches(vb, { width: rect.width, height: rect.height }, screenX - rect.left, screenY - rect.top);
     },
-    [zoom, pan]
+    [zoom, pan, board]
   );
 
   // Handle clicking to add pedal
