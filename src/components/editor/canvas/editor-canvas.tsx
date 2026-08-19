@@ -14,7 +14,7 @@ import { getCategoryDefaultOrder } from '@/lib/constants/pedal-categories';
 import { getExternalEndpointPx } from '@/lib/engine/cables/endpoints';
 import { routeAllCables } from '@/lib/engine/cables/route-cables';
 import { rotatedFootprint } from '@/lib/engine/geometry/rotation';
-import { contentBounds as computeContentBounds } from '@/lib/canvas/viewport';
+import { contentBounds as computeContentBounds, wheelIntent } from '@/lib/canvas/viewport';
 import { useCanvasViewport } from './use-canvas-viewport';
 
 /** How often cables reroute while a pedal is being dragged (ms) */
@@ -57,9 +57,9 @@ export function EditorCanvas() {
 
   // NB: zoom and pan are deliberately NOT read here - `useCanvasViewport` owns
   // them, so there is exactly one place that turns them into geometry.
-  const { gridVisible, cablesVisible, selectedPedalId, selectPedal, mode, pedalToAdd, setPedalToAdd } =
+  const { gridVisible, cablesVisible, selectedPedalId, selectPedal, mode, pedalToAdd, setPedalToAdd, panByPixels, zoomAt } =
     useEditorStore(
-    useShallow((s) => ({ gridVisible: s.gridVisible, cablesVisible: s.cablesVisible, selectedPedalId: s.selectedPedalId, selectPedal: s.selectPedal, mode: s.mode, pedalToAdd: s.pedalToAdd, setPedalToAdd: s.setPedalToAdd }))
+    useShallow((s) => ({ gridVisible: s.gridVisible, cablesVisible: s.cablesVisible, selectedPedalId: s.selectedPedalId, selectPedal: s.selectPedal, mode: s.mode, pedalToAdd: s.pedalToAdd, setPedalToAdd: s.setPedalToAdd, panByPixels: s.panByPixels, zoomAt: s.zoomAt }))
   );
 
   const { board, placedPedals, pedalsById, addPedal, movePedal, amp, useEffectsLoop } =
@@ -90,7 +90,7 @@ export function EditorCanvas() {
     return computeContentBounds(board.widthInches, board.depthInches, external);
   }, [board, fxLoopActive]);
 
-  const { svgRef, viewBox, viewBoxAttr, clientToInches } = useCanvasViewport(
+  const { svgRef, svgNode, viewBox, viewBoxAttr, clientToInches } = useCanvasViewport(
     board?.widthInches ?? 32,
     board?.depthInches ?? 16,
     canvasContentBounds,
@@ -148,9 +148,133 @@ export function EditorCanvas() {
     [clientToInches]
   );
 
+  /*
+   * PANNING.
+   *
+   * Deliberately built on POINTER events while the pedal drag stays on
+   * mouse/touch. The two must not both claim a gesture, and `pointerdown`
+   * fires BEFORE `mousedown` - so a stopPropagation() inside the pedal's mouse
+   * handler cannot stop a pointer handler on the ancestor. The guard is
+   * therefore a hit test (`closest('g.pedal')`), not propagation.
+   *
+   * Migrating the pedal drag to pointer events as well would be tidier and is
+   * what unlocks pinch-zoom, but it is the single riskiest edit for
+   * verify-drag-undo, so it is not bundled with the feature that needs none of
+   * it.
+   */
+  const panRef = useRef<{ id: number; x: number; y: number; moved: number } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const pointerInside = useRef(false);
+  /** Set when a pan consumed the gesture, so the click that follows is ignored. */
+  const suppressClick = useRef(false);
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (panRef.current) return;
+      const onPedal = (e.target as Element | null)?.closest?.('g.pedal');
+      const wantsPan =
+        e.button === 1 ||                                   // middle-drag, anywhere
+        (e.button === 0 && (spaceHeld || mode === 'pan')) || // held space, or the hand tool
+        (e.button === 0 && !onPedal && mode !== 'add-pedal'); // empty canvas
+      if (!wantsPan) return;
+      // Middle-button drag otherwise triggers Windows autoscroll.
+      if (e.button === 1) e.preventDefault();
+      panRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: 0 };
+      setIsPanning(true);
+      (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    },
+    [spaceHeld, mode]
+  );
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const st = panRef.current;
+      if (!st || st.id !== e.pointerId) return;
+      const dx = e.clientX - st.x;
+      const dy = e.clientY - st.y;
+      st.x = e.clientX;
+      st.y = e.clientY;
+      st.moved += Math.abs(dx) + Math.abs(dy);
+      // Drag right => content follows the hand => the window moves LEFT.
+      panByPixels(-dx, -dy);
+    },
+    [panByPixels]
+  );
+
+  const endPan = useCallback((e: React.PointerEvent) => {
+    const st = panRef.current;
+    if (!st || st.id !== e.pointerId) return;
+    // A few pixels of travel is a click with a shaky hand, not a pan.
+    if (st.moved > 4) suppressClick.current = true;
+    panRef.current = null;
+    setIsPanning(false);
+    (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
+  }, []);
+
+  /*
+   * Wheel is registered imperatively with { passive: false }.
+   *
+   * React attaches `onWheel` at the root as PASSIVE, so preventDefault() from
+   * the JSX prop is a no-op plus a console warning - and the browser zooms the
+   * whole page instead of the board.
+   */
+  useEffect(() => {
+    const el = svgNode;
+    if (!el) return;
+    const onWheel = (ev: WheelEvent) => {
+      const rect = el.getBoundingClientRect();
+      const intent = wheelIntent(ev, { width: rect.width, height: rect.height });
+      ev.preventDefault();
+      if (intent.kind === 'zoom') {
+        const anchor = { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+        zoomAt(useEditorStore.getState().zoom * intent.factor, anchor);
+      } else {
+        panByPixels(intent.dx, intent.dy);
+      }
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [svgNode, zoomAt, panByPixels]);
+
+  /*
+   * Space-to-pan is scoped to the canvas, NOT the global shortcut handler in
+   * the toolbar: Space activates a focused <button>, and the toolbar is full of
+   * them, so a global preventDefault on Space would break every one. Cleared on
+   * blur and visibilitychange too - alt-tabbing mid-press would otherwise leave
+   * the canvas stuck in pan mode with no key-up ever arriving.
+   */
+  useEffect(() => {
+    const isTypingTarget = (t: EventTarget | null) => {
+      const el = t as HTMLElement | null;
+      const tag = el?.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable;
+    };
+    const down = (ev: KeyboardEvent) => {
+      if (ev.code !== 'Space' || !pointerInside.current || isTypingTarget(ev.target)) return;
+      const active = document.activeElement?.tagName;
+      if (active === 'BUTTON' || active === 'INPUT' || active === 'TEXTAREA') return;
+      ev.preventDefault();
+      setSpaceHeld(true);
+    };
+    const up = (ev: KeyboardEvent) => { if (ev.code === 'Space') setSpaceHeld(false); };
+    const clear = () => setSpaceHeld(false);
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', clear);
+    document.addEventListener('visibilitychange', clear);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', clear);
+      document.removeEventListener('visibilitychange', clear);
+    };
+  }, []);
+
   // Handle clicking to add pedal
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent) => {
+      if (suppressClick.current) { suppressClick.current = false; return; }
       if (mode === 'add-pedal' && pedalToAdd && board) {
         const pedal = pedalsById[pedalToAdd];
         if (!pedal) return;
@@ -332,7 +456,25 @@ export function EditorCanvas() {
         // from the element, so the centring must be defined rather than lucky.
         preserveAspectRatio="xMidYMid meet"
         onClick={handleCanvasClick}
-        className={`select-none ${mode === 'add-pedal' ? 'cursor-crosshair' : 'cursor-default'}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={endPan}
+        // pointercancel must behave exactly like pointerup, or an interrupted
+        // gesture (a system dialog, a phone call) leaves the canvas stuck
+        // panning with no release ever arriving.
+        onPointerCancel={endPan}
+        onPointerEnter={() => { pointerInside.current = true; }}
+        onPointerLeave={() => { pointerInside.current = false; setSpaceHeld(false); }}
+        className={`select-none ${
+          mode === 'add-pedal'
+            ? 'cursor-crosshair'
+            : isPanning
+              ? 'cursor-grabbing'
+              : spaceHeld || mode === 'pan'
+                ? 'cursor-grab'
+                : 'cursor-default'
+        }`}
+        // Kept, and now earned: the gestures it disables are ones we implement.
         style={{ touchAction: 'none' }}
       >
         <defs>

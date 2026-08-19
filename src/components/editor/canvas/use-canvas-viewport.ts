@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '@/store/editor-store';
 import {
@@ -88,9 +88,21 @@ export function useCanvasViewport(
    * changes width when a side panel opens, which no window event reports.
    */
   const observerRef = useRef<ResizeObserver | null>(null);
+  /**
+   * The attached element AS STATE, not just as a ref.
+   *
+   * Consumers that need to register native listeners (the wheel handler needs
+   * { passive: false }, which React's onWheel cannot give) must run an effect
+   * WHEN THE ELEMENT ATTACHES. A ref does not trigger that: an effect reading
+   * `ref.current` on mount sees null - EditorCanvas early-returns before the
+   * <svg> exists - and never re-runs, because a ref object is stable. That
+   * exact mistake silently disabled measurement once and the wheel once.
+   */
+  const [svgNode, setSvgNode] = useState<SVGSVGElement | null>(null);
   const attachSvg = useCallback(
     (el: SVGSVGElement | null) => {
       svgRef.current = el;
+      setSvgNode(el);
       observerRef.current?.disconnect();
       observerRef.current = null;
       if (!el) return;
@@ -191,5 +203,5 @@ export function useCanvasViewport(
     };
   }, [inchesToClient]);
 
-  return { svgRef: attachSvg, svgEl: svgRef, viewBox, viewBoxAttr, offsetOf, clientToInches, inchesToClient };
+  return { svgRef: attachSvg, svgEl: svgRef, svgNode, viewBox, viewBoxAttr, offsetOf, clientToInches, inchesToClient };
 }

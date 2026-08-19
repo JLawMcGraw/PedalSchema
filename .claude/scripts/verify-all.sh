@@ -42,6 +42,7 @@ READ_ONLY=(
   "verify-jack-render"
   "verify-delete-key"
   "verify-drag-undo"
+  "verify-viewport"
 )
 
 # These WRITE. Each restores what it touched, but they are opt-in so a routine
