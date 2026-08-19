@@ -15,11 +15,16 @@
  *  5. determinism: identical output on repeat runs
  *  6. idempotence: re-running the pipeline on its own output is a no-op
  *
- * LENIENT tier: combos whose PLACEMENT is known to be naive until the
- * topology-driven placer lands (Phase 2 of the roadmap). They still must
- * not collide, must not silently draw cables through pedals (any cable that
- * does must be flagged invalid), and must be deterministic - but may have
- * invalid cables, lane crowding, or non-monotonic order.
+ * THERE IS NO LENIENT TIER ANY MORE. There was one, for combos whose
+ * placement was naive until the topology-driven placer landed: they had to
+ * avoid collisions and flag any cable drawn through a pedal, but were allowed
+ * invalid cables, lane crowding and non-monotonic order. The placer now
+ * understands 4-cable-method and NS-2 pedal-loop topology, so every combo is
+ * STRICT and `isLenient` returns false unconditionally.
+ *
+ * The branching it feeds is vestigial and kept only so the strict/lenient
+ * split can be reinstated for a new class of board without rebuilding it.
+ * Nothing in the matrix takes the lenient path today.
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
@@ -136,8 +141,8 @@ function buildScenario(combo: Combo): Scenario | null {
 }
 
 /**
- * Phase 2 (topology-driven placement) flipped every combo to STRICT:
- * the placer understands 4-cable-method and NS-2 pedal-loop topology.
+ * Permanently false - see the header. Topology-driven placement flipped every
+ * combo to STRICT; this is the switch, not a live tier.
  */
 const isLenient = (_f: ScenarioFlags): boolean => false;
 

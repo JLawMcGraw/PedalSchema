@@ -7,13 +7,25 @@
  * square-on and turn at right angles, and every other path this module produces
  * is Manhattan.
  *
- * A sealed jack is a real situation, not a bug to be routed around. Measured on
- * the `test` board: the NS-2's left output at (744,269) has its standoff sealed
- * on all four sides - the row-1/row-2 gap is 7.6px where a path needs 16, and
- * the PW-3 straddler merges rows 2 and 3 so there is no lane between them
- * either. No corridor, no perimeter ring and no A* route exists at 8px
- * clearance. In the room you would simply press the cable in; the pedals have
- * chamfers and the cable bends.
+ * A sealed jack is a real situation, not a bug to be routed around. It was
+ * found on the `test` board, whose geometry at the time put the NS-2's left
+ * output at (744,269) with its standoff sealed on all four sides: a 7.6px
+ * row-1/row-2 gap where a path then needed 16px, and the PW-3 straddler
+ * merging rows 2 and 3 so no lane existed between them either.
+ *
+ * THOSE FIGURES ARE HISTORICAL - do not read them as current. `OBSTACLE_MARGIN`
+ * dropped 8 -> 6 on 2026-08-18, so a path now needs 12px rather than 16, and
+ * the board has been re-packed since (its corridors measure 14px, and NS-2 is
+ * nowhere near that coordinate). What is NOT historical is the situation: a
+ * jack can still be sealed, and the fixture below reproduces one deliberately.
+ *
+ * The fixture does not depend on those numbers staying true, because the first
+ * test asserts its own precondition - if any strategy ever solves it, it fails
+ * loudly rather than passing vacuously. That guard is why this file survived
+ * the margin change without anyone noticing it had moved.
+ *
+ * In the room you would simply press the cable in; the pedals have chamfers and
+ * the cable bends.
  *
  * So the last resort routes THROUGH pedals - deliberately - and says so by
  * staying `fallback-invalid` and drawing red. What changes is that it is now a
@@ -43,7 +55,9 @@ const box = (x: number, y: number, width: number, height: number): Box => ({ x, 
  */
 function sealedBoard() {
   const boxes: Box[] = [];
-  // Row 1 and row 2 only 8px apart - a path needs 16
+  // Row 1 and row 2 only 8px apart, against the 2 x OBSTACLE_MARGIN a path
+  // needs between rows - 12px today, 16px when this was written. Either way
+  // sealed; the precondition assertion below is what actually guarantees it.
   for (let i = 0; i < 8; i++) boxes.push(box(i * 150, 0, 140, 217));
   for (let i = 0; i < 8; i++) boxes.push(box(i * 150, 225, 140, 204));
   // Row 3 hard against row 2

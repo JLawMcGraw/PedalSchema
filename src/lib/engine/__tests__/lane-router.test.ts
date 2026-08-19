@@ -1,5 +1,5 @@
 /**
- * Manhattan Lane Router acceptance (roadmap Phase 3)
+ * Manhattan Lane Router acceptance
  *
  * Across the full configuration matrix:
  * - lane-routed paths are strictly axis-aligned (square corners)

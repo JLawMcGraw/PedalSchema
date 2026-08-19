@@ -1,5 +1,5 @@
 /**
- * Rotation-aware placement search (roadmap Phase 4)
+ * Rotation-aware placement search
  *
  * The optimizer must pick the jack orientation that minimizes the routed cost
  * for pedals whose rotation changes jack FACING - and stay deterministic and

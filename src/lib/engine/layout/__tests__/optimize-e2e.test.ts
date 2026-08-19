@@ -408,7 +408,8 @@ describe('one deep pedal does not collapse the board', () => {
     // Overlaps are asserted separately, by the sweep below.
   });
   /**
-   * The dense-board overlap, fixed by ORDERING (roadmap phase 5).
+   * The dense-board overlap, fixed by ORDERING - the straddler-first pass in
+   * layout/index.ts.
    *
    * p19 is 7.56in deep - deeper than any row band (bands come out ~5.43/5.08),
    * so it cannot sit IN one and must straddle two, which needs a column with
