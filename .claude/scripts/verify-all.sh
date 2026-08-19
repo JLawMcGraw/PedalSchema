@@ -32,6 +32,7 @@ READ_ONLY=(
   "verify-nav-state"
   "verify-readouts"
   "verify-icons"
+  "verify-surfaces"
   "verify-pedal-jacks"
   "verify-pedal-dimensions"
   "verify-pedal-images"

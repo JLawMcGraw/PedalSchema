@@ -37,6 +37,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        {/* The grain sits above everything and is inert: pointer-events:none,
+            aria-hidden. See .grain in globals.css. */}
+        <div className="grain" aria-hidden />
       </body>
     </html>
   );

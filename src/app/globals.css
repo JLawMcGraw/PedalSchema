@@ -3,6 +3,40 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Shadows carry the substrate's hue, and most of them are switched off.
+
+   Measured before this existed: eight elements painted rgba(0,0,0,0.1) and
+   rgba(0,0,0,0.05). On a #080a0d substrate a black shadow is not subtle, it is
+   INVISIBLE - it costs a paint and buys nothing.
+
+   So the small steps are flat. A button or an input on an instrument face is
+   not floating above anything, and it already has a hairline to define it.
+   Only genuinely floating surfaces - dropdowns, selects, sheets - get a
+   shadow, tinted to the background hue, and every one of them is cast
+   downward so the light source stays in one place.
+
+   The tint is at L 0.08 and NOT LOWER, which is not a taste call. Below about
+   L 0.04 the chroma cannot survive 8-bit quantisation and oklch collapses to
+   exactly rgb(0,0,0) - the first attempt used L 0.02 and shipped a "tinted"
+   shadow that was pure black. At L 0.08 it resolves to rgb(0,2,5): still
+   darker than the rgb(8,10,13) substrate, so it darkens, and still tinted. */
+@theme {
+  --shadow-2xs: 0 0 #0000;
+  --shadow-xs: 0 0 #0000;
+  --shadow-sm: 0 0 #0000;
+  --shadow: 0 0 #0000;
+  --shadow-md:
+    0 8px 24px -8px oklch(0.08 0.02 250 / 0.72),
+    0 2px 6px -2px oklch(0.08 0.02 250 / 0.6);
+  --shadow-lg:
+    0 24px 48px -16px oklch(0.08 0.02 250 / 0.8),
+    0 4px 12px -4px oklch(0.08 0.02 250 / 0.65);
+  --shadow-xl:
+    0 32px 64px -20px oklch(0.08 0.02 250 / 0.85),
+    0 6px 16px -6px oklch(0.08 0.02 250 / 0.7);
+  --shadow-2xl: 0 40px 80px -24px oklch(0.08 0.02 250 / 0.9);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -127,5 +161,31 @@
 @media (prefers-reduced-motion: no-preference) {
   html {
     scroll-behavior: smooth;
+  }
+}
+
+/* Grain. A fixed, pointer-events-none overlay so large dark areas do not read
+   as flat vector - the one texture in the design, at an opacity chosen to be
+   felt rather than seen.
+
+   It is a real element rather than a ::after so that it can be found and
+   asserted on; `verify-surfaces.js` also checks it does not intercept the
+   pointer, because an overlay that swallows clicks would break the canvas,
+   which is the entire product.
+
+   The noise is an inline feTurbulence - no network request, nothing to cache,
+   and it cannot 404. */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.022;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .grain {
+    display: none;
   }
 }
