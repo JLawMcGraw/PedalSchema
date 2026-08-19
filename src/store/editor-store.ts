@@ -196,10 +196,12 @@ export const useEditorStore = create<EditorState>()(
       }),
 
     /**
-     * Kept as an alias of fitToContent rather than removed: the toolbar's zoom
-     * label and its overflow menu both call it, and "reset the view" now means
-     * "fit the board" rather than "zoom 1, pan 0" - which on a large board used
-     * to leave you looking at a corner.
+     * Kept as an alias of fitToContent though NOTHING IN src/ CALLS IT any
+     * more - the toolbar now calls fitToContent and zoomTo100 by name. It
+     * survives because "reset the view" is a reasonable thing for a future
+     * caller to want, and because its old meaning ("zoom 1, pan 0") would on a
+     * large board leave you staring at a corner. Delete it if it is still
+     * unused next time someone is in here.
      */
     resetZoom: () =>
       set((s) => {

@@ -33,9 +33,9 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
     useShallow((s) => ({ selectedPedalId: s.selectedPedalId, selectPedal: s.selectPedal }))
   );
   const removePedal = useConfigurationStore((s) => s.removePedal);
-  const { zoom, zoomIn, zoomOut, resetZoom, gridVisible, toggleGrid, cablesVisible, toggleCables } =
+  const { zoom, zoomIn, zoomOut, fitToContent, zoomTo100, gridVisible, toggleGrid, cablesVisible, toggleCables } =
     useEditorStore(
-    useShallow((s) => ({ zoom: s.zoom, zoomIn: s.zoomIn, zoomOut: s.zoomOut, resetZoom: s.resetZoom, gridVisible: s.gridVisible, toggleGrid: s.toggleGrid, cablesVisible: s.cablesVisible, toggleCables: s.toggleCables }))
+    useShallow((s) => ({ zoom: s.zoom, zoomIn: s.zoomIn, zoomOut: s.zoomOut, fitToContent: s.fitToContent, zoomTo100: s.zoomTo100, gridVisible: s.gridVisible, toggleGrid: s.toggleGrid, cablesVisible: s.cablesVisible, toggleCables: s.toggleCables }))
   );
   const { name, isDirty, isSaving, isOptimizing, saveError, placedPedals, optimizeLayout, undo, redo, canUndo, canRedo } = useConfigurationStore(
     useShallow((s) => ({
@@ -99,11 +99,33 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
       } else if (key === 'y') {
         e.preventDefault();
         redo();
+      } else if (key === '=' || key === '+' || e.code === 'Equal' || e.code === 'NumpadAdd') {
+        // Taken from the browser's own zoom deliberately: in a canvas app the
+        // board is what the user means by "zoom in". Matched on BOTH key and
+        // code - the character depends on the layout and the shift state.
+        e.preventDefault();
+        zoomIn();
+      } else if (key === '-' || key === '_' || e.code === 'Minus' || e.code === 'NumpadSubtract') {
+        e.preventDefault();
+        zoomOut();
+      } else if (key === '0') {
+        e.preventDefault();
+        fitToContent();
+      } else if (key === '1') {
+        e.preventDefault();
+        zoomTo100();
       }
+      /*
+       * Bare arrow keys are DELIBERATELY not claimed. They are the natural
+       * binding for nudging the selected pedal, and taking them for panning
+       * now would only have to be undone. Space is not claimed here either -
+       * it activates a focused <button> and this toolbar is full of them, so
+       * space-to-pan is scoped to the canvas instead.
+       */
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [undo, redo, selectedPedalId, selectPedal, removePedal]);
+  }, [undo, redo, selectedPedalId, selectPedal, removePedal, zoomIn, zoomOut, fitToContent, zoomTo100]);
 
   return (
     <TooltipProvider>
@@ -232,9 +254,17 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
               <TooltipContent>Zoom out</TooltipContent>
             </Tooltip>
 
-            <Button variant="ghost" size="sm" onClick={resetZoom} className="min-w-[52px] px-2 tabular-nums">
-              {Math.round(zoom * 100)}%
-            </Button>
+            {/* The percentage is now literally true: `zoom` is CSS px per world
+                unit, so 100% is 1:1 at 40px per board inch. It used to mean
+                "a multiple of whatever fits", which matched nothing. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="sm" onClick={fitToContent} className="min-w-[52px] px-2 tabular-nums">
+                  {Math.round(zoom * 100)}%
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Fit the board to the window (Cmd/Ctrl+0)</TooltipContent>
+            </Tooltip>
 
             <Tooltip>
               <TooltipTrigger asChild>
@@ -269,8 +299,11 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
                 <ZoomOut className="h-4 w-4 mr-2" />
                 Zoom Out
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={resetZoom}>
-                Reset Zoom ({Math.round(zoom * 100)}%)
+              <DropdownMenuItem onClick={fitToContent}>
+                Fit to Board ({Math.round(zoom * 100)}%)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={zoomTo100}>
+                Actual Size (100%)
               </DropdownMenuItem>
               <DropdownMenuItem onClick={zoomIn}>
                 <ZoomIn className="h-4 w-4 mr-2" />

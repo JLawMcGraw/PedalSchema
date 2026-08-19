@@ -244,6 +244,36 @@ const vp = (page) => page.evaluate(() => window.__pedalSchemaViewport());
     failures += ok('two fingers pinching zooms out', postP2.zoom < postP.zoom * 0.75,
       `zoom ${postP.zoom.toFixed(3)} -> ${postP2.zoom.toFixed(3)}`);
 
+    // ---- 8. Toolbar and keyboard ----------------------------------------
+    // Ctrl+1 is ACTUAL SIZE: zoom is absolute now, so 100% must mean 1:1 at
+    // 40px per board inch - not "whatever fits", which is what it used to mean.
+    await page.click('[data-pedal-canvas]', { position: { x: 5, y: 5 } });
+    await page.keyboard.press('Control+1');
+    await page.waitForTimeout(250);
+    const at100 = (await vp(page)).zoom;
+    failures += ok('Ctrl+1 is true 1:1', Math.abs(at100 - 1) < 1e-6, `zoom ${at100.toFixed(4)}`);
+
+    await page.keyboard.press('Control+0');
+    await page.waitForTimeout(250);
+    const atFit = (await vp(page)).zoom;
+    const expectFit = await page.evaluate(() => {
+      const s = window.__pedalSchemaViewport();
+      return Math.min(s.viewportSize.width / 1440, s.viewportSize.height / 800);
+    });
+    failures += ok('Ctrl+0 fits the board', Math.abs(atFit - 1) > 1e-6 && atFit > 0,
+      `zoom ${atFit.toFixed(4)} (board-box fit ~${expectFit.toFixed(4)})`);
+
+    const beforeKeyZoom = (await vp(page)).zoom;
+    await page.keyboard.press('Control+Equal');
+    await page.waitForTimeout(250);
+    const afterKeyZoom = (await vp(page)).zoom;
+    failures += ok('Ctrl+= zooms in', afterKeyZoom > beforeKeyZoom,
+      `zoom ${beforeKeyZoom.toFixed(3)} -> ${afterKeyZoom.toFixed(3)}`);
+
+    await page.keyboard.press('Control+Minus');
+    await page.waitForTimeout(250);
+    failures += ok('Ctrl+- zooms out', (await vp(page)).zoom < afterKeyZoom, '');
+
     failures += ok('no page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
     await browser.close();
