@@ -43,6 +43,7 @@ READ_ONLY=(
   "verify-delete-key"
   "verify-drag-undo"
   "verify-viewport"
+  "verify-library-density"
 )
 
 # These WRITE. Each restores what it touched, but they are opt-in so a routine
