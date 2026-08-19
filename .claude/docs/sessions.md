@@ -4,6 +4,117 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-19 (later still) - A3, the dead ends
+
+### Summary
+
+A3 closed: the three broken routes named in the audit, plus the 404 they all
+landed on. **All three claims were re-measured before anything was built and
+all three held** - which is worth recording as much as a correction would be,
+because the last two sessions ran the other way.
+
+The headline number: `/pedals/{id}` did not exist and **all 67 pedal cards
+linked to it**, so every click in the pedal database was a 404 into a page
+with zero anchors.
+
+Five commits. **448 tests** (up from 424), build clean, `verify-all.sh --all`
+**21 passed, 0 failed**.
+
+### What Was Accomplished
+- [x] `/pedals/[id]` built - the route every card already pointed at
+- [x] A real not-found page; the old one had literally no links
+- [x] "Add Custom Board"/"Add Custom Amp" disabled honestly (owner's call)
+- [x] Dashboard pagination - board eleven was unreachable
+- [x] `verify-routes` - 22 checks, mutation-checked twice
+- [ ] A5 panel density, A4 sharing, then Phase B
+
+### Key Changes
+
+| File | Change |
+|------|--------|
+| `src/app/(dashboard)/pedals/[id]/page.tsx` | NEW - the detail page, spec + provenance |
+| `src/lib/format-pedal.ts` | NEW - draw/dimension formatting, 9 tests |
+| `src/lib/pagination.ts` | NEW - page arithmetic, 15 tests |
+| `src/app/not-found.tsx` | NEW - a 404 with a way out |
+| `src/app/(dashboard)/dashboard/page.tsx` | count + `.range()`, pager nav |
+| `src/app/(dashboard)/{amps,boards}/page.tsx` | the inert buttons disabled |
+| `.claude/scripts/verify-routes.js` | NEW gate, 22 checks, in the writers list |
+
+### Measured before / after
+
+    /pedals/{id}          404 on all 67 cards      ->  200, real row data
+    404 page              0 anchors, no header     ->  2 exits bare, 7 in-app
+    malformed pedal id    22P02 crash risk         ->  404
+    Add Custom Board/Amp  enabled, click = no-op   ->  disabled, says why
+    dashboard reach       10 boards max            ->  all 13, pager at >12
+
+### Technical Decisions
+
+1. **The detail page has no call to action.** "Start a board with this" was
+   written and then deleted: `/editor/new` cannot preselect a pedal, so the
+   button would have promised something it does not do - the exact defect A3
+   exists to remove. Shipping a new fake control while removing two old ones
+   would have been a net loss.
+2. **Disabled, not hidden, for custom board/amp** - the owner's choice from
+   three options. The feature is planned and the button can say so; what it
+   must not do is look ordinary and take a click that goes nowhere.
+3. **A malformed id is a 404, not a 500.** Postgres rejects a non-UUID against
+   a uuid column with 22P02. Without the guard that is a crash on a URL anyone
+   can type into the bar.
+4. **An unreadable `?page=` is page 1.** "0", "-3", "abc", "2.5" all arrive
+   from the URL bar. Answering a typo with an error page is worse than
+   answering it with the first page.
+5. **Both new modules are pure and tested** for the same reason as
+   `config-identity` last session: their interesting cases are inputs a page
+   component cannot assert against.
+
+### Architecture Notes
+
+**`null` AND `0` ARE BOTH FALSY, AND THE TYPE SAYS SO IN CAPITALS.**
+`Pedal.currentMa` is documented as three-state - null is unknown, 0 is a
+measured zero - and `pedal-card.tsx:101` collapses them with
+`pedal.current_ma ? ... : ''`. A passive volume pedal would report as having
+no published draw. **This is latent, not live:** of 67 pedals, exactly one has
+a null draw and NONE has a real zero, so nothing is visibly wrong today. It is
+recorded here so the first passive pedal does not make it visible. The
+dangerous direction - a `?? 0` in a power TOTAL - is already guarded in
+`lib/engine/power` and is not this.
+
+**A root `not-found.tsx` gets a different layout depending on how it was
+reached.** Measured both ways: an unmatched URL (`/nonsense`) renders it
+OUTSIDE the (dashboard) group - no header, and the page's own two links are
+the only way out - while `notFound()` thrown from a page inside the group
+keeps the header and shows seven. The first comment written into that file
+stated the outside case as if it were unconditional; it was corrected against
+the measurement rather than left as a plausible sentence.
+
+**A gate that seeds must derive its account, not guess it.** The pagination
+check needs 13 boards and the account has 3, so it inserts the difference -
+and the first version read `user_id` off whichever configuration row came back
+first. That is correct exactly until the database holds two users' boards. It
+now resolves the account from `VERIFY_EMAIL`, the same identity the browser
+logs in as.
+
+### Next Tasks
+
+- [ ] **A5 - panel density.** Library grouped by category collapsed by default;
+      icon-only tabs; `power-panel.tsx:70` is missing the `min-h-0` its four
+      siblings have.
+- [ ] **A4 - sharing.** `isPublic`/`shareSlug` are in types and RLS already.
+- [ ] **Phase B** - Tactical Telemetry restyle, dark substrate only. Read
+      `.agents/skills/redesign-existing-projects` FIRST - nothing loads it, and
+      its fix-priority order starts at fonts.
+- [ ] **Duplicate a board.** Raised when A2 was reviewed and deliberately not
+      built: it is the one genuinely missing CRUD verb (no `duplicate`/`clone`
+      anywhere in `src/`). Cheap - insert the row, copy its
+      `configuration_pedals` children.
+- [ ] **`pedal-card.tsx` has its own CATEGORY_COLORS/LABELS**, duplicating
+      `lib/constants/pedal-categories`. Two sources for one mapping.
+- [ ] **Lint does not cover `.claude/scripts`** - 100 pre-existing errors of
+      the "Node CommonJS parsed as browser TS" kind.
+
+---
+
 ## Session: 2026-08-19 (later) - A2, and a runner that could not report
 
 ### Summary
