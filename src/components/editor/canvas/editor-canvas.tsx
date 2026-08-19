@@ -163,6 +163,21 @@ export function EditorCanvas() {
    * it.
    */
   const panRef = useRef<{ id: number; x: number; y: number; moved: number } | null>(null);
+  /**
+   * Every pointer currently down on the canvas, so two fingers can be told
+   * from one. Touch produces pointer events too, which is why pinch needs no
+   * separate touch plumbing.
+   */
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<{ dist: number; mid: { x: number; y: number } } | null>(null);
+  /**
+   * Late-bound handles to the pedal drag, which is declared below this point.
+   * The pointer handlers need to be able to END a drag when a second finger
+   * arrives, and reordering the file to satisfy the compiler would put the
+   * gesture code in the middle of the drag code for no benefit.
+   */
+  const dragStateRef = useRef<DragState | null>(null);
+  const handleDragEndRef = useRef<() => void>(() => {});
   const [isPanning, setIsPanning] = useState(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
   const pointerInside = useRef(false);
@@ -171,7 +186,28 @@ export function EditorCanvas() {
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      if (panRef.current) return;
+      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      // Second finger: this is a pinch, not a pan.
+      if (pointersRef.current.size === 2) {
+        panRef.current = null;
+        setIsPanning(false);
+        /*
+         * If a pedal was mid-drag, COMMIT it where it stands rather than
+         * reverting. The user put it there; losing the move to a gesture they
+         * did not know they were starting would be worse than an imprecise
+         * drop, and committing needs no extra state to unwind.
+         */
+        if (dragStateRef.current) handleDragEndRef.current();
+        const [a, b] = [...pointersRef.current.values()];
+        pinchRef.current = {
+          dist: Math.hypot(a.x - b.x, a.y - b.y),
+          mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+        };
+        return;
+      }
+      if (pointersRef.current.size > 2 || panRef.current) return;
+
       const onPedal = (e.target as Element | null)?.closest?.('g.pedal');
       const wantsPan =
         e.button === 1 ||                                   // middle-drag, anywhere
@@ -189,6 +225,27 @@ export function EditorCanvas() {
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      const tracked = pointersRef.current.get(e.pointerId);
+      if (tracked) { tracked.x = e.clientX; tracked.y = e.clientY; }
+
+      // Pinch: scale about the midpoint, and let the midpoint itself pan, so
+      // two fingers zoom and move the board in one gesture.
+      if (pinchRef.current && pointersRef.current.size >= 2) {
+        const [a, b] = [...pointersRef.current.values()];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const prev = pinchRef.current;
+        if (prev.dist > 0 && dist > 0) {
+          const el = svgNode?.getBoundingClientRect();
+          if (el) {
+            zoomAt(useEditorStore.getState().zoom * (dist / prev.dist), { x: mid.x - el.left, y: mid.y - el.top });
+          }
+          panByPixels(-(mid.x - prev.mid.x), -(mid.y - prev.mid.y));
+        }
+        pinchRef.current = { dist, mid };
+        return;
+      }
+
       const st = panRef.current;
       if (!st || st.id !== e.pointerId) return;
       const dx = e.clientX - st.x;
@@ -199,10 +256,12 @@ export function EditorCanvas() {
       // Drag right => content follows the hand => the window moves LEFT.
       panByPixels(-dx, -dy);
     },
-    [panByPixels]
+    [panByPixels, zoomAt, svgNode]
   );
 
   const endPan = useCallback((e: React.PointerEvent) => {
+    pointersRef.current.delete(e.pointerId);
+    if (pointersRef.current.size < 2) pinchRef.current = null;
     const st = panRef.current;
     if (!st || st.id !== e.pointerId) return;
     // A few pixels of travel is a click with a shaky hand, not a pan.
@@ -410,6 +469,12 @@ export function EditorCanvas() {
     setDragState(null);
     setDragPosition(null);
   }, [dragState, dragPosition, movePedal]);
+
+  // Keep the late-bound handles current for the pointer handlers above.
+  useEffect(() => {
+    dragStateRef.current = dragState;
+    handleDragEndRef.current = handleDragEnd;
+  }, [dragState, handleDragEnd]);
 
   // Set up global mouse/touch listeners for drag
   useEffect(() => {

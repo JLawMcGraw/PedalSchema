@@ -26,6 +26,36 @@ const ok = (label, pass, detail) => {
   return pass ? 0 : 1;
 };
 
+/**
+ * Two-finger pinch. Playwright's mouse API is single-pointer, so the touch
+ * pointers are synthesised directly - which is also the only way to exercise
+ * the multi-pointer bookkeeping the canvas keeps.
+ */
+async function pinch(page, cx, cy, fromGap, toGap, steps = 8) {
+  await page.evaluate(
+    async ([x, y, g0, g1, n]) => {
+      const el = document.querySelector('[data-pedal-canvas]');
+      const fire = (type, id, px, py) =>
+        el.dispatchEvent(new PointerEvent(type, {
+          pointerId: id, clientX: px, clientY: py, pointerType: 'touch',
+          isPrimary: id === 1, bubbles: true, cancelable: true, button: 0, buttons: 1,
+        }));
+      fire('pointerdown', 1, x - g0 / 2, y);
+      fire('pointerdown', 2, x + g0 / 2, y);
+      for (let i = 1; i <= n; i++) {
+        const g = g0 + ((g1 - g0) * i) / n;
+        fire('pointermove', 1, x - g / 2, y);
+        fire('pointermove', 2, x + g / 2, y);
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      fire('pointerup', 1, x - g1 / 2, y);
+      fire('pointerup', 2, x + g1 / 2, y);
+    },
+    [cx, cy, fromGap, toGap, steps]
+  );
+  await page.waitForTimeout(200);
+}
+
 /** Dispatch a real wheel event; Playwright's mouse.wheel cannot set ctrlKey. */
 async function wheel(page, clientX, clientY, deltaY, ctrlKey) {
   await page.evaluate(
@@ -199,6 +229,20 @@ const vp = (page) => page.evaluate(() => window.__pedalSchemaViewport());
       by1 > st.rect.top && by0 < st.rect.top + st.rect.height;
     failures += ok('panning to the stops never loses the board', finite && intersects,
       `board spans x ${bx0.toFixed(0)}..${bx1.toFixed(0)}, canvas x ${st.rect.left.toFixed(0)}..${(st.rect.left + st.rect.width).toFixed(0)}`);
+
+    // ---- 7. Pinch to zoom ------------------------------------------------
+    await page.getByRole('button', { name: /%/ }).first().click(); // Fit
+    await page.waitForTimeout(250);
+    const preP = await vp(page);
+    await pinch(page, rect.left + rect.width / 2, rect.top + rect.height / 2, 120, 360);
+    const postP = await vp(page);
+    failures += ok('two fingers spreading zooms in', postP.zoom > preP.zoom * 1.5,
+      `zoom ${preP.zoom.toFixed(3)} -> ${postP.zoom.toFixed(3)} for a 3x finger spread`);
+
+    await pinch(page, rect.left + rect.width / 2, rect.top + rect.height / 2, 360, 120);
+    const postP2 = await vp(page);
+    failures += ok('two fingers pinching zooms out', postP2.zoom < postP.zoom * 0.75,
+      `zoom ${postP.zoom.toFixed(3)} -> ${postP2.zoom.toFixed(3)}`);
 
     failures += ok('no page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
   } finally {
