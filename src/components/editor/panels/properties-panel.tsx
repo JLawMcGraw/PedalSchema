@@ -16,6 +16,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { getCategoryColor, getCategoryLabel } from '@/lib/constants/pedal-categories';
+import { formatCurrentDraw, formatDimensions, formatVoltage } from '@/lib/format-pedal';
 import { hasTopOrBottomSignalJack, isFootSwept } from '@/lib/engine/layout/rotation-eligibility';
 import { BoardDetails } from './board-details';
 import type { ChainLocation } from '@/types';
@@ -111,11 +112,23 @@ export function PropertiesPanel() {
             <div className="p-3 space-y-2 text-xs">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Size</span>
-                <span>{selectedPedal.widthInches}&quot; × {selectedPedal.depthInches}&quot; × {selectedPedal.heightInches}&quot;</span>
+                <span>
+                  {formatDimensions(
+                    selectedPedal.widthInches,
+                    selectedPedal.depthInches,
+                    selectedPedal.heightInches
+                  )}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Power</span>
-                <span>{selectedPedal.voltage}V{selectedPedal.currentMa && ` / ${selectedPedal.currentMa}mA`}</span>
+                {/* This used to be `currentMa && ...`, which renders a BARE 0
+                    into the sentence for a measured zero - "9V0" - because &&
+                    yields the falsy operand and React prints it. format-pedal
+                    already had the three-state right and is unit-tested for it. */}
+                <span>
+                  {formatVoltage(selectedPedal.voltage)} / {formatCurrentDraw(selectedPedal.currentMa)}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Position</span>

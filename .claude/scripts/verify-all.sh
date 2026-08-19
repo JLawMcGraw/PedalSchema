@@ -30,6 +30,7 @@ RUN_WRITERS=0
 READ_ONLY=(
   "verify-palette"
   "verify-nav-state"
+  "verify-readouts"
   "verify-pedal-jacks"
   "verify-pedal-dimensions"
   "verify-pedal-images"

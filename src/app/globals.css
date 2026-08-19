@@ -85,6 +85,18 @@
   }
   body {
     @apply bg-background text-foreground;
+
+    /* Tabular figures EVERYWHERE, not per-component.
+       In proportional figures a "1" is narrower than an "8", so a column of
+       currents - 90mA, 1240mA, 18mA - puts its digits in a different place on
+       every row and the eye cannot compare them by shape. This app is a column
+       of numbers with a picture attached.
+
+       Set once on body and inherited, because the per-component version was
+       already tried: sixteen `tabular-nums` classes across eight files, and 67
+       rendered values still proportional. A rule you have to remember is a rule
+       that gets forgotten. */
+    font-variant-numeric: tabular-nums;
   }
 }
 

@@ -15,11 +15,13 @@ import type { JackSide, JackType, PowerPolarity, ChainLocation } from '@/types';
  *   n    -> "n mA"
  *
  * The trap is that `null` and `0` are both falsy, so the obvious
- * `ma ? `${ma} mA` : 'Unknown'` reports a measured zero as unknown.
- * `pedal-card.tsx` does exactly that. It is latent rather than wrong today -
- * of 67 pedals, one has a null draw and NONE has a real zero - so this is
- * written to be correct before the first passive pedal arrives, not to fix a
- * visible bug.
+ * `ma ? `${ma} mA` : 'Unknown'` reports a measured zero as unknown. Two call
+ * sites used to hand-roll exactly that and have been routed through here:
+ * `pedal-card.tsx` printed nothing for a measured zero, and
+ * `properties-panel.tsx` was worse - `{voltage}V{ma && ...}` yields the falsy
+ * operand, so React would have printed "9V0". Both were latent rather than
+ * wrong today: of 67 pedals one has a null draw and NONE has a real zero,
+ * which is precisely why neither would have been noticed.
  *
  * The dangerous direction is the other one and is guarded elsewhere: a `?? 0`
  * in a power TOTAL would report a supply as adequate while ignoring every

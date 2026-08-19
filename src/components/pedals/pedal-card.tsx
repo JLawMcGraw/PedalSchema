@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import type { PedalCategory } from '@/types';
 import { getCategoryColor, getCategoryShortLabel } from '@/lib/constants/pedal-categories';
+import { formatCurrentDraw, formatDimensions, formatVoltage } from '@/lib/format-pedal';
 
 interface PedalCardProps {
   pedal: {
@@ -58,16 +59,9 @@ export function PedalCard({ pedal, onClick, selected }: PedalCardProps) {
       </CardHeader>
       <CardContent>
         <div className="text-sm text-muted-foreground space-y-1">
+          <p>{formatDimensions(pedal.width_inches, pedal.depth_inches, pedal.height_inches)}</p>
           <p>
-            {pedal.width_inches}&quot; × {pedal.depth_inches}&quot; × {pedal.height_inches}&quot;
-          </p>
-          <p className="tabular-nums">
-            {/* current_ma has three states and a truthy check collapses two of
-                them: null is "nobody has measured it", 0 would be a real
-                reading. No pedal in the catalogue is 0 today, which is exactly
-                why this would have gone unnoticed. */}
-            {pedal.voltage}V
-            {pedal.current_ma === null ? '' : ` / ${pedal.current_ma}mA`}
+            {formatVoltage(pedal.voltage)} / {formatCurrentDraw(pedal.current_ma)}
           </p>
         </div>
       </CardContent>
