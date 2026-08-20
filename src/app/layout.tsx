@@ -44,7 +44,7 @@ export default function RootLayout({
     // `dark` is not a theme switch - there is one palette and it is on :root.
     // The class is what lets shadcn's 22 `dark:` utilities resolve; the
     // @custom-variant in globals.css keys off it. See design-direction.md.
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" data-scroll-behavior="smooth">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
