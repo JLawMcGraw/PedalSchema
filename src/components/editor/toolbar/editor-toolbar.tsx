@@ -4,7 +4,6 @@ import { useEffect } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useEditorStore } from '@/store/editor-store';
 import { useConfigurationStore } from '@/store/configuration-store';
-import { useDerivedConfiguration } from '@/store/derived';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +22,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { MagicWand, GridFour, PlugsConnected, DotsThree, MagnifyingGlassPlus, MagnifyingGlassMinus, ArrowCounterClockwise, ArrowClockwise } from '@phosphor-icons/react';
 import { OptimizationSummary } from './optimization-summary';
+import { BoardReadout } from './board-readout';
 import { EditableTitle } from './editable-title';
 
 interface EditorToolbarProps {
@@ -52,7 +52,6 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
       canRedo: s.history.future.length > 0,
     }))
   );
-  const { collisions } = useDerivedConfiguration((d) => ({ collisions: d.collisions }));
 
   /**
    * Every global editor shortcut lives here, in one handler, so "what does
@@ -155,12 +154,14 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
               </TooltipContent>
             </Tooltip>
           )}
-          {collisions.length > 0 && (
-            <Badge variant="destructive" className="text-xs shrink-0">
-              {collisions.length}
-            </Badge>
-          )}
         </div>
+
+        {/* The vital signs, in the 899px that used to be nothing. The bare
+            red collision count that lived in the left group is now the FIT
+            field: a naked "2" in destructive red said something was wrong
+            without saying what, and it duplicated a number the readout has
+            to carry anyway. */}
+        <BoardReadout />
 
         {/* Right side - controls */}
         <div className="flex items-center gap-1 shrink-0">
