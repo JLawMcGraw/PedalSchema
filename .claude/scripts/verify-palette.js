@@ -318,6 +318,76 @@ for (const surface of [tokens.card.lin, tokens.background.lin]) {
   }
 }
 
+// --- the CABLE palette ------------------------------------------------------
+//
+// The canvas draws three cables a player has to tell apart at a glance, and
+// they used to be three raw Tailwind hues. Held to the same arithmetic as
+// everything else, and read out of the source so it cannot drift.
+console.log('\n=== the cable palette ===');
+
+const cableSrc = fs.readFileSync(
+  path.join(ROOT, 'src', 'lib', 'engine', 'cables', 'explain.ts'),
+  'utf8'
+);
+const cables = {};
+const cableBlock = cableSrc.slice(cableSrc.indexOf('const COLOURS'));
+for (const m of cableBlock
+  .slice(0, cableBlock.indexOf('};'))
+  .matchAll(/(\w+):\s*'(#[0-9a-f]{6})'/g)) {
+  cables[m[1]] = { hex: m[2], lin: hexToLinear(m[2]) };
+}
+check(Object.keys(cables).length === 5, `read ${Object.keys(cables).length} cable colours out of explain.ts`);
+
+// A power cable that looks like a failed one is the trap this guards. They
+// shared a colour until 2026-08-19; power is unreachable today, which is
+// exactly why nobody would have noticed.
+check(
+  cables.power && cables.unroutable && cables.power.hex !== cables.unroutable.hex,
+  'a power cable is not drawn in the failure colour',
+  `power ${cables.power?.hex} vs unroutable ${cables.unroutable?.hex}`
+);
+
+// A perimeter run is the same cable, just routed round the outside - the dash
+// is what carries that, so the colour must NOT also change.
+check(
+  cables.around && cables.patch && cables.around.hex === cables.patch.hex,
+  'a perimeter run keeps its cable colour, so the dash adds information',
+  `around ${cables.around?.hex} vs patch ${cables.patch?.hex}`
+);
+
+// The three a player actually has to separate on a busy board.
+const onCanvas = ['instrument', 'patch', 'unroutable'].map((k) => ({ name: k, ...cables[k] }));
+let worstCable = Infinity;
+let worstCablePair = '';
+for (let i = 0; i < onCanvas.length; i++) {
+  for (let j = i + 1; j < onCanvas.length; j++) {
+    const a = onCanvas[i];
+    const b = onCanvas[j];
+    const cvd = Math.min(
+      deltaE(simulate(a.lin, MACHADO.protan), simulate(b.lin, MACHADO.protan)),
+      deltaE(simulate(a.lin, MACHADO.deutan), simulate(b.lin, MACHADO.deutan))
+    );
+    if (cvd < worstCable) {
+      worstCable = cvd;
+      worstCablePair = `${a.name}/${b.name}`;
+    }
+  }
+}
+check(
+  worstCable >= CVD_TARGET,
+  `worst cable pair under protan/deutan: ${worstCable.toFixed(1)} dE ` +
+    `(needs ${CVD_TARGET}) - ${worstCablePair}`,
+  'the raw-Tailwind set scored 6.4 here, on instrument/patch'
+);
+
+// The board is its own surface - a physical object on the substrate - so the
+// cables are checked against IT, not against the panel colour.
+const BOARD = hexToLinear('#1f2937');
+for (const c of onCanvas) {
+  const r = contrast(c.lin, BOARD);
+  check(r >= 3, `${c.name} ${c.hex} reads against the board: ${r.toFixed(2)}:1 (needs 3)`);
+}
+
 console.log('\n-----------------------------------------');
 if (failures) {
   console.log(`FAIL: ${failures} check(s) failed\n`);

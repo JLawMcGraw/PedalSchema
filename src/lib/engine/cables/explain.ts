@@ -51,12 +51,35 @@ export interface CableAppearance {
   kind: CableKind;
 }
 
+/**
+ * The cable palette, taken from the app's own tokens rather than raw Tailwind.
+ *
+ * These were `#f59e0b`, `#22c55e` and `#ef4444` - three hues from outside the
+ * design system, and the last of it on the canvas. The replacement is not a
+ * repaint for its own sake: the old set put its two most common cables 6.4 dE
+ * apart under simulated deuteranopia, below the 8.0 the project holds
+ * categorical colours to, so a red-green colourblind player could not reliably
+ * tell an instrument cable from a patch cable. The new set's worst pair is
+ * 11.1, and every one of them clears 4:1 against the board.
+ *
+ *   instrument  --primary            the live signal in and out of the board
+ *   patch       --muted-foreground   the bulk of the cables, so they recede
+ *   unroutable  --destructive        a failure, and the only red on the canvas
+ *
+ * `power` is UNREACHABLE today - power cables are filtered out before routing
+ * (see `cables/index.ts`, `.filter(c => c.cableType !== 'power')`) - but it
+ * used to share its colour with `unroutable`, so the first power cable ever
+ * drawn would have looked like a failed one. It has its own colour now.
+ *
+ * Arithmetic re-checked by `.claude/scripts/verify-palette.js`, which reads
+ * these values straight out of this file.
+ */
 const COLOURS: Record<CableKind, string> = {
-  instrument: '#f59e0b',
-  patch: '#22c55e',
-  power: '#ef4444',
-  around: '#22c55e',
-  unroutable: '#ef4444',
+  instrument: '#56dc85', // oklch(0.80 0.17 152)  = --primary
+  patch: '#9fa5ac', //      oklch(0.72 0.012 250) = --muted-foreground
+  power: '#d37e01', //      oklch(0.67 0.15 65)   - unreachable, see above
+  around: '#9fa5ac', //     a perimeter patch run is still a patch cable
+  unroutable: '#ec5b57', // oklch(0.66 0.18 25)   = --destructive
 };
 
 /** Everything the appearance depends on - kept narrow so tests need no fixture. */

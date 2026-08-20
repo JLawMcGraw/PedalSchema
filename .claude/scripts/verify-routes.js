@@ -118,6 +118,18 @@ const SEED_PREFIX = 'route gate seed';
       .single();
 
     await page.goto(`${BASE_URL}${sample[0]}`);
+    // WAIT FOR THE REAL PAGE, NOT THE SKELETON. This route streams now - it
+    // gained a loading.tsx on 2026-08-19 - so `goto` resolves while the
+    // placeholder is still on screen. Reading there saw a page with no
+    // manufacturer and no dimensions on it, which looked like the detail page
+    // had lost its data. Adding a loading boundary makes every immediate-read
+    // assertion on that route racy; this is the cost of it, paid once.
+    await page
+      .locator('[data-slot="skeleton"]')
+      .first()
+      .waitFor({ state: 'detached', timeout: 15000 })
+      .catch(() => {});
+    await page.locator('h1').first().waitFor({ timeout: 15000 }).catch(() => {});
     const shown = await page.evaluate(() => ({
       h1: document.querySelector('h1')?.textContent?.trim() ?? '',
       text: document.body.innerText.replace(/\s+/g, ' '),
@@ -151,6 +163,13 @@ const SEED_PREFIX = 'route gate seed';
       .maybeSingle();
     if (nullDraw) {
       await page.goto(`${BASE_URL}/pedals/${nullDraw.id}`);
+      // Same streaming race as above: the skeleton has no "Unknown" on it.
+      await page
+        .locator('[data-slot="skeleton"]')
+        .first()
+        .waitFor({ state: 'detached', timeout: 15000 })
+        .catch(() => {});
+      await page.locator('h1').first().waitFor({ timeout: 15000 }).catch(() => {});
       const t = await page.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
       check(
         /Unknown/i.test(t) && !/0 mA/.test(t),
