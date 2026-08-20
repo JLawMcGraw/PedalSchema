@@ -1,6 +1,5 @@
 'use client';
 
-import { useShallow } from 'zustand/react/shallow';
 import { useConfigurationStore } from '@/store/configuration-store';
 import { useDerivedConfiguration } from '@/store/derived';
 
