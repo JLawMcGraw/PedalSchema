@@ -6,6 +6,7 @@ import { useConfigurationStore } from '@/store/configuration-store';
 import { useDerivedConfiguration } from '@/store/derived';
 import { useEditorStore } from '@/store/editor-store';
 import { describePowerSummary, describePowerPlan, TYPICAL_OUTPUT_MA } from '@/lib/engine/power';
+import { derivePedalDisplayNames, displayNameFor } from '@/lib/pedal-display-names';
 
 export function PowerPanel() {
   const { power, powerPlan } = useDerivedConfiguration((d) => ({
@@ -30,9 +31,7 @@ export function PowerPanel() {
   if (power.pedalCount === 0) {
     return (
       <div className="flex flex-col h-full w-full overflow-hidden">
-        <div className="px-3 py-2 border-b shrink-0">
-          <h3 className={PANEL_TITLE}>Power</h3>
-        </div>
+        <Header count={0} />
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs p-4 text-center">
           Add pedals to see what they draw
         </div>
@@ -41,6 +40,16 @@ export function PowerPanel() {
   }
 
   const hasUnknown = power.unknown.length > 0;
+  const highDrawIds = new Set(power.highDraw.map((h) => h.placedPedalId));
+
+  /*
+   * The fourth call site for this, found by looking at the panel: two CS-3s
+   * listed as "CS-3" and "CS-3", eleven rows apart, both wanting an output
+   * assignment. Deciding which one to plug where is impossible when they have
+   * the same name. Same ordinals as the Chain panel and the Cables list,
+   * because they all come from chain position.
+   */
+  const displayNames = derivePedalDisplayNames(placedPedals, pedalsById);
 
   // Every pedal that draws current, biggest first - the order you would plan a
   // supply in.
@@ -50,7 +59,7 @@ export function PowerPanel() {
       return pedal
         ? {
             id: placed.id,
-            name: pedal.name,
+            name: displayNameFor(displayNames, placed.id, pedal.name),
             ma: pedal.currentMa ?? null,
             outputId: placed.powerOutputId ?? null,
           }
@@ -64,22 +73,18 @@ export function PowerPanel() {
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
-      <div className="px-3 py-2 border-b shrink-0">
-        <h3 className={PANEL_TITLE}>Power</h3>
-      </div>
+      <Header count={power.pedalCount} />
 
       {/* min-h-0 matches the four sibling panels. It is NOT a bug fix: a flex
           item that scrolls already has an automatic minimum size of 0, and
           this panel was measured unclipped at every viewport from 1920x1080
           down to 1280x560. It is here so the five panels read the same. */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
-        {/* Headline. "At least" whenever a pedal's draw is unrecorded - a bare
-            number would be read as the whole story. */}
-        <div className="border rounded-lg p-3">
-          {/* The glanceable number carries its own qualifier. A separate "at
-              least" badge beside a bare 301 repeated what the sentence below
-              already said, and a reader who takes in only the numeral has to
-              get the right idea from it alone. */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {/* THE HEADLINE. The one place §3.1 macro-typography earns its keep in
+            a 287px panel: the number leads and its label goes to the micro
+            register. "At least" whenever a draw is unrecorded - a bare number
+            would be read as the whole story. */}
+        <div className="border-b px-3 py-3">
           <div className="flex items-baseline gap-1.5">
             {hasUnknown && (
               <span className="text-2xl font-semibold text-muted-foreground" aria-hidden>
@@ -89,51 +94,45 @@ export function PowerPanel() {
             <span className="text-2xl font-semibold tabular-nums">{power.knownTotalMa}</span>
             <span className="text-sm text-muted-foreground">mA</span>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {describePowerSummary(power)}
-          </p>
+          {/* Only when it ADDS something. The all-known sentence reads
+              "1586mA across 22 pedals", which is the numeral above it and the
+              count in the header, said a third time. */}
+          {hasUnknown && (
+            <p className="text-xs text-muted-foreground mt-1">{describePowerSummary(power)}</p>
+          )}
         </div>
 
         {/* Supply. Choosing one moves this panel from "what does the board
             want" to "will this brick give it", which are different questions -
             a 500mA board on a 2000mA supply still fails if six pedals share
-            one 100mA output. */}
-        <div className="border rounded-lg overflow-hidden">
-          <div className="px-3 py-2 bg-muted/50 border-b">
-            <span className="text-xs font-medium">Supply</span>
-          </div>
-          <div className="p-3 space-y-2">
-            <select
-              aria-label="Power supply"
-              className="w-full text-xs border rounded-none px-2 py-1 bg-background"
-              value={powerSupply?.id ?? ''}
-              onChange={(e) =>
-                setPowerSupply(powerSupplies.find((s) => s.id === e.target.value) ?? null)
-              }
-            >
-              <option value="">No supply chosen - showing demand only</option>
-              {powerSupplies.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.manufacturer} {s.name} ({s.outputs.length} outputs)
-                </option>
-              ))}
-            </select>
-            {powerPlan && (
-              <p className="text-xs text-muted-foreground">{describePowerPlan(powerPlan)}</p>
-            )}
-          </div>
-        </div>
+            one 100mA output. Kept high in the panel on the owner's call. */}
+        <Section label="Supply">
+          <select
+            aria-label="Power supply"
+            className="w-full text-xs border rounded-none px-2 py-1 bg-background"
+            value={powerSupply?.id ?? ''}
+            onChange={(e) =>
+              setPowerSupply(powerSupplies.find((s) => s.id === e.target.value) ?? null)
+            }
+          >
+            <option value="">No supply chosen - showing demand only</option>
+            {powerSupplies.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.manufacturer} {s.name} ({s.outputs.length} outputs)
+              </option>
+            ))}
+          </select>
+          {powerPlan && (
+            <p className="pt-2 text-xs text-muted-foreground">{describePowerPlan(powerPlan)}</p>
+          )}
+        </Section>
 
         {/* Per OUTPUT, because that is where supplies actually fail. */}
         {powerPlan && (
-          <div className="border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 bg-muted/50 border-b">
-              <span className="text-xs font-medium">Outputs</span>
-            </div>
-            <div className="p-3 space-y-2">
+          <Section label="Outputs" count={powerPlan.outputs.length}>
+            <div className="space-y-2">
               {powerPlan.outputs.map((load) => {
-                const problem =
-                  load.overCapacity || load.voltageMismatch.length > 0;
+                const problem = load.overCapacity || load.voltageMismatch.length > 0;
                 return (
                   <div key={load.output.id} className="text-xs">
                     <div className="flex justify-between gap-2">
@@ -175,100 +174,76 @@ export function PowerPanel() {
                 );
               })}
               {powerPlan.unassigned.length > 0 && (
-                <p className="text-xs text-muted-foreground pt-1 border-t">
+                <p className="border-t pt-1 text-xs text-muted-foreground">
                   {powerPlan.unassigned.length} pedal
                   {powerPlan.unassigned.length === 1 ? '' : 's'} not plugged into anything yet.
                 </p>
               )}
             </div>
-          </div>
+          </Section>
         )}
 
         {/* Voltage split, only when it can actually bite */}
         {power.byVoltage.length > 1 && (
-          <div className="border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 bg-muted/50 border-b">
-              <span className="text-xs font-medium">By voltage</span>
-            </div>
-            <div className="p-3 space-y-1">
-              {power.byVoltage.map((g) => (
-                <div key={g.voltage} className="flex justify-between text-xs">
-                  <span>{g.voltage}V</span>
-                  <span className="text-muted-foreground tabular-nums">
-                    {g.knownTotalMa}mA / {g.pedalCount} pedal{g.pedalCount === 1 ? '' : 's'}
-                    {g.unknownCount > 0 && ` (${g.unknownCount} unknown)`}
-                  </span>
-                </div>
-              ))}
-              <p className="text-xs text-muted-foreground pt-1">
-                Pedals on different voltages cannot share an output.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {power.highDraw.length > 0 && (
-          <div className="border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 bg-muted/50 border-b">
-              <span className="text-xs font-medium">Needs its own output</span>
-            </div>
-            <div className="p-3 space-y-1">
-              {power.highDraw.map((h) => (
-                <button
-                  key={h.placedPedalId}
-                  onClick={() => selectPedal(h.placedPedalId)}
-                  className="flex justify-between w-full text-xs hover:text-primary"
-                >
-                  <span>{h.name}</span>
-                  <span className="tabular-nums">{h.currentMa}mA</span>
-                </button>
-              ))}
-              <p className="text-xs text-muted-foreground pt-1">
-                More than a typical {TYPICAL_OUTPUT_MA}mA output gives, so each of these
-                wants an output to itself.
-              </p>
-            </div>
-          </div>
+          <Section label="By voltage" count={power.byVoltage.length}>
+            {power.byVoltage.map((g) => (
+              <div key={g.voltage} className="flex justify-between text-xs">
+                <span>{g.voltage}V</span>
+                <span className="text-muted-foreground tabular-nums">
+                  {g.knownTotalMa}mA / {g.pedalCount} pedal{g.pedalCount === 1 ? '' : 's'}
+                  {g.unknownCount > 0 && ` (${g.unknownCount} unknown)`}
+                </span>
+              </div>
+            ))}
+            <p className="pt-1 text-xs text-muted-foreground">
+              Pedals on different voltages cannot share an output.
+            </p>
+          </Section>
         )}
 
         {hasUnknown && (
-          <div className="border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 bg-muted/50 border-b">
-              <span className="text-xs font-medium">Draw not recorded</span>
-            </div>
-            <div className="p-3 space-y-1">
-              {power.unknown.map((u) => (
-                <button
-                  key={u.placedPedalId}
-                  onClick={() => selectPedal(u.placedPedalId)}
-                  className="block w-full text-left text-xs hover:text-primary"
-                >
-                  {u.name}
-                </button>
-              ))}
-              <p className="text-xs text-muted-foreground pt-1">
-                Not counted above. The total is a floor until these are known -
-                it is not that they draw nothing.
-              </p>
-            </div>
-          </div>
+          <Section label="Draw not recorded" count={power.unknown.length}>
+            {power.unknown.map((u) => (
+              <button
+                key={u.placedPedalId}
+                onClick={() => selectPedal(u.placedPedalId)}
+                className="block w-full text-left text-xs hover:text-primary"
+              >
+                {u.name}
+              </button>
+            ))}
+            <p className="pt-1 text-xs text-muted-foreground">
+              Not counted above. The total is a floor until these are known -
+              it is not that they draw nothing.
+            </p>
+          </Section>
         )}
 
-        {/* Per-pedal, biggest first */}
-        <div className="border rounded-lg overflow-hidden">
-          <div className="px-3 py-2 bg-muted/50 border-b">
-            <span className="text-xs font-medium">Every pedal</span>
-          </div>
-          <div className="p-3 space-y-1">
+        {/*
+          EVERY PEDAL, and the high-draw ones marked in place.
+          "Needs its own output" used to be a section of its own listing
+          Timeline 300, BigSky 300, EQ-200 170, IR-2 160 - which are rows one
+          to four of THIS list, because it is sorted by draw descending. The
+          same four pedals, twice on one screen, eleven rows apart.
+        */}
+        <Section label="Every pedal" count={draws.length}>
+          <div className="space-y-1">
             {draws.map((d) => (
               <div key={d.id} className="space-y-0.5">
                 <button
                   onClick={() => selectPedal(d.id)}
-                  className="flex justify-between w-full text-xs hover:text-primary"
+                  className="flex w-full items-baseline justify-between gap-2 text-xs hover:text-primary"
                 >
-                  <span className="truncate pr-2">{d.name}</span>
-                  <span className="tabular-nums text-muted-foreground shrink-0">
-                    {d.ma === null ? 'unknown' : `${d.ma}mA`}
+                  <span className="min-w-0 truncate pr-1">{d.name}</span>
+                  <span className="flex shrink-0 items-baseline gap-1.5">
+                    {highDrawIds.has(d.id) && (
+                      <span className="font-mono text-[10px] uppercase tracking-widest text-warning">
+                        own
+                      </span>
+                    )}
+                    <span className="tabular-nums text-muted-foreground">
+                      {d.ma === null ? 'unknown' : `${d.ma}mA`}
+                    </span>
                   </span>
                 </button>
                 {/* Assignment lives beside the draw, because deciding where a
@@ -291,8 +266,59 @@ export function PowerPanel() {
               </div>
             ))}
           </div>
-        </div>
+          {power.highDraw.length > 0 && (
+            <p className="pt-2 text-xs text-muted-foreground">
+              <span className="font-mono text-[10px] uppercase tracking-widest text-warning">own</span>
+              {' '}- more than a typical {TYPICAL_OUTPUT_MA}mA output gives, so each of these
+              wants an output to itself.
+            </p>
+          )}
+        </Section>
       </div>
     </div>
+  );
+}
+
+function Header({ count }: { count: number }) {
+  return (
+    <div className="flex shrink-0 items-baseline justify-between gap-2 border-b px-3 py-2">
+      <h3 className={PANEL_TITLE}>Power</h3>
+      {count > 0 && (
+        <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+          {count} pedal{count === 1 ? '' : 's'}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * One hairline section.
+ *
+ * This panel was SEVEN bordered cards, each with its own filled header bar -
+ * the pattern the Routing panel was cured of in the same redesign that left
+ * this one alone. Card chrome is for elevation that communicates hierarchy;
+ * seven stacked cards communicate none, they just draw fourteen more lines
+ * than the content needs.
+ */
+function Section({
+  label,
+  count,
+  children,
+}: {
+  label: string;
+  count?: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="border-b">
+      <div className="flex items-baseline justify-between gap-2 px-3 pb-1 pt-2">
+        <h4 className={PANEL_TITLE}>{label}</h4>
+        {count !== undefined && (
+          <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{count}</span>
+        )}
+      </div>
+      <div className="px-3 pb-2">{children}</div>
+    </section>
   );
 }
