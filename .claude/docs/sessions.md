@@ -4,35 +4,76 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
-## Session: 2026-08-20 (second) - the three faults in the editor chrome
+## Session: 2026-08-20 (second) - the measurements, and four bugs that were hiding behind counts
 
 ### Summary
 
-The previous entry's Next Tasks, top three: left rail dead space, the toolbar
-gap, the chain panel's prose block. All three closed. Three commits.
+Started as the previous entry's top three Next Tasks and became a **35-commit
+session**: the editor chrome, then the maintenance queue, then two panels the
+owner called messy, then the dashboard.
 
-Every one was **measured at the viewport before being touched**, which is the
-correction from the previous session - and the measurement changed the work
-twice: it caught a regression I introduced, and it set a breakpoint I would
-otherwise have guessed.
+**The through-line is that four separate defects were hiding behind a NUMBER
+nobody read to the end of.**
 
-**467 tests**, `verify-all.sh --all` **29 passed, 0 failed**, run twice.
+| Hiding behind | The defect |
+|---|---|
+| "152 lint errors, all no-require-imports" | It was **154**, and the two extras were `Spine` rebuilding all 22 chain rows on every render |
+| An unused-variable warning | `noLegalCandidate` shipped a weaker expression than the one it had named - the app told users "could not fit these pedals" about boards that fit |
+| A gate outside `verify-all.sh` | `verify-knockout-on-board` had been failing unnoticed, for three separate reasons |
+| A `board` parameter nobody used | `detectCollisions` never checked bounds, so a pedal off the board was invisible to the whole UI |
+
+**None of them was found by a test.** Each was found by reading something the
+codebase had already written down and stopped believing.
+
+`npm run lint` went **154 errors + 27 warnings -> 0 problems**, and the two
+real bugs surfaced within an hour of the noise being scoped away.
+
+**495 tests** (from 467), **35 gates** (from 29), lint 0, build clean.
 
 ### What Was Accomplished
+
+**Editor chrome** (the original three)
 - [x] **Toolbar** - the readout from `design-direction.md`'s own opening
       sketch, finally built. 899.1px void -> 254.6px
 - [x] **Left rail** - "On this board", an alphabetical index. 195px -> 0
 - [x] **Chain notices** - log records with a level gutter, not a paragraph
-- [x] The bare red collision badge retired into the readout's FIT field
-- [x] The library's pedal count moved from a pinned footer into its header
+
+**Bugs**
+- [x] `Spine` rebuilding all 22 chain rows on every render
+- [x] `noLegalCandidate` lying on the nothing-to-search path
+- [x] Off-board pedals invisible to `detectCollisions`, and `rotatePedal`
+      unclamped - the way to create one
+- [x] The hydration error: reproduced, and shown to be **dev-only**
+
+**Features**
+- [x] **Duplicate a board** - the last missing CRUD verb
+- [x] **og:image** - a shared link previews as the board
+- [x] **Dashboard**: shared scale + rails, fault markers, the rig strip
+
+**Panels**
+- [x] **Cables** rebuilt - shopping list first, numbering and Signal Flow deleted
+- [x] **Power** rebuilt - seven cards to hairline sections, duplicate list gone
+
+**Housekeeping**
+- [x] Lint 154 errors -> 0; four gates recovered into the suite; every gate
+      selector moved off text onto `data-` handles
+- [x] One answer to "which CS-3 is this", now serving four call sites
 
 ### Key Changes
 | File | Change |
 |---|---|
 | `toolbar/board-readout.tsx` | NEW - PEDALS / CABLE / DRAW / FIT |
-| `toolbar/editor-toolbar.tsx` | readout wired in, bare collision badge removed |
-| `panels/pedal-library-panel.tsx` | count into header, `OnThisBoard` roster in the tail |
-| `panels/signal-chain-panel.tsx` | `IssueRow` - ERROR / WARN / NOTE in a fixed gutter |
+| `lib/pedal-display-names.ts` | NEW - one source for duplicate-name ordinals |
+| `lib/duplicate-configuration.ts` | NEW - copy by STRIPPING columns, not listing them |
+| `s/[slug]/opengraph-image.tsx` | NEW - a shared link draws the board |
+| `scripts/verify-hydration.js` | NEW - gate 35 |
+| `panels/cable-list-panel.tsx` | rebuilt - answer above the document |
+| `panels/power-panel.tsx` | rebuilt - hairline sections, list shown once |
+| `engine/collision/index.ts` | finally reads its `board` |
+| `engine/layout/index.ts` | `noLegalCandidate` uses the rule it had named |
+| `dashboard/page.tsx` | shared scale, rails, faults, rig strip, error state |
+| `layout/header.tsx` | the hydration guard that had become a divergence |
+| `eslint.config.mjs` | `no-require-imports` scoped off the Node scripts |
 
 ### The measurements
 
@@ -595,6 +636,11 @@ unchanged, plus what this session did not touch:
       at 1600x900. It is a `max-h`, so nothing breaks at other heights, but on
       a very short viewport the roster and the category list compete and the
       arithmetic behind the number no longer holds.
+- [ ] **DEPLOY: set `NEXT_PUBLIC_SITE_URL` in production.** og:image is emitted
+      as an ABSOLUTE url. `metadataBase` falls back to
+      `VERCEL_PROJECT_PRODUCTION_URL` and then to localhost, and a localhost
+      og:image is a broken preview everywhere the link is actually pasted.
+      Nothing in the repo can catch this - it is environment, not code.
 
 ---
 
@@ -685,16 +731,17 @@ only accent, green for at most one element. This app keeps signal green: red
 already means "will not fit" on a cable and "collision" on a pedal, and
 promoting it to brand accent would destroy a signal the canvas depends on.
 
-### Verification
+### Verification (end of session)
 
     npx tsc --noEmit         clean
     npm run build            Compiled successfully
-    npm test                 467 passed, 4 skipped
-    verify-all.sh --all      29 passed, 0 failed
-    database                 2 configurations, 0 seed rows - as found
-    docScrollH               900 of 900 (was 901)
-    right-panel gutter       12px (was 4px)
-    rectangular radii        0 (was 121 at 6px, 46 at 4px)
+    npm run lint             0 problems      (from 154 errors + 27 warnings)
+    npm test                 495 passed, 4 skipped   (from 467)
+    verify-all.sh --all      35 passed, 0 failed     (from 29)
+    fingerprint              IDENTICAL on both real boards
+    database                 2 configurations - as found, no gate debris
+    console                  0 messages on 5 routes (dev overlay note aside)
+    debug code added         none - no console.log, no TODO, no temp scripts
 
 ### Next Tasks - the design continues here
 
