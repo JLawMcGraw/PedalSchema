@@ -344,6 +344,41 @@ it exits non-zero, the suite names it. `knockout-regression` keeps its name -
 referenced by name from other gates and the docs, and the name predates the
 rule.
 
+**The selector sweep** (`71f6be4`). Two gates broke this session from text
+selectors and neither was reported, so the rest got swept. **29 text/shape bets
+across 11 gates -> 1**, and the one left is not a bet.
+
+**Nine of them selected a panel TAB by its label, across six gates** - one
+rename would have taken out six at once. And the label is not the contract:
+`Props` renders as "PROPS" through a CSS uppercase transform, so
+`:text-is("Routing")` passes today and breaks the day someone types the label
+in capitals, **with the screen looking identical either way**.
+
+    data-panel-tab      the tab's VALUE   9 selectors, 6 gates
+    data-library-pedal  the pedal's name  2 gates
+    data-save-board     the Save button   3 gates
+    data-card-action    duplicate/delete  verify-crud
+    data-confirm-delete the confirm       verify-crud
+    data-setting        routing switches  (af2c44d)
+
+**A SECOND HAZARD WAS ALREADY LIVE, AND MEASURED.** `verify-jack-render` clicks
+`button:has-text("Conspiracy Theory")`, and that pedal is on the board it
+opens - so the new roster carries the same name. Counted in a browser: **2
+matches unscoped, 1 with the handle.** It passes only because the library list
+precedes the roster in the DOM. That is the defect that DID break
+verify-knockout-on-board, sitting one DOM reorder away from firing.
+
+`details button:has-text(...)` was the first fix there and is itself a bet - on
+the library staying a `<details>`. Both use the handle now.
+
+**Left deliberately:** `button:has-text("IR-200")`. That is a supply's NAME -
+the data under test, not the app's wording. **Text is the right selector when
+the text is the subject**; it is wrong when the text is a label someone may
+reword.
+
+Mutation-tested rather than assumed: stripping `data-panel-tab` makes
+verify-surfaces throw, stripping `data-save-board` fails verify-loop-persist.
+
 ### Next Tasks
 
 The three at the top of the previous entry are closed. What remains of it,
@@ -355,9 +390,6 @@ unchanged, plus what this session did not touch:
       NEEDS THE OWNER'S CALL before building; this product may not want it.
 - [ ] **The landing page** - owner ranked it LAST. It remains the most generic
       file in the repo.
-- [ ] **Sweep the gates' selectors for text and shape bets.** Two broke this
-      session from UI work, both on `:text-is()` / `has-text()`. The fix each
-      time was a `data-` handle. Nobody has checked the other 32.
 - [ ] **The roster's cap is tied to one viewport height.** 192px was derived
       at 1600x900. It is a `max-h`, so nothing breaks at other heights, but on
       a very short viewport the roster and the category list compete and the
