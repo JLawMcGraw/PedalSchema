@@ -71,7 +71,18 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="p-3 border-b space-y-2 shrink-0">
-        <h3 className={PANEL_TITLE}>Add pedal</h3>
+        {/* The count belongs BESIDE the title, not pinned to the floor.
+            The chain panel already says "SIGNAL CHAIN ... 22 pedals" in its
+            header; the library said "67 pedals" in a footer, which is the
+            same fact in a different place. It also pinned a floor 195px below
+            where the list actually ended, which is what made the empty tail
+            read as a void rather than as room. */}
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className={PANEL_TITLE}>Add pedal</h3>
+          <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
+            {filteredPedals.length}
+          </span>
+        </div>
         <Input
           placeholder="Search pedals..."
           value={search}
@@ -197,9 +208,110 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
         </div>
       </ScrollArea>
 
-      <div className="p-2 border-t text-xs text-muted-foreground text-center shrink-0">
-        {filteredPedals.length} pedal{filteredPedals.length !== 1 ? 's' : ''}
+      <OnThisBoard />
+    </div>
+  );
+}
+
+/**
+ * What is already on the board, as an index.
+ *
+ * The rail's tail was 195px of nothing on a 1600x900 viewport - measured, not
+ * estimated: the category list ended at y=672 and the pinned footer started at
+ * y=867. The sections are collapsed by design (A5) so the space is structural,
+ * and it is filled here rather than reclaimed.
+ *
+ * WHY THIS AND NOT SOMETHING ELSE. The library rows already carry a checkmark
+ * for a pedal that is on the board, but with all seventeen sections shut you
+ * cannot see a single one of them without opening every section. This is that
+ * same fact, reachable. It answers the question you actually have while adding
+ * pedals - "did I already put the DD-7 on?" - which is why it is sorted
+ * ALPHABETICALLY and not in chain order: it is a lookup index, and chain order
+ * is what the Signal chain panel is for.
+ *
+ * Duplicates collapse to one row with a multiplier. Two bare "CS-3" rows in a
+ * list whose job is lookup read as a rendering bug.
+ */
+function OnThisBoard() {
+  const selectPedal = useEditorStore((s) => s.selectPedal);
+  const selectedPedalId = useEditorStore((s) => s.selectedPedalId);
+  const { placedPedals, pedalsById } = useConfigurationStore(
+    useShallow((s) => ({ placedPedals: s.placedPedals, pedalsById: s.pedalsById }))
+  );
+
+  const roster = useMemo(() => {
+    const byName = new Map<string, { name: string; count: number; firstId: string; ids: string[] }>();
+    for (const placed of placedPedals) {
+      const name = pedalsById[placed.pedalId]?.name ?? placed.pedal?.name;
+      // A placed pedal whose catalogue entry has not loaded yet has no name to
+      // index by. Skipping it keeps a transient "undefined" row out of the
+      // list; the count below counts rows, so the two cannot disagree.
+      if (!name) continue;
+      const entry = byName.get(name);
+      if (entry) {
+        entry.count += 1;
+        entry.ids.push(placed.id);
+      } else {
+        byName.set(name, { name, count: 1, firstId: placed.id, ids: [placed.id] });
+      }
+    }
+    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [placedPedals, pedalsById]);
+
+  const total = roster.reduce((n, e) => n + e.count, 0);
+
+  return (
+    <div className="shrink-0 border-t">
+      <div className="flex items-baseline justify-between gap-2 px-3 py-2">
+        <h3 className={PANEL_TITLE}>On this board</h3>
+        <span className="font-mono text-[10px] text-muted-foreground tabular-nums">{total}</span>
       </div>
+
+      {roster.length === 0 ? (
+        <p className="px-3 pb-3 text-xs text-muted-foreground">Nothing placed yet.</p>
+      ) : (
+        /* Capped at 192px, and scrolling inside its own box.
+           The cap is arithmetic, not taste. On the reference 1600x900
+           viewport the rail below its header is 716px and the seventeen
+           collapsed categories need 488, leaving 228 - so a roster taller
+           than that starts pushing the category list into a scroll it did
+           not previously need. 192 + the 32px header = 224, and the tail is
+           filling dead space rather than competing for the live space above
+           it. */
+        <div className="max-h-48 overflow-y-auto px-2 pb-2">
+          <div className="grid grid-cols-2 gap-x-2">
+            {roster.map((entry) => {
+              const isSelected = entry.ids.includes(selectedPedalId ?? '');
+              return (
+                <button
+                  key={entry.name}
+                  type="button"
+                  /* Selecting from here is the point of it being a list and
+                     not a paragraph: it makes the rail navigational. With a
+                     duplicate it selects the first, which is the one the
+                     chain numbers first. */
+                  onClick={() => selectPedal(entry.firstId)}
+                  title={entry.count > 1 ? `${entry.name} (${entry.count} on the board)` : entry.name}
+                  className={`flex min-w-0 items-baseline gap-1 px-1 py-0.5 text-left transition-colors duration-200 ${
+                    isSelected ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+                  }`}
+                >
+                  <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{entry.name}</span>
+                  {entry.count > 1 && (
+                    <span
+                      className={`shrink-0 font-mono text-[10px] tabular-nums ${
+                        isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'
+                      }`}
+                    >
+                      &times;{entry.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
