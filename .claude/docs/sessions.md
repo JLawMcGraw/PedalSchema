@@ -101,7 +101,7 @@ until proven otherwise.
     npx tsc --noEmit         clean (after build regenerated .next/types)
     npm run build            Compiled successfully in 1341.2ms
     npm test                 467 passed, 4 skipped
-    verify-all.sh --all      30 passed, 0 failed
+    verify-all.sh --all      34 passed, 0 failed
     docScrollH               900 of 900 at 1600 / 1280 / 1100 / 1024
     toolbar overlap          none at any of the four widths
     FIT vs canvas legend     "2 UNROUTED" vs "2 cables will not fit"  agree
@@ -310,6 +310,40 @@ disarming it fails the Timeline case, removing the direction clause fails the
 DD-7 case. Three gates broke in an earlier session having never found a defect
 - a check that cannot fail looks exactly like a healthy board.
 
+**The audit: four gates were outside the suite, one was broken** (`35c3416`).
+**29 -> 34 gates**, every one recovered rather than written.
+
+`.claude/scripts/` holds 43 files and `verify-all.sh` named 29. Classifying the
+other fourteen **by SHAPE - does it assert and exit non-zero - rather than by
+name** is what turned them up:
+
+    verify-photo-knockout     PASS   1s   self-contained (synthetic JPEG)
+    extract-positions         PASS  10s   a gate wearing a dump's name
+    knockout-regression       PASS  33s   writes nothing, 64 pedals vs fingerprint
+    verify-modulation-switch  FAIL  --    broken
+
+The other ten are genuinely tools and all are referenced somewhere, so nothing
+is orphaned.
+
+**THE SECOND GATE THIS SESSION BROKE WITH ITS OWN UI WORK.**
+`verify-modulation-switch` selected on
+`span:text-is("Modulation")`, and `3109874` rebuilt the Routing panel into a
+settings list, renaming the row to "Modulation in the loop". Nothing reported
+it because nothing ran it. The first was `verify-knockout-on-board`'s
+`button:has-text("DD-7")` matching the new rail roster.
+
+**Two UI changes, two silently broken gates, in one session.** Both were text
+or shape selectors. The switches carry `data-setting` now - the stable-handle
+pattern already used by `[data-pedal-canvas]` and `[data-cable-legend]`. **A
+handle survives a rename; a text selector is a bet on the copy.** Worth a sweep
+of the other gates' selectors at some point.
+
+`extract-positions.js` -> **`verify-chain-direction.js`**. It was missed
+precisely because its name read as a dump. The prefix is the contract now: if
+it exits non-zero, the suite names it. `knockout-regression` keeps its name -
+referenced by name from other gates and the docs, and the name predates the
+rule.
+
 ### Next Tasks
 
 The three at the top of the previous entry are closed. What remains of it,
@@ -321,10 +355,9 @@ unchanged, plus what this session did not touch:
       NEEDS THE OWNER'S CALL before building; this product may not want it.
 - [ ] **The landing page** - owner ranked it LAST. It remains the most generic
       file in the repo.
-- [ ] **Audit for other scripts outside `verify-all.sh`.** This one rotted
-      because nothing ran it. `.claude/scripts/` has ~40 files and the suite
-      names 30; the rest are dumps and one-shot tools, but that has not been
-      checked since they were written.
+- [ ] **Sweep the gates' selectors for text and shape bets.** Two broke this
+      session from UI work, both on `:text-is()` / `has-text()`. The fix each
+      time was a `data-` handle. Nobody has checked the other 32.
 - [ ] **The roster's cap is tied to one viewport height.** 192px was derived
       at 1600x900. It is a `max-h`, so nothing breaks at other heights, but on
       a very short viewport the roster and the category list compete and the
