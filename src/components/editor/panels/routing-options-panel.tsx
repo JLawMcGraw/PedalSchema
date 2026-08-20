@@ -17,6 +17,45 @@ import {
 import { ArrowRight } from '@phosphor-icons/react';
 import type { Amp } from '@/types';
 
+/**
+ * One setting: a label, its switch, and the sentence that says what the switch
+ * currently means.
+ *
+ * This replaces a bordered card with a filled header bar per setting. Six
+ * booleans were costing about 90px each - a header rule, a background, a body
+ * pad - and reading as six unrelated boxes rather than one group of settings.
+ * A divided list says "these belong together" and halves the height.
+ */
+function SettingRow({
+  label,
+  detail,
+  checked,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  detail: React.ReactNode;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 px-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <p className={`text-xs font-medium ${disabled ? 'text-muted-foreground' : ''}`}>{label}</p>
+        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{detail}</p>
+      </div>
+      <Switch
+        className="mt-0.5 shrink-0"
+        checked={checked}
+        onCheckedChange={onChange}
+        disabled={disabled}
+        aria-label={label}
+      />
+    </div>
+  );
+}
+
 interface RoutingOptionsPanelProps {
   availableAmps: Amp[];
 }
@@ -93,133 +132,105 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
       <div className="px-3 py-2 border-b shrink-0">
-        <h3 className="font-semibold text-sm">Routing</h3>
-        <p className="text-xs text-muted-foreground">Signal path config</p>
+        <h3 className="text-sm font-semibold">Routing</h3>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         <div className="p-3 space-y-3">
-          {/* Amp Selection */}
-          <div className="border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 bg-muted/50 border-b">
-              <span className="text-xs font-medium">Amp</span>
-            </div>
-            <div className="p-3">
-              <Select value={amp?.id || 'none'} onValueChange={handleAmpChange}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Select amp..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No amp</SelectItem>
-                  {availableAmps.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      <div className="flex items-center gap-2">
-                        <span className="truncate">{a.manufacturer} {a.name}</span>
-                        {a.hasEffectsLoop && (
-                          <Badge variant="outline" className="text-xs px-1.5 py-0">FX</Badge>
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {amp && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  {amp.hasEffectsLoop
-                    ? `${amp.loopType || 'Serial'} FX loop`
-                    : 'No FX loop'}
-                </p>
-              )}
-            </div>
+          {/* The amp is the one non-boolean here, so it leads and is not a
+              switch row. */}
+          <div className="px-3 pt-1 pb-3">
+            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Amp
+            </label>
+            <Select value={amp?.id || 'none'} onValueChange={handleAmpChange}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Select amp..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No amp</SelectItem>
+                {availableAmps.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    <div className="flex items-center gap-2">
+                      <span className="truncate">{a.manufacturer} {a.name}</span>
+                      {a.hasEffectsLoop && (
+                        <Badge variant="outline" className="text-xs px-1.5 py-0">FX</Badge>
+                      )}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {amp && (
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                {amp.hasEffectsLoop ? `${amp.loopType || 'Serial'} FX loop` : 'No FX loop'}
+              </p>
+            )}
           </div>
 
-          {/* Effects Loop Toggle */}
-          <div className="border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 bg-muted/50 border-b flex items-center justify-between">
-              <span className="text-xs font-medium">Effects Loop</span>
-              <Switch
-                checked={useEffectsLoop}
-                onCheckedChange={setUseEffectsLoop}
-                disabled={!amp?.hasEffectsLoop}
-              />
-            </div>
-            <div className="p-3">
-              <p className="text-xs text-muted-foreground">
-                {!amp
+          <div className="divide-y border-y">
+            <SettingRow
+              label="Effects loop"
+              checked={useEffectsLoop}
+              onChange={setUseEffectsLoop}
+              disabled={!amp?.hasEffectsLoop}
+              detail={
+                !amp
                   ? 'Select an amp first'
                   : !amp.hasEffectsLoop
-                  ? 'Amp has no FX loop'
+                  ? 'This amp has no FX loop'
                   : useEffectsLoop
-                  ? 'Time effects route through FX loop'
-                  : 'All pedals run in front'}
-              </p>
-            </div>
+                  ? 'Time effects route through the FX loop'
+                  : 'All pedals run in front'
+              }
+            />
+
+            {useEffectsLoop && amp?.hasEffectsLoop && (
+              <SettingRow
+                label="Modulation in the loop"
+                checked={modulationInLoop}
+                onChange={setModulationInLoop}
+                detail={
+                  modulationInLoop
+                    ? 'Clean: chorus, flanger and phaser sit in the FX loop'
+                    : 'Dirty: modulation hits the preamp first'
+                }
+              />
+            )}
+
+            {useEffectsLoop && amp?.hasEffectsLoop && has4CablePedal && (
+              <SettingRow
+                label="4-cable method"
+                checked={use4CableMethod}
+                onChange={setUse4CableMethod}
+                detail={
+                  use4CableMethod
+                    ? 'The NS-2 gates the drives and spans the loop'
+                    : 'Standard routing, NS-2 inline'
+                }
+              />
+            )}
+
+            <SettingRow
+              label="Optimize can rotate pedals"
+              checked={allowRotation}
+              onChange={setAllowRotation}
+              detail={
+                allowRotation
+                  ? 'Only when it shortens the wiring, and never a large pedal or a treadle - you still have to reach the footswitch.'
+                  : 'Optimize leaves every pedal facing forward. You can still rotate one yourself from its properties.'
+              }
+            />
           </div>
 
-          {/* Modulation Placement */}
-          {useEffectsLoop && amp?.hasEffectsLoop && (
-            <div className="border rounded-lg overflow-hidden">
-              <div className="px-3 py-2 bg-muted/50 border-b flex items-center justify-between">
-                <span className="text-xs font-medium">Modulation</span>
-                <Switch
-                  checked={modulationInLoop}
-                  onCheckedChange={setModulationInLoop}
-                />
-              </div>
-              <div className="p-3">
-                <p className="text-xs text-muted-foreground">
-                  {modulationInLoop
-                    ? 'Clean: chorus, flanger, phaser in FX loop'
-                    : 'Dirty: modulation before preamp'}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* 4-Cable Method */}
-          {useEffectsLoop && amp?.hasEffectsLoop && has4CablePedal && (
-            <div className="border rounded-lg overflow-hidden">
-              <div className="px-3 py-2 bg-muted/50 border-b flex items-center justify-between">
-                <span className="text-xs font-medium">4-Cable Method</span>
-                <Switch
-                  checked={use4CableMethod}
-                  onCheckedChange={setUse4CableMethod}
-                />
-              </div>
-              <div className="p-3">
-                <p className="text-xs text-muted-foreground">
-                  {use4CableMethod
-                    ? 'NS-2 gates drives and FX loop'
-                    : 'Standard routing (NS-2 inline)'}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Let Optimize rotate pedals */}
-          <div className="border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 bg-muted/50 border-b flex items-center justify-between">
-              <span className="text-xs font-medium">Optimize can rotate pedals</span>
-              <Switch checked={allowRotation} onCheckedChange={setAllowRotation} />
-            </div>
-            <div className="p-3">
-              <p className="text-xs text-muted-foreground">
-                {allowRotation
-                  ? 'Turns a pedal only when it shortens the wiring. Never large pedals or treadles — you still have to reach the footswitch.'
-                  : 'Optimize leaves every pedal facing forward.'}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                You can always rotate any pedal yourself from its properties.
-              </p>
-            </div>
-          </div>
-
-          {/* Signal Flow */}
-          <div className="border rounded-lg overflow-hidden">
-            <div className="px-3 py-2 bg-muted/50 border-b">
-              <span className="text-xs font-medium">Signal Flow</span>
-            </div>
-            <div className="p-3 text-xs space-y-1">
+          {/* Signal flow is the panel's OUTPUT - what the settings above add up
+              to - so it gets a section label rather than another card that
+              looks like something you can set. */}
+          <div className="px-3 py-3">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Signal flow
+            </p>
+            <div className="space-y-1 text-xs">
               {use4CableMethod && has4CablePedal ? (
                 // 4-Cable Method flow
                 <>
@@ -279,11 +290,9 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
           {/* Pedal Loops */}
           {loopPedals.length > 0 && (
             <>
-              <div className="pt-2">
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase">
-                  Pedal Loops
-                </h4>
-              </div>
+              <p className="px-3 pt-1 pb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Pedal loops
+              </p>
               {loopPedals.map(loopPlaced => {
                 const loopPedal = pedalsById[loopPlaced.pedalId] || loopPlaced.pedal;
                 if (!loopPedal) return null;
@@ -292,8 +301,8 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
                 const isUsingLoop = config?.mode === 'loop' && (config.loopPedalIds.length > 0);
 
                 return (
-                  <div key={loopPlaced.id} className="border rounded-lg overflow-hidden">
-                    <div className="px-3 py-2 bg-muted/50 border-b flex items-center gap-2">
+                  <div key={loopPlaced.id} className="border-y">
+                    <div className="flex items-center gap-2 px-3 py-2">
                       <span className="text-xs font-medium truncate flex-1 min-w-0">{loopPedal.name}</span>
                       {isUsingLoop && (
                         <Badge variant="secondary" className="text-xs px-1.5 py-0 shrink-0">

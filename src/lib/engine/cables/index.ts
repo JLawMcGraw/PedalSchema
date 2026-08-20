@@ -116,6 +116,21 @@ import {
 } from '../topology';
 
 /**
+ * Sub-index letters for cables that share a group number: 2, 2b, 2c...
+ *
+ * NOT `String.fromCharCode(97 + i)`. That walks straight through the alphabet
+ * and the twelfth cable in a group came out as "2l" - a lowercase L sitting
+ * next to a digit, which reads as "21". On a 24-cable board the list ran
+ * ...2j, 2k, 21, 2m..., and the one that looked like a different number was
+ * the one you would go hunting for.
+ *
+ * i, l and o are dropped for the same reason `share-link.ts` drops them, and
+ * this is the second time that decision has had to be made in this repo.
+ */
+const SUB_INDEX_LETTERS = 'abcdefghjkmnpqrstuvwxyz';
+
+
+/**
  * Calculate all cable connections for a configuration by walking the signal
  * topology's segments (see ../topology - the single source of signal flow
  * for standard chains, amp effects loops, NS-2 pedal loops, and the
@@ -388,7 +403,7 @@ export function generateEnhancedCableList(
     if (cable.cableType === 'instrument' || subIndex === 0) {
       cableNumber = String(groupNumber);
     } else {
-      cableNumber = `${groupNumber}${String.fromCharCode(97 + subIndex)}`; // 97 = 'a'
+      cableNumber = `${groupNumber}${SUB_INDEX_LETTERS[subIndex % SUB_INDEX_LETTERS.length]}`;
     }
 
     // Generate labels

@@ -135,9 +135,11 @@ const NEUTRAL_HUE = tokens.background.lch[2];
 const ACCENT_HUE = tokens.primary.lch[2];
 const NEUTRAL_MAX_CHROMA = 0.05;
 
-// --destructive is exempt throughout: a failure colour is a signal, not a
-// second brand colour.
-const families = Object.entries(tokens).filter(([name]) => name !== 'destructive');
+// The reserved STATUS colours are exempt throughout: they report state, they
+// are not second brand colours. Everything else has to be in one of the two
+// families.
+const STATUS = ['destructive', 'warning'];
+const families = Object.entries(tokens).filter(([name]) => !STATUS.includes(name));
 
 // "Mixing warm and cool grays... stick to one gray family." A third hue
 // anywhere is what that looks like.

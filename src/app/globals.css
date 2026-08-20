@@ -46,6 +46,7 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -107,6 +108,11 @@
   --accent-foreground: var(--foreground);
 
   --destructive: oklch(0.66 0.18 25);
+
+  /* A warning is not an error, and rendering it as one cries wolf. Reserved
+     status colour, exempt from the one-accent rule for the same reason
+     --destructive is: a signal about state, not a second brand colour. */
+  --warning: oklch(0.78 0.16 85);
 
   --border: oklch(0.345 0.013 250);
   --input: oklch(0.32 0.013 250);

@@ -11,6 +11,18 @@ import {
   calculateCableSummary,
 } from '@/lib/engine/cables';
 
+/**
+ * "PW-3 OUTPUT -> CP-1X INPUT" is the arrow said three times.
+ *
+ * The ordinary case is an output going to an input, and naming both made most
+ * rows wrap onto a second line. Anything OTHER than that - SEND, RETURN, a
+ * loop jack - still gets named, because there the jack is the whole point.
+ */
+function plainEnd(label: string, expected: 'OUTPUT' | 'INPUT'): string {
+  const suffix = ` ${expected}`;
+  return label.endsWith(suffix) ? label.slice(0, -suffix.length) : label;
+}
+
 export function CableListPanel() {
   const { placedPedals, pedalsById, useEffectsLoop, amp } = useConfigurationStore(
     useShallow((s) => ({ placedPedals: s.placedPedals, pedalsById: s.pedalsById, useEffectsLoop: s.useEffectsLoop, amp: s.amp }))
@@ -59,30 +71,34 @@ export function CableListPanel() {
 
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         <div className="p-3 space-y-3">
-          {/* Wiring Checklist - Primary section */}
+          {/*
+            The wiring order.
+
+            This was a heavy amber-bordered box on an amber tint - three raw
+            hues that survived the palette work because they are panel chrome
+            rather than a cable - wrapping twenty-four rows whose second line
+            said "Patch (6")" twenty times over. The length is data, so it goes
+            in a column where the eye can skip it; the pedals are what you read.
+          */}
           {enhancedCables.length > 0 && (
-            <div className="border-2 border-amber-500/50 rounded-lg overflow-hidden bg-amber-500/5">
-              <div className="px-3 py-2 bg-amber-500/20 border-b border-amber-500/30">
-                <span className="text-xs font-semibold text-amber-200">Wiring Checklist</span>
-              </div>
-              <div className="divide-y divide-border/50">
+            <div className="-mx-3 -mt-3">
+              <p className="px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Wire it in this order
+              </p>
+              <div className="divide-y border-y">
                 {enhancedCables.map((cable, index) => (
-                  <div key={index} className="px-3 py-2 hover:bg-muted/20">
-                    <div className="flex items-start gap-2">
-                      <span className="font-mono text-xs font-bold text-amber-400 w-6 shrink-0">
-                        {cable.cableNumber}
-                      </span>
-                      <div className="flex-1 min-w-0 text-xs">
-                        <div className="flex items-center gap-1 flex-wrap">
-                          <span className="font-medium">{cable.fromLabel}</span>
-                          <span className="text-muted-foreground">→</span>
-                          <span className="font-medium">{cable.toLabel}</span>
-                        </div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {cable.cableTypeLabel}
-                        </div>
-                      </div>
-                    </div>
+                  <div key={index} className="flex items-baseline gap-2 px-3 py-1.5 hover:bg-muted/40">
+                    <span className="w-5 shrink-0 font-mono text-[10px] text-muted-foreground">
+                      {cable.cableNumber}
+                    </span>
+                    <span className="min-w-0 flex-1 text-xs leading-snug">
+                      <span className="font-medium">{plainEnd(cable.fromLabel, 'OUTPUT')}</span>
+                      <span className="mx-1 text-muted-foreground">&rarr;</span>
+                      <span className="font-medium">{plainEnd(cable.toLabel, 'INPUT')}</span>
+                    </span>
+                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                      {cable.cableTypeLabel}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -91,11 +107,11 @@ export function CableListPanel() {
 
           {/* Cable Count */}
           {cableList.length > 0 && (
-            <div className="border rounded-lg overflow-hidden">
-              <div className="px-3 py-2 bg-muted/50 border-b">
-                <span className="text-xs font-medium">Cable Count</span>
-              </div>
-              <div className="p-3 font-mono text-xs space-y-1">
+            <div>
+              <p className="pb-2 pt-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                What to buy
+              </p>
+              <div className="space-y-1 font-mono text-xs">
                 {cableList.map((item, index) => (
                   <div key={`${item.cableType}-${item.lengthInches}-${index}`} className="flex justify-between">
                     <span className="text-muted-foreground">
