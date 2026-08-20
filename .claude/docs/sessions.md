@@ -101,7 +101,7 @@ until proven otherwise.
     npx tsc --noEmit         clean (after build regenerated .next/types)
     npm run build            Compiled successfully in 1341.2ms
     npm test                 467 passed, 4 skipped
-    verify-all.sh --all      29 passed, 0 failed  (x2)
+    verify-all.sh --all      30 passed, 0 failed
     docScrollH               900 of 900 at 1600 / 1280 / 1100 / 1024
     toolbar overlap          none at any of the four widths
     FIT vs canvas legend     "2 UNROUTED" vs "2 cables will not fit"  agree
@@ -273,6 +273,43 @@ A/B'd against the original to be sure this session did not cause it. A
 verification script outside the suite, failing quietly, is the same shape of
 problem as the buried lint errors - worth a look.
 
+**`verify-knockout-on-board` runs again and joined the suite** (`af2c44d`).
+**30 gates now**, and the suite grew by recovering one rather than adding one.
+
+Three things were wrong and only the first was the reported one:
+
+  1. It ran on a REAL board (`openEditor` returns whatever comes first), which
+     by 2026-08 was the full 22-pedal `test`, so its six subjects were refused.
+     It creates a Classic Pro of its own now and deletes it in a `finally`.
+     `createBoard` moved into `lib/twin`, shared with verify-crud.
+  2. **It never placed the pedals.** Clicking a library row only ARMS one; the
+     board click was never made. Invisible because the gate only ever ran on a
+     board that already had all six, where the `already` check skipped the loop.
+  3. `button:has-text("DD-7")` now matches the rail's new **"On this board"
+     roster**, which fills as the loop runs - so it would click a pedal it had
+     already placed. Scoped to `details button`. **A selector written against
+     one DOM is a bet on that DOM**, and this session changed it.
+
+**THE DISCRIMINATOR WAS SEPARATING IDENTICAL PIXELS.** With the gate finally
+running, DD-7 failed: its two bottom corners are the same colour to within two
+units, and only ONE tripped - decided by saturation crossing 30 at 29 vs 37.
+The rule asked whether a corner differed from the body by more than 24; the
+DD-7's cream enclosure in its own shadow differs by 27.
+
+Distance without DIRECTION was the mistake. A backdrop is the surface the pedal
+stands on, so a failed knockout is a bright halo around a darker subject:
+
+    DD-7 bottom-left   body 221, corner 196   DARKER by 25     subject
+    Timeline pre-fix   body  95, corner 195   BRIGHTER by 100  backdrop
+
+Margin goes from 3 to 45/80. A tightening, not a loosening.
+
+**The gate now proves it can fail.** Five recorded observations fired through
+the discriminator before the browser opens, and mutation-tested both ways:
+disarming it fails the Timeline case, removing the direction clause fails the
+DD-7 case. Three gates broke in an earlier session having never found a defect
+- a check that cannot fail looks exactly like a healthy board.
+
 ### Next Tasks
 
 The three at the top of the previous entry are closed. What remains of it,
@@ -284,9 +321,10 @@ unchanged, plus what this session did not touch:
       NEEDS THE OWNER'S CALL before building; this product may not want it.
 - [ ] **The landing page** - owner ranked it LAST. It remains the most generic
       file in the repo.
-- [ ] **`verify-knockout-on-board.js` fails and is outside `verify-all.sh`.**
-      Pre-existing, A/B'd against HEAD. Either fix it and add it to the suite,
-      or delete it - a gate nobody runs is not a gate.
+- [ ] **Audit for other scripts outside `verify-all.sh`.** This one rotted
+      because nothing ran it. `.claude/scripts/` has ~40 files and the suite
+      names 30; the rest are dumps and one-shot tools, but that has not been
+      checked since they were written.
 - [ ] **The roster's cap is tied to one viewport height.** 192px was derived
       at 1600x900. It is a `max-h`, so nothing breaks at other heights, but on
       a very short viewport the roster and the category list compete and the
