@@ -101,7 +101,7 @@ until proven otherwise.
     npx tsc --noEmit         clean (after build regenerated .next/types)
     npm run build            Compiled successfully in 1341.2ms
     npm test                 467 passed, 4 skipped
-    verify-all.sh --all      34 passed, 0 failed
+    verify-all.sh --all      35 passed, 0 failed
     docScrollH               900 of 900 at 1600 / 1280 / 1100 / 1024
     toolbar overlap          none at any of the four widths
     FIT vs canvas legend     "2 UNROUTED" vs "2 cables will not fit"  agree
@@ -523,6 +523,48 @@ both boards - while keeping the second CS-3 that distinct-models dropped.
 in the session now has a state of its own: it says what failed, says nothing
 was lost, and prints the message. The obvious reading of the old screen was
 "my data is gone".
+
+### The hydration error: dev-only, and two wrong answers on the way
+
+**35 gates.** `verify-hydration` (`3570322`). The corrections matter more than
+the result.
+
+**WRONG ANSWER 1: "cannot reproduce".** Two probes came back clean, and I told
+the owner the app was fine and their browser was suspect. Those probes loaded
+each route **once**, and the symptom is intermittent - about **one message in
+eight page loads**. A single pass is not evidence of absence, and "works on my
+machine" was exactly what I produced. Loading the same routes repeatedly
+reproduces it here.
+
+**WRONG ANSWER 2: the gate that agreed with me.** Its first version compared
+the SET of generated ids and passed while the console was reporting a
+mismatch - because **two triggers that SWAP ids leave the set identical**, which
+is the reported symptom precisely. Fixed to compare per element; then the
+keying was wrong too (composed key `slot#n` compared against the bare slot
+name, so the index was always 0 and every element collided with the first),
+which reported drift between two DIFFERENT elements and looked like a find.
+**A gate wrong in the same shape as the bug it hunts is worse than none.**
+
+**THE ANSWER, MEASURED.** Same four routes, eight page loads each:
+
+    production (next start)   0 hydration messages
+    development (next dev)    1 hydration message
+
+The only attribute differing between server HTML and hydrated DOM on the
+affected route is `data-nextjs-dev-overlay`, on one of **Next's own injected
+scripts**. The app's markup matches. Dev-overlay noise; it does not reach
+users.
+
+**So the console is REPORTED, never failed** - a check that fails one run in
+eight through no fault of the code teaches everyone to re-run it. What is gated
+is per-element id stability, which is deterministic and catches the real class.
+Mutation-tested: a client-only element in the header names
+`sheet-trigger#0: server radix-_R_9kndlb_ -> client radix-_r_0_`, the owner's
+symptom exactly.
+
+**The header guard removed in `8ccbf3e` was still worth removing** - it rendered
+a different tree on each side, which is the genuine mechanism - but it was not
+the cause of what the owner saw.
 
 ### Next Tasks
 
