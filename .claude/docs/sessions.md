@@ -4,6 +4,136 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-20 (second) - the three faults in the editor chrome
+
+### Summary
+
+The previous entry's Next Tasks, top three: left rail dead space, the toolbar
+gap, the chain panel's prose block. All three closed. Three commits.
+
+Every one was **measured at the viewport before being touched**, which is the
+correction from the previous session - and the measurement changed the work
+twice: it caught a regression I introduced, and it set a breakpoint I would
+otherwise have guessed.
+
+**467 tests**, `verify-all.sh --all` **29 passed, 0 failed**, run twice.
+
+### What Was Accomplished
+- [x] **Toolbar** - the readout from `design-direction.md`'s own opening
+      sketch, finally built. 899.1px void -> 254.6px
+- [x] **Left rail** - "On this board", an alphabetical index. 195px -> 0
+- [x] **Chain notices** - log records with a level gutter, not a paragraph
+- [x] The bare red collision badge retired into the readout's FIT field
+- [x] The library's pedal count moved from a pinned footer into its header
+
+### Key Changes
+| File | Change |
+|---|---|
+| `toolbar/board-readout.tsx` | NEW - PEDALS / CABLE / DRAW / FIT |
+| `toolbar/editor-toolbar.tsx` | readout wired in, bare collision badge removed |
+| `panels/pedal-library-panel.tsx` | count into header, `OnThisBoard` roster in the tail |
+| `panels/signal-chain-panel.tsx` | `IssueRow` - ERROR / WARN / NOTE in a fixed gutter |
+
+### The measurements
+
+    LEFT RAIL                        TOOLBAR (1600x900)
+    viewport   y 184 .. 867          title      x  16 .. 44.7
+    list ends  y ....... 672         controls   x 943.8 .. 1584
+    footer     y 867 .. 900          void       899.1px = 56% of the bar
+    void       195px
+
+    after: roster 676..900, dead space 0     after: readout 299.2..689.2
+           list scrollH 492 = clientH 492           largest gap 254.6
+
+### Technical Decisions
+
+1. **The readout counts the same `valid` flag the canvas legend counts.**
+   Verified live: readout "2 UNROUTED", legend "2 cables will not fit". A
+   second opinion computed a cheaper way is the P1.5 defect by another name,
+   and a status field is exactly where it would go unnoticed.
+2. **The roster is alphabetical, not chain order.** It is a lookup index -
+   "did I already put the DD-7 on?" - and chain order is what the chain panel
+   is for. Ordering it by chain would have made it a worse copy of a panel
+   three feet to the right.
+3. **CABLE and DRAW drop below `xl`.** At 1100px the full 390px register
+   leaves 9px against the controls; one longer FIT string collides. A count
+   and a verdict survive because they are what you check without looking.
+4. **Not one word of the notice copy changed.** What a rig feature MEANS is
+   the owner's call. Presentation was the fault; the wording was not.
+
+### Architecture Notes
+
+**THE MEASUREMENT CAUGHT ME OVERSHOOTING.** The roster's first cut was
+`max-h-52`. The rail below its header is 716px and the seventeen collapsed
+categories need 488, leaving 228 - and a 240px roster pushed the category list
+into a 12px scroll it had never needed. So the block filling the dead space
+had started consuming live space, by 12px, invisibly. Nothing but the
+arithmetic would have found that: it is far too small to see, and every gate
+still passed. `max-h-48` = 192 + a 32px header = 224 <= 228. **A cap on a
+filler block is arithmetic, not taste.**
+
+**A VOID NEEDS A FLOOR TO READ AS A VOID.** The rail's 195px was framed by a
+pinned "67 pedals" footer. Moving that count into the header - where the chain
+panel has always put its own - was worth doing on consistency alone, but it
+also removed the line that made an empty gap look like a hole rather than the
+end of a list. Two of this session's three fixes were partly a matter of
+deleting a boundary rather than adding content.
+
+**THE ICON WAS CARRYING A DISTINCTION IT COULD NOT CARRY.** A warning triangle
+and a lightbulb, both `size-3.5`, three pixels apart, were the ONLY thing
+separating "your board is wrong" from "here is an idea". The level is a word
+now. Icons are bad at severity; they are fine at identity.
+
+**THE "N" AT THE BOTTOM-LEFT IS NOT OURS.** It overlaps the new roster in dev
+screenshots. It is `<nextjs-portal>`, the dev-tools indicator, absent from the
+production bundle - confirmed by querying for the element rather than by
+reasoning about the circle in the picture. Do not fix it.
+
+**`node_modules` WAS STALE AT SESSION START.** `@phosphor-icons/react` was in
+`package.json` and not on disk, so every route 500d and `npx tsc --noEmit`
+reported a phantom error in `.next/types/validator.ts` for a `pedals/page.js`
+that does not exist (the route is a group). `npm install`, then a real
+`npm run build`, cleared both. A tsc error inside `.next/` is a stale artifact
+until proven otherwise.
+
+### Verification
+
+    npx tsc --noEmit         clean (after build regenerated .next/types)
+    npm run build            Compiled successfully in 1341.2ms
+    npm test                 467 passed, 4 skipped
+    verify-all.sh --all      29 passed, 0 failed  (x2)
+    docScrollH               900 of 900 at 1600 / 1280 / 1100 / 1024
+    toolbar overlap          none at any of the four widths
+    FIT vs canvas legend     "2 UNROUTED" vs "2 cables will not fit"  agree
+
+### Next Tasks
+
+The three at the top of the previous entry are closed. What remains of it,
+unchanged, plus what this session did not touch:
+
+- [ ] **`§3.1` macro-typography is unapplied**, deliberately - it needs a
+      canvas a 287px panel does not have. It belongs on the landing page.
+- [ ] **`§6` ASCII framing / REV strings** - decoration rather than structure.
+      NEEDS THE OWNER'S CALL before building; this product may not want it.
+- [ ] **The landing page** - owner ranked it LAST. It remains the most generic
+      file in the repo.
+- [ ] **`npm run lint` is red** - 152 errors, all `no-require-imports` on
+      CommonJS Node scripts under the app's ESM/TS config. A config override,
+      not 152 edits. src/ itself is 0 errors.
+- [ ] **Duplicate a board** - still the one missing CRUD verb.
+- [ ] **`og:image` for shared boards.**
+- [ ] The Cables list still shows "CS-3 -> CS-3": the duplicate-name
+      disambiguation added to the chain panel lives in the panel, while those
+      labels are generated in the engine. **The new rail roster is a third
+      implementation of the same idea** (it collapses duplicates to "CS-3 x2").
+      Three call sites now want one engine-side answer.
+- [ ] **The roster's cap is tied to one viewport height.** 192px was derived
+      at 1600x900. It is a `max-h`, so nothing breaks at other heights, but on
+      a very short viewport the roster and the category list compete and the
+      arithmetic behind the number no longer holds.
+
+---
+
 ## Session: 2026-08-20 - the redesign that was actually a redesign
 
 ### Summary
