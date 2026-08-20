@@ -4,6 +4,128 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-19 (tenth) - the jack hues, decided by measurement
+
+### Summary
+
+The last colour outside the system. The decision was **not** "which six hues"
+- it was that six hues was the wrong question. Colour on a jack dot now
+carries direction, and the exact type moved to a `<title>`.
+
+On the way, `verify-states` turned out to be flaky about one suite run in two,
+and the fix was to stop racing the browser entirely.
+
+One commit. **467 tests**, `verify-all.sh --all` **29 passed, 0 failed** across
+three consecutive runs.
+
+### What Was Accomplished
+- [x] Jack colour encodes in / out / not-signal, chosen by a constrained sweep
+- [x] Every jack dot carries a `<title>` - the legend this never had
+- [x] The amp and guitar anchors speak the same direction language
+- [x] Selection and collision outlines moved into the system
+- [x] `verify-states` made deterministic; two of its replacements were wrong
+      first and were caught by mutation
+- [x] `verify-all.sh` stopped swallowing the evidence line under each FAIL
+
+### Technical Decisions
+
+1. **Direction, not type.** Three measurements forced it - see below.
+2. **`send` groups with output, `return` with input.** That is what they are:
+   the loop's out and in. Grouping them the other way would invert the only
+   thing the colour carries, so the gate asserts it.
+3. **Power and MIDI go grey.** "Not on the signal path" is better said by the
+   absence of colour than by another hue.
+4. **A `<title>` per dot, not a legend.** The canvas legend is already
+   contested space, and a title costs no layout while making identity
+   recoverable - which is required now that colour groups eight types into three.
+
+### Architecture Notes
+
+**WHY SIX HUES WAS THE WRONG QUESTION.** Measured before deciding anything:
+
+| measurement | value |
+|---|---|
+| mark size | **8px** (r=4) - where hue discrimination is worst |
+| legend | **none anywhere in the app** |
+| input + output | **64%** of all 245 jacks |
+| send + return | **3.2%** - eight jacks in the entire catalogue |
+| input vs output under deuteranopia | **6.4 dE**, against a 8.0 bar |
+
+Six unexplained categories on an 8px mark is not an encoding, and the pair
+that mattered most - 64% of every dot on screen - was the pair that did not
+separate. Identical to the defect found in the cables the day before.
+
+The replacement was chosen by a sweep **constrained against every other colour
+already on the canvas** - the five category body fills and both state outlines
+- so no jack dot vanishes into whatever it happens to sit on. Result:
+in/out 29.7 dE, in/other 12.3, out/other 18.0.
+
+**THE AMP WAS SAYING THE OPPOSITE OF WHAT IT MEANT.** Its SND jack was blue
+and its IN jack was amber - backwards under any consistent direction reading.
+Everything that receives signal is blue now and everything that emits is gold,
+on pedals and amp alike.
+
+**A CHECK THAT WAITS ON A FINISHED PAGE.** `verify-states` failed about one
+suite run in two and passed every time it was run alone. The diagnostics it
+grew said why in one line:
+
+    after 20016ms: {"ready":"complete","h1":"AW-3","anySkeleton":0}
+
+The page had ALREADY FINISHED; the check had spent twenty seconds waiting on a
+completed page. Network throttling does not reliably stretch a document the
+browser can serve in one chunk, so whether the fallback was ever *painted*
+came down to luck. **Whether it was FLUSHED FIRST is the actual feature, and
+it is fixed in the response bytes**: skeleton at 6334, content at 126583. Both
+the detail and list checks read the stream now, and the race is gone by
+construction rather than by a longer timeout.
+
+**TWO OF THE REPLACEMENTS WERE THEMSELVES WRONG, AND MUTATION CAUGHT BOTH.**
+Counting occurrences of the grid class in the response looked deterministic
+and was not - the RSC payload is serialised into the same document, so the
+string appeared twice even with the fallback deliberately broken, and the
+check passed on a mutation built to break it. The grids are compared at the
+source now. Running total of checks caught passing while measuring nothing:
+**eleven**.
+
+**THE RUNNER WAS HIDING THE EVIDENCE.** In this project's gate format the
+detail sits on the line UNDER the FAIL, indented, and `verify-all.sh` grepped
+only lines containing FAIL. `grep -A1`. Without it the flake above could not
+have been diagnosed from a suite run at all.
+
+### Verification
+
+    npx tsc --noEmit         clean
+    npm run build            Compiled successfully
+    npm test                 467 passed, 4 skipped
+    verify-all.sh --all      29 passed, 0 failed  (three consecutive runs)
+    database                 2 configurations, 0 seed rows - as found
+
+Read back out of the running canvas - 91 dots, every type in its group, every
+one named:
+
+    output      30x  #e6ad00  "Output"     power       21x  #9fa5ac  "Power"
+    input       27x  #2da6fa  "Input"      expression   7x  #9fa5ac  "Expression"
+    send         1x  #e6ad00  "Send"       midi_in      2x  #9fa5ac  "MIDI in"
+    return       1x  #2da6fa  "Return"     midi_out     2x  #9fa5ac  "MIDI out"
+
+    (2 dots render with fill "none" - assumed jacks, drawn hollow)
+
+### Next Tasks
+
+- [ ] **Duplicate a board** - still the one missing CRUD verb.
+- [ ] **`og:image` for shared boards** - they still unfurl as plain text.
+- [ ] **Lint does not cover `.claude/scripts`** - 100 pre-existing errors, and
+      the directory has grown by seven files this week.
+- [ ] **`#1f2937` board fill and `#242a31` anchor fill are still literals.**
+      They are in the cool family and read correctly, but they are the last
+      canvas values not sourced from a token. Cosmetic, not a defect.
+- [ ] **No colour is left outside the system that carries meaning.** If a
+      fourth encoding is ever added to the canvas, measure it against the
+      other three BEFORE choosing hues - there are now three separate
+      categorical palettes sharing one surface.
+
+---
+
 ## Session: 2026-08-19 (ninth) - the detail routes stream, and the canvas joins the system
 
 ### Summary
