@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BoardCard } from './board-card';
 import { resolvePage, DASHBOARD_PAGE_SIZE } from '@/lib/pagination';
+import type { PedalCategory } from '@/types';
 
 interface PageProps {
   searchParams: Promise<{ page?: string }>;
@@ -31,13 +32,22 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
   const { data: configurations } = await supabase
     .from('configurations')
+    // The placed pedals come back too, so each card can DRAW the board rather
+    // than describe it. Only the five fields a thumbnail and a stat line need
+    // - not the whole pedal row, and no jacks.
     .select(`
       id,
       name,
       description,
       created_at,
       updated_at,
-      boards (name, manufacturer)
+      boards (name, manufacturer, width_inches, depth_inches),
+      configuration_pedals (
+        x_inches,
+        y_inches,
+        rotation_degrees,
+        pedals (width_inches, depth_inches, category, current_ma)
+      )
     `)
     .eq('user_id', user?.id)
     .order('updated_at', { ascending: false })
@@ -47,9 +57,12 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     <div className="container py-8">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">My Pedalboards</h1>
-          <p className="text-muted-foreground">
-            Design and manage your pedalboard configurations
+          {/* "Design and manage your pedalboard configurations" said nothing
+              the heading had not already said. The count is what a person
+              actually wants at the top of a list. */}
+          <h1 className="text-3xl font-bold tracking-tight">My pedalboards</h1>
+          <p className="text-sm text-muted-foreground">
+            {count ?? 0} board{count === 1 ? '' : 's'}
           </p>
         </div>
         <Link href="/editor/new">
@@ -61,7 +74,24 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         <>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {configurations.map((config) => {
-            const board = config.boards as unknown as { name: string; manufacturer: string | null } | null;
+            const board = config.boards as unknown as {
+              name: string;
+              manufacturer: string | null;
+              width_inches: number | null;
+              depth_inches: number | null;
+            } | null;
+            const rows = (config.configuration_pedals ?? []) as unknown as Array<{
+              x_inches: number;
+              y_inches: number;
+              rotation_degrees: number | null;
+              pedals: {
+                width_inches: number;
+                depth_inches: number;
+                category: PedalCategory;
+                current_ma: number | null;
+              } | null;
+            }>;
+            const placed = rows.filter((r) => r.pedals);
             return (
               <BoardCard
                 key={config.id}
@@ -70,6 +100,24 @@ export default async function DashboardPage({ searchParams }: PageProps) {
                 description={config.description}
                 updatedAt={config.updated_at}
                 boardLabel={[board?.manufacturer, board?.name].filter(Boolean).join(' ')}
+                widthInches={Number(board?.width_inches ?? 0)}
+                depthInches={Number(board?.depth_inches ?? 0)}
+                // A null draw is UNKNOWN, not zero - summing it as zero would
+                // report a board as lighter on power than it is. The count of
+                // unknowns rides along so the card can say so.
+                knownDrawMa={placed.reduce(
+                  (sum, r) => sum + (r.pedals!.current_ma ?? 0),
+                  0
+                )}
+                unknownDrawCount={placed.filter((r) => r.pedals!.current_ma == null).length}
+                pedals={placed.map((r) => ({
+                  xInches: Number(r.x_inches),
+                  yInches: Number(r.y_inches),
+                  widthInches: Number(r.pedals!.width_inches),
+                  depthInches: Number(r.pedals!.depth_inches),
+                  rotation: Number(r.rotation_degrees ?? 0),
+                  category: r.pedals!.category,
+                }))}
               />
             );
           })}

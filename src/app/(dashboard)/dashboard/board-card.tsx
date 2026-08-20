@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { DotsThree, Trash } from '@phosphor-icons/react';
+import { BoardThumbnail, type ThumbnailPedal } from '@/components/boards/board-thumbnail';
 
 export interface BoardCardProps {
   id: string;
@@ -21,6 +22,11 @@ export interface BoardCardProps {
   description: string | null;
   updatedAt: string;
   boardLabel: string;
+  widthInches: number;
+  depthInches: number;
+  knownDrawMa: number;
+  unknownDrawCount: number;
+  pedals: ThumbnailPedal[];
 }
 
 /**
@@ -37,7 +43,18 @@ export interface BoardCardProps {
  * 2. A failure is reported on the card, not through `window.alert`. The row is
  *    still there, the user needs to know why, and an alert cannot say.
  */
-export function BoardCard({ id, name, description, updatedAt, boardLabel }: BoardCardProps) {
+export function BoardCard({
+  id,
+  name,
+  description,
+  updatedAt,
+  boardLabel,
+  widthInches,
+  depthInches,
+  knownDrawMa,
+  unknownDrawCount,
+  pedals,
+}: BoardCardProps) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +127,18 @@ export function BoardCard({ id, name, description, updatedAt, boardLabel }: Boar
 
   return (
     <article className="relative group">
-      <Card className="transition-colors duration-200 group-hover:border-primary/50">
+      <Card className="overflow-hidden pt-0 transition-colors duration-200 group-hover:border-primary/50">
+        {/* THE BOARD, DRAWN. Two boards used to be told apart by their names
+            alone: the card carried a name, a model, "No description" and a
+            date, and nothing about the thing itself. */}
+        <div className="border-b bg-background/40 p-3">
+          <BoardThumbnail
+            widthInches={widthInches}
+            depthInches={depthInches}
+            pedals={pedals}
+            className="h-24 w-full"
+          />
+        </div>
         <CardHeader>
           {/* An 80-character name is now one rename away, and an unbreakable
               one used to run 258px PAST the card edge and under the menu.
@@ -129,10 +157,38 @@ export function BoardCard({ id, name, description, updatedAt, boardLabel }: Boar
           <CardDescription>{boardLabel}</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">
-            {description || 'No description'}
-          </p>
-          <p className="text-xs text-muted-foreground mt-2">
+          {/* The stats a person compares boards by. "No description" was
+              filler on every card that had none, so it is gone - the row only
+              appears when there is something to read. */}
+          <dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
+            <div className="flex items-baseline gap-1">
+              <dd className="font-medium tabular-nums">{pedals.length}</dd>
+              <dt className="text-muted-foreground">
+                pedal{pedals.length === 1 ? '' : 's'}
+              </dt>
+            </div>
+            <div className="flex items-baseline gap-1">
+              <dd className="font-medium tabular-nums">
+                {knownDrawMa}
+                <span className="text-muted-foreground">mA</span>
+              </dd>
+              <dt className="text-muted-foreground">
+                {unknownDrawCount > 0 ? `+ ${unknownDrawCount} unknown` : 'draw'}
+              </dt>
+            </div>
+            {widthInches > 0 && (
+              <div className="flex items-baseline gap-1">
+                <dd className="font-medium tabular-nums">
+                  {widthInches}&times;{depthInches}
+                </dd>
+                <dt className="text-muted-foreground">in</dt>
+              </div>
+            )}
+          </dl>
+          {description && (
+            <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{description}</p>
+          )}
+          <p className="mt-2 text-xs text-muted-foreground">
             Updated {new Date(updatedAt).toLocaleDateString()}
           </p>
         </CardContent>
