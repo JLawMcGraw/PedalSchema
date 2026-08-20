@@ -1162,6 +1162,19 @@ export function calculateOptimalLayoutJoint(
     // Ties keep the baseline, and if BOTH are illegal we keep the user's board
     // rather than replacing it with a different broken one.
     const keepBaseline = baselineCandidate.score <= greedyScore + 1e-9;
+    /*
+     * BOTH, not just greedy. The user's own layout is a candidate - it is the
+     * incumbent this path is comparing against - so a legal baseline means a
+     * legal candidate exists, and it is the one being returned.
+     *
+     * This expression was already here and correct, and the return below
+     * shipped a weaker one (`!Number.isFinite(greedyScore)`) that reported
+     * "nothing legal was found" whenever greedy failed, however good the
+     * baseline was. summarizeOptimization branches on this flag ahead of
+     * everything else, so the user was told "Could not fit these pedals on
+     * this board" about a board that fits. The search path below has always
+     * used the right rule (`!anyLegalCandidate`); only this path did not.
+     */
     const noLegalCandidate = !Number.isFinite(greedyScore) && !Number.isFinite(baselineCandidate.score);
     return {
       placements: keepBaseline ? currentPlacements : placements,
@@ -1169,7 +1182,7 @@ export function calculateOptimalLayoutJoint(
       swappableGroups,
       baselineCost,
       cost: keepBaseline ? baselineCost : greedyCost,
-      noLegalCandidate: !Number.isFinite(greedyScore),
+      noLegalCandidate,
       // Only meaningful for a layout we actually returned.
       placementDegraded: keepBaseline ? false : greedy.degraded,
       rowFit,

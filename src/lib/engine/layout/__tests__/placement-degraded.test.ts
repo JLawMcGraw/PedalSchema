@@ -115,6 +115,56 @@ describe('placement degradation is reported', () => {
     // the rules. Both are honest; being silent about both was not.
     expect(result.noLegalCandidate || result.placementDegraded).toBe(true);
   });
+
+  /*
+   * `noLegalCandidate` means what its docblock says: EVERY candidate was
+   * illegal. The user's own layout is a candidate - it is the incumbent the
+   * search has to beat - so a legal baseline means the answer is false, even
+   * when greedy placement fails.
+   *
+   * The nothing-to-search path got this wrong. It computed the right
+   * expression, named it `noLegalCandidate`, and then returned a DIFFERENT and
+   * weaker one that only looked at greedy - which lint found as an unused
+   * variable, not as a bug.
+   *
+   * What the user saw: "Could not fit these pedals on this board - your layout
+   * was left alone", about a board that fits, whose legal layout was kept
+   * because it was better. summarizeOptimization branches on this flag first,
+   * ahead of every other headline.
+   */
+  it('a legal baseline is a legal candidate, even when greedy fails', () => {
+    // Six pedals hand-packed onto a 10x10.4in board: two rows of three, tight
+    // but legal. Greedy overlaps here - its row rules need clearance this
+    // board does not have - so the two candidates genuinely disagree, which
+    // is the case the bug needed.
+    const byId: Record<string, Pedal> = {};
+    const placed: PlacedPedal[] = [];
+    const cats = ['overdrive', 'delay', 'reverb', 'tuner', 'fuzz', 'boost'];
+    for (let i = 0; i < 6; i++) {
+      const id = `p${i}`;
+      byId[id] = { ...pedal(id, 2.87, 5.08), id, name: id, category: cats[i], jacks: [] } as Pedal;
+      placed.push({
+        id, pedalId: id, pedal: byId[id],
+        xInches: (i % 3) * 2.9, yInches: Math.floor(i / 3) * 5.15,
+        rotationDegrees: 0, chainPosition: i + 1, rotationLocked: true,
+      } as unknown as PlacedPedal);
+    }
+    const board = boardOf(10, 10.4);
+
+    // The baseline really is legal - if this ever stops holding the test is
+    // no longer testing what it says it is.
+    expect(detectCollisions(placed, byId, board)).toEqual([]);
+
+    const result = calculateOptimalLayoutJoint(placed, byId, board);
+
+    expect(result.noLegalCandidate).toBe(false);
+    // And the legal layout is what came back, untouched.
+    for (const p of result.placements) {
+      const original = placed.find((q) => q.id === p.id)!;
+      expect(p.x).toBeCloseTo(original.xInches, 5);
+      expect(p.y).toBeCloseTo(original.yInches, 5);
+    }
+  });
 });
 
 describe('an overlapping layout is never preferred to a legal one', () => {
