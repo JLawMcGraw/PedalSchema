@@ -379,6 +379,68 @@ reword.
 Mutation-tested rather than assumed: stripping `data-panel-tab` makes
 verify-surfaces throw, stripping `data-save-board` fails verify-loop-persist.
 
+**Dashboard: size means size** (`7a899c9`). The owner redirected here from
+the landing page - "the dashboard is a key page" - and it had a real defect.
+
+The cards drew their boards, which was the previous redesign's win, but each
+card fitted its OWN board to the same 96px band, so each drew at its own scale:
+
+    before   J$ Home 18x12.5in  ->  138.2 x 96px   7.68 px/inch
+             test    32x16in    ->  192.0 x 96px   6.00 px/inch
+
+A board 1.78x wider in the world rendered 1.39x wider on screen - **the smaller
+board was drawn 28% too big relative to the larger one** - and both were
+exactly 96px tall whatever their depth. A chart with no axis.
+
+    after    J$ Home  162px / 18in = 9.00 px/inch
+             test     288px / 32in = 9.00 px/inch
+             ratio 288/162 = 1.778 = exactly 32/18
+
+Every thumbnail draws into a shared FRAME, the largest board in this PAGE of
+results - per page deliberately, because the query is paginated and a fixed
+catalogue-wide frame would shrink every real board to fit a Classic Pro XL
+nobody owns.
+
+**The rails are drawn now.** A Pedaltrain is a rail frame, not a slab, and the
+rails are the constraint the whole app is about - they are where a pedal can
+be mounted. `board_rails` was already in the schema; the dashboard query was
+simply not asking for it.
+
+Band 96px -> 144px, chosen by measuring three heights: 61% of the strip filled
+at 96, 78% at 144, 95% at 176 where the image swamps the text.
+
+**A NUMBER IN THE FIRST COMMIT MESSAGE WAS WRONG** and was caught by
+re-measuring before moving on: it quoted J$ Home at 126px (the h-28 figure)
+beside test at 288px (the h-36 figure), giving a ratio that could not be right.
+Amended. Mixing measurements from two runs is the easiest way to write a
+confident, false number.
+
+### On section 6 - DECLINED, deliberately
+
+The owner asked what it is. `.agents/skills/industrial-brutalist-ui` §6 is
+ASCII framing (`[ DELIVERY SYSTEMS ]`), directional glyphs (`>>>`), (R)/(TM) as
+geometric elements, crosshairs, barcodes, warning stripes, and **"randomized
+string data (e.g. `REV 2.6`, `UNIT / D-01`) to simulate active mechanical
+processes"**.
+
+That last clause is the reason to decline. §6 exists to make an interface LOOK
+like it is reading instruments. **This app actually is** - every number on
+screen is measured. A fabricated `REV 2.6` beside a real `1586mA` destroys the
+one property this codebase is disciplined about, because the reader cannot
+tell which numbers mean anything.
+
+The rest is thin: the panel titles are already in the monospace micro register,
+so `[ SIGNAL CHAIN ]` adds characters and no information; `>>>` is ornament
+where the canvas already has real directional language (jack colour encodes
+in/out); and there is no brand mark here to deploy.
+
+**One piece is worth taking: crosshairs at grid intersections.** The canvas has
+a REAL grid, so marking its intersections is instrument language applied to
+actual structure rather than invented structure. Left as a small open item.
+
+This is the same shape of deviation already recorded for §4 (signal green over
+hazard red): the skill is written for interfaces carrying no data of their own.
+
 ### Next Tasks
 
 The three at the top of the previous entry are closed. What remains of it,
@@ -386,10 +448,14 @@ unchanged, plus what this session did not touch:
 
 - [ ] **`§3.1` macro-typography is unapplied**, deliberately - it needs a
       canvas a 287px panel does not have. It belongs on the landing page.
-- [ ] **`§6` ASCII framing / REV strings** - decoration rather than structure.
-      NEEDS THE OWNER'S CALL before building; this product may not want it.
-- [ ] **The landing page** - owner ranked it LAST. It remains the most generic
-      file in the repo.
+- [ ] **`§6` crosshairs at grid intersections** - the one salvageable piece of
+      a section otherwise declined (see above). The canvas grid is real, so
+      marking its intersections marks real structure.
+- [ ] **The landing page** - owner ranked it LAST and confirmed 2026-08-20 it
+      is "not crucial". Still the most generic file in the repo.
+- [ ] **The dashboard is mostly empty below the cards.** Two boards in a
+      3-column grid leaves ~2/3 of the row and the whole lower page blank at
+      1440px. The thumbnails are fixed; the PAGE is not.
 - [ ] **The roster's cap is tied to one viewport height.** 192px was derived
       at 1600x900. It is a `max-h`, so nothing breaks at other heights, but on
       a very short viewport the roster and the category list compete and the
@@ -506,10 +572,14 @@ promoting it to brand accent would destroy a signal the canvas depends on.
       in a monospace telemetry panel. It does not match its surroundings.
 - [ ] **`§3.1` macro-typography is unapplied**, deliberately - it needs a
       canvas a 287px panel does not have. It belongs on the landing page.
-- [ ] **`§6` ASCII framing / REV strings** - decoration rather than structure.
-      NEEDS THE OWNER'S CALL before building; this product may not want it.
-- [ ] **The landing page** - owner ranked it LAST. It remains the most generic
-      file in the repo.
+- [ ] **`§6` crosshairs at grid intersections** - the one salvageable piece of
+      a section otherwise declined (see above). The canvas grid is real, so
+      marking its intersections marks real structure.
+- [ ] **The landing page** - owner ranked it LAST and confirmed 2026-08-20 it
+      is "not crucial". Still the most generic file in the repo.
+- [ ] **The dashboard is mostly empty below the cards.** Two boards in a
+      3-column grid leaves ~2/3 of the row and the whole lower page blank at
+      1440px. The thumbnails are fixed; the PAGE is not.
 - [ ] The Cables list still shows "CS-3 -> CS-3": the duplicate-name
       disambiguation added to the chain panel lives in the panel, while those
       labels are generated in the engine.
