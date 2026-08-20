@@ -53,6 +53,11 @@ READ_ONLY=(
   "verify-photo-knockout"
   "verify-chain-direction"
   "knockout-regression"
+  # Added after a hydration mismatch was reported that could not be reproduced
+  # here. It gates the property both ways: if the APP causes one, this fails;
+  # if it keeps passing while a browser still reports one, that is evidence the
+  # cause is in that browser.
+  "verify-hydration"
 )
 
 # These WRITE. Each restores what it touched, but they are opt-in so a routine
