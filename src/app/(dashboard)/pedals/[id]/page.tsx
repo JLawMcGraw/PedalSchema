@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { createClient } from '@/lib/supabase/server';
+import { isUuid } from '@/lib/uuid';
 import { Badge } from '@/components/ui/badge';
 import { CaretLeft } from '@phosphor-icons/react/ssr';
 import { getCategoryColor, getCategoryLabel } from '@/lib/constants/pedal-categories';
@@ -57,10 +58,9 @@ interface PedalRow {
 }
 
 async function loadPedal(id: string): Promise<PedalRow | null> {
-  // A malformed id is a 404, not a 500: Postgres rejects a non-UUID against a
-  // uuid column with 22P02, and without this guard that surfaces as a crash on
-  // a URL anyone can type.
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+  // Still guarded here, not only in layout.tsx: generateMetadata runs on its
+  // own and would otherwise hand a malformed id straight to Postgres.
+  if (!isUuid(id)) {
     return null;
   }
   const supabase = await createClient();

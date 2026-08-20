@@ -189,6 +189,108 @@ const check = (ok, label, detail) => {
         `(${realCols} vs ${shape.gridCols})`
     );
 
+    // --- the DETAIL pages: a skeleton, and still a 404 ---------------------
+    //
+    // These two are the hard case, and the reason they were left out of the
+    // first pass. Both call notFound(), and a loading.tsx anywhere above the
+    // call site flushes HTTP 200 before the page can decide - so the naive fix
+    // trades a correct status for a skeleton.
+    //
+    // Every check here comes in a PAIR: the skeleton appeared, AND an unknown
+    // id is still a 404. Either one alone would let the soft 404 back in.
+    console.log('\n=== detail pages stream without giving up their 404 ===');
+
+    const UNKNOWN = '00000000-0000-4000-8000-000000000000';
+
+    /**
+     * Navigate under a throttled connection, and report what was on screen
+     * before the content arrived.
+     *
+     * THE THROTTLING IS THE POINT. Measured without it, the pedal detail page
+     * completes in 388ms and its whole document - fallback AND content -
+     * arrives in effectively one chunk, so React swaps the fallback before the
+     * browser ever paints it. The skeleton was verifiably IN the streamed HTML
+     * and still never visible, which would have read as "the loading state
+     * does not work" when the truth was "the page is too fast to need one
+     * here". Stretching delivery reproduces the condition the skeleton exists
+     * for: a slow connection, which is not a rare case.
+     */
+    const cdp = await page.context().newCDPSession(page);
+    const throttle = (on) =>
+      cdp.send('Network.emulateNetworkConditions', {
+        offline: false,
+        latency: on ? 150 : 0,
+        downloadThroughput: on ? 60 * 1024 : -1,
+        uploadThroughput: on ? 60 * 1024 : -1,
+      });
+
+    const skeletonDuring = async (url) => {
+      await throttle(true);
+      const nav = page.goto(url, { waitUntil: 'commit' });
+      let label = null;
+      let count = 0;
+      try {
+        await page.locator('[data-slot="skeleton"]').first().waitFor({ timeout: 10000 });
+        count = await page.locator('[data-slot="skeleton"]').count();
+        label = await page.evaluate(() => {
+          const el = document.querySelector('[role="status"][aria-busy="true"]');
+          return el ? el.getAttribute('aria-label') : null;
+        });
+      } catch {
+        /* reported by the caller */
+      }
+      await nav.catch(() => {});
+      await throttle(false);
+      return { label, count };
+    };
+
+    // A real pedal id, taken from the list rather than hard-coded.
+    await page.goto(BASE + '/pedals');
+    const pedalHref = await page
+      .locator('a[href^="/pedals/"]:not([href="/pedals/new"])')
+      .first()
+      .getAttribute('href');
+
+    const pedalSkel = await skeletonDuring(BASE + pedalHref);
+    check(
+      pedalSkel.count > 0 && pedalSkel.label === 'Loading pedal',
+      `/pedals/[id] shows its own skeleton mid-load`,
+      `${pedalSkel.count} placeholders, aria-label: ${pedalSkel.label}`
+    );
+    const pedal404 = await page.goto(`${BASE}/pedals/${UNKNOWN}`);
+    check(
+      pedal404.status() === 404,
+      'and an unknown pedal id is STILL a 404, not a 200 with a 404 page in it',
+      `-> ${pedal404.status()}`
+    );
+
+    // A real board id, from the dashboard. CONFIG_ID is NOT set in this repo's
+    // .env.local, and reading it directly sent this check to /editor/undefined
+    // - which is a 404, so the "still a 404" assertion below passed while
+    // proving nothing at all.
+    await page.goto(BASE + '/dashboard');
+    const boardHref = await page
+      .locator('a[href^="/editor/"]:not([href="/editor/new"])')
+      .first()
+      .getAttribute('href');
+    check(!!boardHref, `found a real board to open (${boardHref})`);
+
+    const editorSkel = await skeletonDuring(BASE + boardHref);
+    check(
+      editorSkel.count > 0 && editorSkel.label === 'Loading board',
+      `/editor/[id] shows its own skeleton mid-load`,
+      `${editorSkel.count} placeholders, aria-label: ${editorSkel.label}`
+    );
+    const editor404 = await page.goto(`${BASE}/editor/${UNKNOWN}`);
+    // UNKNOWN is a well-formed uuid on purpose: a malformed one is rejected by
+    // the shape guard and would never reach the database, so it cannot tell us
+    // whether the row lookup 404s.
+    check(
+      editor404.status() === 404,
+      'and an unknown board id is STILL a 404',
+      `-> ${editor404.status()}`
+    );
+
     // --- the error boundary is reachable and offers a way out --------------
     console.log('\n=== the error boundary is a real page, not a dead end ===');
     const boundary = fs.readFileSync(path.join(group, 'error.tsx'), 'utf8');
