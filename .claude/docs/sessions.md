@@ -441,6 +441,50 @@ actual structure rather than invented structure. Left as a small open item.
 This is the same shape of deviation already recorded for §4 (signal green over
 hazard red): the skill is written for interfaces carrying no data of their own.
 
+**Cables, Power, and the dashboard cards** (`1d1e472`, `81ae9ec`, `2bb1b41`).
+The owner called the Cables and Power screens messy. They were, and both had
+the same disease: **the panel's main content was a DOCUMENT when the question
+is a SUMMARY.**
+
+  - Cables: you want "what do I buy"; the shopping list sat under 24 rows.
+  - Power: you want "what needs its own output"; the answer was DUPLICATED
+    above a list that already contained it.
+
+That is the fault the Chain panel had when its warnings rendered after 22
+pedals. ASCII framing would have added characters to the densest thing on the
+screen; the problem was never decoration.
+
+**CABLES.** Deleted the number column (`1, 2, 2b ... 2t, 3, 4, 5, 5b, 5c, 6` -
+24 labels for four groups, sub-letters restating row order, and the scheme
+that once rendered the twelfth cable as `2l`), deleted the Signal Flow diagram
+(it said what the list above it said and what the Chain panel says with a
+spine; also the last raw amber), and split front-of-amp from effects loop -
+that boundary is the biggest structural transition on a board and was rendered
+as just another row. **A notation bug fell out of it:** the shopping list used
+exact geometry (`1'`, `3'`) while the rows used purchasable sizes (`12"`,
+`3ft`), so one cable read two ways on one screen.
+
+**POWER.** Seven bordered cards to hairline sections - the Routing panel was
+cured of this in the same redesign and Power was left alone. "Needs its own
+output" was rows 1-4 of "Every pedal" (sorted descending), the same four
+pedals twice, eleven rows apart; they are marked `own` in place now. The
+subtitle restated the headline numeral. Supply picker stays high, on the
+owner's call. **A fourth duplicate-name call site** turned up by looking at
+it: two `CS-3` rows, each with its own output dropdown, impossible to tell
+apart.
+
+**DASHBOARD CARDS** now carry `N OFF BOARD` / `N OVERLAP` / `N OUTPUTS OVER` /
+`PUBLIC`. **Headroom is a FAULT, never a ratio** - "1586 of 2000mA" reads as
+reassurance and engine/power exists because that reassurance is false. Nothing
+renders on a clean board, because an all-clear on every card teaches the reader
+to stop looking.
+
+**A BROKEN QUERY LOOKS EXACTLY LIKE AN EMPTY ACCOUNT.** The first version asked
+for `alternate_voltages`, dropped by `20260802000003_output_modes` in favour of
+`alternate_modes`. PostgREST failed the whole select, `configurations` came back
+null, and the page rendered "No pedalboards yet" - three boards, none shown, no
+error anywhere. Found only because a probe expected a card and got zero.
+
 ### Next Tasks
 
 The three at the top of the previous entry are closed. What remains of it,
@@ -456,6 +500,14 @@ unchanged, plus what this session did not touch:
 - [ ] **The dashboard is mostly empty below the cards.** Two boards in a
       3-column grid leaves ~2/3 of the row and the whole lower page blank at
       1440px. The thumbnails are fixed; the PAGE is not.
+- [ ] **The dashboard cannot tell "no boards" from "the query failed".** Both
+      render the empty state. Cost one debugging cycle this session; it would
+      cost a user their whole list with no explanation.
+- [ ] **Cable LENGTH on the canvas.** Colour is taken - it encodes
+      instrument / patch / around-the-board / will-not-fit, and that red is the
+      fault signal. Proposal instead: label only the NON-DEFAULT runs (7 of 24
+      here), so the marks show exactly the cables that are not the standard 6"
+      patch, and cross-highlight a Cables row with its cable on hover.
 - [ ] **The roster's cap is tied to one viewport height.** 192px was derived
       at 1600x900. It is a `max-h`, so nothing breaks at other heights, but on
       a very short viewport the roster and the category list compete and the
@@ -580,6 +632,14 @@ promoting it to brand accent would destroy a signal the canvas depends on.
 - [ ] **The dashboard is mostly empty below the cards.** Two boards in a
       3-column grid leaves ~2/3 of the row and the whole lower page blank at
       1440px. The thumbnails are fixed; the PAGE is not.
+- [ ] **The dashboard cannot tell "no boards" from "the query failed".** Both
+      render the empty state. Cost one debugging cycle this session; it would
+      cost a user their whole list with no explanation.
+- [ ] **Cable LENGTH on the canvas.** Colour is taken - it encodes
+      instrument / patch / around-the-board / will-not-fit, and that red is the
+      fault signal. Proposal instead: label only the NON-DEFAULT runs (7 of 24
+      here), so the marks show exactly the cables that are not the standard 6"
+      patch, and cross-highlight a Cables row with its cable on hover.
 - [ ] The Cables list still shows "CS-3 -> CS-3": the duplicate-name
       disambiguation added to the chain panel lives in the panel, while those
       labels are generated in the engine.
