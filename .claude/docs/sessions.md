@@ -485,6 +485,45 @@ for `alternate_voltages`, dropped by `20260802000003_output_modes` in favour of
 null, and the page rendered "No pedalboards yet" - three boards, none shown, no
 error anywhere. Found only because a probe expected a card and got zero.
 
+**The rig strip, the hydration guard, and the empty-account lie**
+(`8ccbf3e`, `50374b0`).
+
+**THE GUARD HAD BECOME THE CAUSE.** The header wrapped its avatar menu in a
+`mounted` flag, commented "the dropdown (radix ids) only renders client-side to
+avoid mismatches" - rendering a plain Button on the server and a DropdownMenu
+on the client. **That is the one mechanism that moves `useId` values.** React
+allocates them from tree position, so a component that deliberately renders a
+different tree on each side is not a cure for id mismatches, it generates them.
+It also left the avatar inert on first paint.
+
+The proof it was unnecessary sits in the same file: the mobile Sheet is NOT
+guarded, uses Radix ids, and hydrates clean at 1440px and 820px with both
+sides producing `radix-_R_5kndlb_`.
+
+**REPORTED BUT NOT REPRODUCED, and said so.** The owner saw client
+`_R_1kndlb_` against server `_R_5kndlb_`. A clean browser shows zero hydration
+messages on five routes before OR after the change, and produces `_R_5kndlb_`
+on both sides - so their client render produced a value neither of mine did.
+React's message lists browser extensions as a cause. The fix removes the
+divergence the code was really carrying; it does not claim to have reproduced
+theirs.
+
+**COUNTING WHAT YOU OWN IS AN INFERENCE**, and neither simple rule is right:
+
+    every placement    31   a DS-1 on two boards is one pedal, moved
+    distinct models    29   the two CS-3s on `test` are two real pedals
+    max on any board   30   right about both  <- chosen
+
+The most a model appears on ONE board is the fewest you must own to build it,
+and boards are built from one shelf. Checked against the cards: 1586 + 681 =
+2267mA naive, 2247 after counting the NS-2 once - and the NS-2 really is on
+both boards - while keeping the second CS-3 that distinct-models dropped.
+
+**A FAILED QUERY NO LONGER LOOKS LIKE AN EMPTY ACCOUNT.** The bug from earlier
+in the session now has a state of its own: it says what failed, says nothing
+was lost, and prints the message. The obvious reading of the old screen was
+"my data is gone".
+
 ### Next Tasks
 
 The three at the top of the previous entry are closed. What remains of it,
@@ -497,12 +536,14 @@ unchanged, plus what this session did not touch:
       marking its intersections marks real structure.
 - [ ] **The landing page** - owner ranked it LAST and confirmed 2026-08-20 it
       is "not crucial". Still the most generic file in the repo.
-- [ ] **The dashboard is mostly empty below the cards.** Two boards in a
-      3-column grid leaves ~2/3 of the row and the whole lower page blank at
-      1440px. The thumbnails are fixed; the PAGE is not.
-- [ ] **The dashboard cannot tell "no boards" from "the query failed".** Both
-      render the empty state. Cost one debugging cycle this session; it would
-      cost a user their whole list with no explanation.
+- [ ] **The dashboard's lower page is still empty.** The rig strip fills the
+      top. The owner's other option - making the empty grid cell a "New board"
+      TILE that draws an empty board, rather than a button in the corner - is
+      not built.
+- [ ] **Audit the other pages for `mounted`-style hydration guards.** The one
+      in the header was a React-17-era workaround that had become the defect.
+      `grep -rn "useSyncExternalStore\|typeof window" src/` before trusting any
+      of them.
 - [ ] **Cable LENGTH on the canvas.** Colour is taken - it encodes
       instrument / patch / around-the-board / will-not-fit, and that red is the
       fault signal. Proposal instead: label only the NON-DEFAULT runs (7 of 24
@@ -629,12 +670,14 @@ promoting it to brand accent would destroy a signal the canvas depends on.
       marking its intersections marks real structure.
 - [ ] **The landing page** - owner ranked it LAST and confirmed 2026-08-20 it
       is "not crucial". Still the most generic file in the repo.
-- [ ] **The dashboard is mostly empty below the cards.** Two boards in a
-      3-column grid leaves ~2/3 of the row and the whole lower page blank at
-      1440px. The thumbnails are fixed; the PAGE is not.
-- [ ] **The dashboard cannot tell "no boards" from "the query failed".** Both
-      render the empty state. Cost one debugging cycle this session; it would
-      cost a user their whole list with no explanation.
+- [ ] **The dashboard's lower page is still empty.** The rig strip fills the
+      top. The owner's other option - making the empty grid cell a "New board"
+      TILE that draws an empty board, rather than a button in the corner - is
+      not built.
+- [ ] **Audit the other pages for `mounted`-style hydration guards.** The one
+      in the header was a React-17-era workaround that had become the defect.
+      `grep -rn "useSyncExternalStore\|typeof window" src/` before trusting any
+      of them.
 - [ ] **Cable LENGTH on the canvas.** Colour is taken - it encodes
       instrument / patch / around-the-board / will-not-fit, and that red is the
       fault signal. Proposal instead: label only the NON-DEFAULT runs (7 of 24
