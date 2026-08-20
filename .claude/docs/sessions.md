@@ -143,7 +143,8 @@ one pedal in Chain and the other in Cables, which is worse than the bare name
 it replaces. 8 new tests, **475 total**.
 
     npm run lint            0 errors, 27 warnings   (was 154 errors)
-    npm test                484 passed, 4 skipped
+    npm test                495 passed, 4 skipped
+    npm run lint            0 problems (from 154 errors + 27 warnings)
     npm run build           Compiled successfully
     verify-all.sh --all     29 passed, 0 failed
 
@@ -229,6 +230,49 @@ Renaming these to `_board` would assert "deliberately unused" about something
 nobody has checked, which is how the last set of confident-and-wrong comments
 got written.
 
+**Lint 14 -> 0, and the last two warnings were a real defect** (`fe1285a`,
+`063a2be`, `bca9aed`). Investigate first, silence second - two of the fourteen
+had unknown answers, and silencing an unknown is how you lose it.
+
+  - `generateEnhancedCableList(.., useEffectsLoop, amp)` - **vestigial**. The
+    numbering IS loop-aware; it reads `amp_send`/`amp_return` off the cables,
+    so the loop was already in the data. Removed, and lint immediately caught
+    the caller's now-stale useMemo deps on the same edit.
+  - `detectCollisions(.., board)` - **a real gap**, and both halves are now
+    fixed.
+
+**THE OFF-BOARD GAP.** `detectCollisions` never read its `board`, so it
+answered "do any two pedals overlap" while the whole UI asked it "is anything
+wrong here" - canvas outline, properties panel and the FIT readout all read it.
+Proved rather than argued: a pedal **at x=60, y=40 on a 32x16in board returned
+`[]`**. The likely reason it survived: `Collision.pedalIds` was a
+`[string, string]` and an off-board pedal is a party of one, so it had nowhere
+to go in the type.
+
+Reachable through `rotatePedal`, which swapped the footprint with no clamp
+while placement and drag both clamp. Measured through the real button:
+
+    PW-3 3.15 x 7.56in at x=28.85 on a 32in board
+    rotated footprint         7.56 x 3.15
+    unclamped it would end at 36.41 of 32   -> 4.41in over
+    clamped x 28.85 -> 24.44  moved 4.41in, exactly the overhang
+
+Both halves shipped because neither is sufficient: the clamp stops the state
+arising, and the detector catches what a clamp cannot fix - a pedal whose
+rotated footprint is wider than the board pins to 0 and still overhangs, plus
+any board already saved that way. Censused first: both real boards report 0
+off-board and 0 overlap, so nothing on a real board turns red.
+
+`npm run lint` is now **0 problems**, from 154 errors + 27 warnings at the
+start of the session. Config carries `argsIgnorePattern: "^_"` for ARGUMENTS
+ONLY - unused locals and `catch` bindings still warn, because an unused local
+is dead code and an unused `catch (e)` is usually a swallowed failure.
+
+**`verify-knockout-on-board.js` fails at HEAD and is not in `verify-all.sh`.**
+A/B'd against the original to be sure this session did not cause it. A
+verification script outside the suite, failing quietly, is the same shape of
+problem as the buried lint errors - worth a look.
+
 ### Next Tasks
 
 The three at the top of the previous entry are closed. What remains of it,
@@ -240,9 +284,9 @@ unchanged, plus what this session did not touch:
       NEEDS THE OWNER'S CALL before building; this product may not want it.
 - [ ] **The landing page** - owner ranked it LAST. It remains the most generic
       file in the repo.
-- [ ] **Two design questions surfaced by the remaining 14 warnings**, above:
-      does `detectCollisions` owe the UI an off-board check, and is the cable
-      numbering meant to be effects-loop aware?
+- [ ] **`verify-knockout-on-board.js` fails and is outside `verify-all.sh`.**
+      Pre-existing, A/B'd against HEAD. Either fix it and add it to the suite,
+      or delete it - a gate nobody runs is not a gate.
 - [ ] **The roster's cap is tied to one viewport height.** 192px was derived
       at 1600x900. It is a `max-h`, so nothing breaks at other heights, but on
       a very short viewport the roster and the category list compete and the
