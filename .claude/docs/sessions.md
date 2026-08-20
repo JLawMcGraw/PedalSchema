@@ -143,9 +143,37 @@ one pedal in Chain and the other in Cables, which is worse than the bare name
 it replaces. 8 new tests, **475 total**.
 
     npm run lint            0 errors, 27 warnings   (was 154 errors)
-    npm test                475 passed, 4 skipped
+    npm test                483 passed, 4 skipped
     npm run build           Compiled successfully
     verify-all.sh --all     29 passed, 0 failed
+
+**Duplicate a board** (`51ef683`) - the last missing CRUD verb.
+
+`lib/duplicate-configuration` copies by STRIPPING identity columns from
+`select('*')`, not by listing the columns to copy. The listed version is the
+one that rots: `configuration_pedals` has gained four columns across four
+migrations and a hand-written list would have silently dropped each one on the
+day it landed - no error, just a copy that has quietly lost its rotation locks.
+
+What must not cross: `share_slug` (UNIQUE, fails loudly) and **`is_public`,
+which fails nothing at all** - a copy inheriting "published" puts a board the
+user believes is private behind a live URL. `user_id` is set, not carried.
+
+No transaction is available through supabase-js, so the second insert
+compensates: if the pedals cannot be written the new configuration is deleted,
+and if THAT fails the error says so rather than pretending the board is not
+there.
+
+`verify-crud` now proves it against the database rather than the screen:
+**15 configuration columns and 22 rows x 14 placed-pedal columns compared**,
+copy not published, rows re-parented to the copy. The gate also caught its own
+ordering bug on first run - it looked the source board up by the name `test`,
+which the RENAME section above it is still holding under a temporary name and
+does not restore until `finally`. It keys off the id now.
+
+Noted honestly: the published-original case passes in the gate without
+exercising the interesting input, because the gate's source board is not
+public. That case is covered at unit level instead.
 
 ### Next Tasks
 
@@ -158,7 +186,6 @@ unchanged, plus what this session did not touch:
       NEEDS THE OWNER'S CALL before building; this product may not want it.
 - [ ] **The landing page** - owner ranked it LAST. It remains the most generic
       file in the repo.
-- [ ] **Duplicate a board** - still the one missing CRUD verb.
 - [ ] **`og:image` for shared boards.**
 - [ ] **27 lint warnings**, now that the errors are gone and they are
       readable. 26 are `no-unused-vars`, 8 of them in
@@ -284,7 +311,6 @@ promoting it to brand accent would destroy a signal the canvas depends on.
       NEEDS THE OWNER'S CALL before building; this product may not want it.
 - [ ] **The landing page** - owner ranked it LAST. It remains the most generic
       file in the repo.
-- [ ] **Duplicate a board** - still the one missing CRUD verb.
 - [ ] **`og:image` for shared boards.**
 - [ ] The Cables list still shows "CS-3 -> CS-3": the duplicate-name
       disambiguation added to the chain panel lives in the panel, while those
@@ -400,7 +426,6 @@ one named:
 
 ### Next Tasks
 
-- [ ] **Duplicate a board** - still the one missing CRUD verb.
 - [ ] **`og:image` for shared boards** - they still unfurl as plain text.
 - [ ] **Lint does not cover `.claude/scripts`** - 100 pre-existing errors, and
       the directory has grown by seven files this week.
@@ -534,7 +559,6 @@ Read back out of the running canvas, and cross-referenced with the legend:
       system. Needs a grouping decision first: unlike pedal categories, the
       exact jack type genuinely matters, so folding them into families may be
       the wrong answer here. Measure before choosing.
-- [ ] **Duplicate a board** - still the one missing CRUD verb.
 - [ ] **`og:image` for shared boards** - they still unfurl as plain text.
 - [ ] **Lint does not cover `.claude/scripts`** - 100 pre-existing errors, and
       the directory has grown by six files this week.
@@ -667,7 +691,6 @@ Measured in the running app:
       last colour in the app outside the system. `verify-cable-legend` gates
       its MEANING, so changing the colours means updating that gate
       deliberately - which is the point of doing it as its own piece of work.
-- [ ] **Duplicate a board** - still the one missing CRUD verb.
 - [ ] **`og:image` for shared boards** - they still unfurl as plain text.
 - [ ] **Lint does not cover `.claude/scripts`** - 100 pre-existing errors, and
       the directory grew by six files this phase.
@@ -832,7 +855,6 @@ Read back out of the RUNNING app, not the stylesheet:
       palette (reserved, never reused for a category) and it has not been
       brought into the system yet. `verify-cable-legend` gates its meaning, so
       changing the colours means updating that gate deliberately.
-- [ ] **Duplicate a board** - still the one missing CRUD verb.
 - [ ] **`og:image` for shared boards** - they still unfurl as plain text.
 - [ ] **Lint does not cover `.claude/scripts`** - 100 pre-existing errors, and
       the directory just grew by four files.
@@ -928,7 +950,6 @@ run green at `dda6244`.
       `.claude/docs/` BEFORE building, per `planning-as-repo-docs`.
 - [ ] **Fix the scaffold metadata regardless of direction** - "Create Next App"
       is live in production and needs no aesthetic decision.
-- [ ] **Duplicate a board** - still the one missing CRUD verb.
 - [ ] **`og:image` for shared boards.**
 - [ ] **`pedal-card.tsx`** duplicates CATEGORY_COLORS/LABELS and collapses the
       currentMa three-state with a truthy check (latent - no pedal has a real 0).
@@ -1027,7 +1048,6 @@ about having state ready before first paint. Different problems.)
       `.agents/skills/redesign-existing-projects` FIRST - nothing loads it, and
       its fix-priority order starts at fonts, then colour, then hover/active
       states, then layout.
-- [ ] **Duplicate a board** - still the one missing CRUD verb.
 - [ ] **A share link has no preview image.** `generateMetadata` sets title and
       description but no `og:image`, so every shared board unfurls as plain
       text in chat. The skill flags missing social meta.
@@ -1143,7 +1163,6 @@ believing the failure**: the app had been correct the whole time.
 - [ ] **A4 - sharing.** `isPublic`/`shareSlug` are in types and RLS already.
 - [ ] **Phase B** - Tactical Telemetry restyle, dark substrate only. Read
       `.agents/skills/redesign-existing-projects` FIRST - nothing loads it.
-- [ ] **Duplicate a board** - still the one missing CRUD verb.
 - [ ] **`pedal-card.tsx` duplicates CATEGORY_COLORS/LABELS** from
       `lib/constants/pedal-categories`, and its `current_ma ? ...` collapses
       the three-state (latent: no pedal has a real 0 today).
