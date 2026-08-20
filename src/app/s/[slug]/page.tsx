@@ -36,11 +36,31 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { slug } = await params;
   const config = await load(slug);
   if (!config) return { title: 'Board not found' };
+  const description =
+    config.description ||
+    `A ${config.board.name} with ${config.placedPedals.length} pedals.`;
+
+  /*
+   * `openGraph` and `twitter` are set explicitly even though `opengraph-image`
+   * injects the image tags on its own. Without them the card falls back to the
+   * TEMPLATED title - "test - PedalSchema" - and to the site description, so
+   * every shared board previewed with the same sentence underneath a different
+   * picture.
+   */
   return {
     title: config.name,
-    description:
-      config.description ||
-      `A ${config.board.name} with ${config.placedPedals.length} pedals.`,
+    description,
+    openGraph: {
+      title: config.name,
+      description,
+      type: 'article',
+      siteName: 'PedalSchema',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: config.name,
+      description,
+    },
   };
 }
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * A published board is reachable by a stranger, and a private one is not.
+ * A published board is reachable by a stranger, previews as itself, and a
+ * private one is not reachable at all.
  *
  * `isPublic`/`shareSlug` were in the types and the RLS policies from the very
  * first migration, and nothing in `src/` referenced either one - so a board
@@ -137,6 +138,73 @@ const check = (ok, label, detail) => {
       'and gets no editing furniture',
       `toolbar=${view.hasToolbar} library=${view.hasLibrary}`
     );
+
+    // --- the link preview -------------------------------------------------
+    /*
+     * A shared link is most people's first sight of the app. It previewed as a
+     * bare title on a blank card, and the check that matters is not "is there
+     * a meta tag" but "does the URL in it return a real image" - a broken
+     * og:image and a missing one look identical in the HTML.
+     */
+    const meta = await stranger.evaluate(() => {
+      const get = (sel) => document.querySelector(sel)?.getAttribute('content') ?? null;
+      return {
+        ogTitle: get('meta[property="og:title"]'),
+        ogDesc: get('meta[property="og:description"]'),
+        ogImage: get('meta[property="og:image"]'),
+        ogImageW: get('meta[property="og:image:width"]'),
+        ogImageH: get('meta[property="og:image:height"]'),
+        twCard: get('meta[name="twitter:card"]'),
+      };
+    });
+
+    check(meta.ogTitle === original.name,
+      'og:title is the board name, not the templated site title',
+      `"${meta.ogTitle}"`);
+    check(!!meta.ogImage, 'the page declares an og:image', meta.ogImage);
+    check(meta.twCard === 'summary_large_image',
+      'and asks for a large card', `twitter:card=${meta.twCard}`);
+
+    if (meta.ogImage) {
+      // Fetch it as a stranger would, and prove it is really a 1200x630 PNG by
+      // reading the IHDR header rather than trusting the meta tag's numbers.
+      const shot = await stranger.evaluate(async (url) => {
+        const r = await fetch(url);
+        const buf = new Uint8Array(await r.arrayBuffer());
+        const be32 = (o) => (buf[o] << 24) | (buf[o + 1] << 16) | (buf[o + 2] << 8) | buf[o + 3];
+        return {
+          status: r.status,
+          type: r.headers.get('content-type'),
+          bytes: buf.length,
+          isPng: buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47,
+          width: be32(16),
+          height: be32(20),
+          b64: btoa(String.fromCharCode(...buf.slice(0, 0))),
+        };
+      }, meta.ogImage);
+
+      check(shot.status === 200 && shot.isPng,
+        'the og:image URL returns a real PNG',
+        `HTTP ${shot.status}, ${shot.type}, ${shot.bytes} bytes, PNG=${shot.isPng}`);
+      check(shot.width === 1200 && shot.height === 630,
+        'at the 1200x630 a large card wants',
+        `${shot.width}x${shot.height} (declared ${meta.ogImageW}x${meta.ogImageH})`);
+      // An image that renders the board is necessarily bigger than an empty
+      // card; a satori failure tends to produce a near-empty PNG.
+      check(shot.bytes > 8000, 'and is not a blank card', `${shot.bytes} bytes`);
+
+      if (process.env.OG_IMAGE_OUT) {
+        // A SEPARATE page. Navigating `stranger` to the image takes it off the
+        // board, and the read-only drag check below then finds no pedal to
+        // drag - which is how this was caught: the gate failed on the check
+        // AFTER the one being added.
+        const preview = await strangerCtx.newPage();
+        await preview.goto(meta.ogImage);
+        await preview.screenshot({ path: process.env.OG_IMAGE_OUT });
+        await preview.close();
+        console.log(`        saved preview to ${process.env.OG_IMAGE_OUT}`);
+      }
+    }
 
     // Read-only: dragging a pedal must not move it.
     const moved = await stranger.evaluate(async () => {

@@ -13,6 +13,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  /*
+   * Required for og:image. Next builds the image tag as an ABSOLUTE url and
+   * has no way to know the deployed origin, so without this it warns at build
+   * time and emits a localhost URL - which previews as a broken image
+   * everywhere the link is actually pasted.
+   */
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ??
+      (process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : 'http://localhost:3000')
+  ),
   // A template, so the pages that name a board or a pedal do not each repeat
   // the product name by hand - two of them already did, inconsistently.
   title: {
