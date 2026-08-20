@@ -4,6 +4,136 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-19 (ninth) - the detail routes stream, and the canvas joins the system
+
+### Summary
+
+Two items off the list. Both were deferred earlier for stated reasons, and
+both reasons turned out to be right - each one had a real trap in it.
+
+The detail routes now show a skeleton **without giving up their 404**, which
+needed a pattern rather than a file. And the cable palette moved into the
+system, which was not a repaint: the old colours failed the project's own
+colourblindness threshold.
+
+Two commits. **467 tests**, `verify-all.sh --all` **29 passed, 0 failed**.
+
+### What Was Accomplished
+- [x] `/pedals/[id]` and `/editor/[id]` stream behind a skeleton, still 404
+- [x] The cable palette comes from tokens; `power` no longer looks like a failure
+- [x] `verify-palette` grew a cable section; `verify-states` grew a detail section
+- [x] Fixed three more gate checks that were passing while measuring nothing
+
+### Key Changes
+
+| File | Change |
+|------|--------|
+| `src/lib/uuid.ts` | NEW - the shape guard, now that two layouts need it |
+| `src/app/(dashboard)/pedals/[id]/{layout,loading}.tsx` | NEW |
+| `src/app/(dashboard)/editor/[id]/{layout,loading}.tsx` | NEW |
+| `src/lib/engine/cables/explain.ts` | cable colours from the system |
+| `.claude/scripts/verify-palette.js` | + cable palette section |
+| `.claude/scripts/verify-states.js` | + detail-route section, throttled |
+| `.claude/scripts/verify-routes.js` | two more streaming races fixed |
+
+### Technical Decisions
+
+1. **The 404 is decided in a layout, from the cheapest question.** See below.
+2. **`patch` is neutral and `instrument` is the accent.** The patch cables are
+   the bulk, so they recede; the live signal in and out of the board is the one
+   thing worth the accent. Measured, this also fixed a real defect.
+3. **A perimeter run keeps its cable colour.** The dash carries "off the
+   surface"; changing the colour too would replace information instead of
+   adding it. Asserted now, because it is the kind of thing a repaint breaks.
+4. **The jack indicators were left alone, deliberately.** Six raw hues for
+   input/output/power/send/return is a SECOND categorical encoding and needs
+   its own grouping decision and its own measurement. Bundling it in unmeasured
+   is precisely how the 18-hue category palette happened.
+
+### Architecture Notes
+
+**HOW TO STREAM A ROUTE THAT CAN 404.** A `loading.tsx` wraps the segment's
+page in a Suspense boundary, and once that boundary's shell is flushed the HTTP
+status has been sent - so a page calling `notFound()` afterwards answers 200
+with a not-found page inside it. A LAYOUT RUNS BEFORE THE BOUNDARY BELOW IT
+FLUSHES, so the decision moves up into `[id]/layout.tsx` and is made from the
+cheapest question that answers it - does the row exist, one indexed column -
+while the page keeps the expensive query and streams behind the skeleton.
+
+It buys most on the editor, where `loadConfiguration` fetches the board, the
+amp, every placed pedal, the 67-pedal catalogue, the amp list and the power
+supplies. Demonstrated by mutation: **remove `pedals/[id]/layout.tsx` and the
+unknown id stops being a 404.**
+
+**A SKELETON CAN BE IN THE HTML AND STILL NEVER VISIBLE.** Unthrottled, the
+pedal detail page completes in 388ms and its whole document - fallback AND
+content - arrives in effectively one chunk, so React swaps the fallback before
+the browser paints it. The gate throttles the connection to reproduce the
+condition a skeleton exists for. Without that it read as "the loading state is
+broken" when the truth was "this page is too fast to need one here".
+
+**STREAMING A ROUTE IS NOT FREE FOR WHATEVER WAS READING IT.** Giving
+`/pedals/[id]` a boundary made three `verify-routes` checks racy overnight -
+they started reporting that the detail page had lost its manufacturer, its
+dimensions and its "Unknown" draw, because `goto` now resolves while the
+skeleton is up. They wait for the skeleton to detach. This is the third
+distinct instance this week of *wait for the condition, never for the clock*.
+
+**THE OLD CABLE COLOURS FAILED THE PROJECT'S OWN THRESHOLD.** `#f59e0b`
+instrument and `#22c55e` patch sit **6.4 dE apart under simulated
+deuteranopia**, below the 8.0 held to everywhere else - so a red-green
+colourblind player could not reliably tell the two most common cables apart on
+a busy board. The new set's worst pair is 11.1. The legend gate needed no
+change: it asserts the swatch matches the drawn cable rather than hard-coding
+hexes, so it followed the palette by itself. That is what a well-written gate
+buys.
+
+**`power` AND `unroutable` WERE THE SAME RED.** The first power cable ever
+drawn would have looked like a failed one. Unreachable today - they are
+filtered out before routing - which is exactly why it would never have been
+found. Fixed and asserted.
+
+**THREE MORE CHECKS WERE PASSING WHILE MEASURING NOTHING**, all mine, all
+caught within minutes of being written: the editor pair read
+`process.env.CONFIG_ID`, which is NOT set in this repo, so they navigated to
+`/editor/undefined` - a 404, which made "still a 404" pass while proving
+nothing. Running total for the week is seven.
+
+### Verification
+
+    npx tsc --noEmit         clean
+    npm run build            Compiled successfully
+    npm test                 467 passed, 4 skipped
+    verify-all.sh --all      29 passed, 0 failed
+    database                 2 configurations, 0 seed rows - as found
+
+Read back out of the running canvas, and cross-referenced with the legend:
+
+    18x #9fa5ac  patch          the bulk, receding
+     3x #56dc85  instrument     guitar in, amp out
+     2x #ec5b57  unroutable     and the legend says "2 cables will not fit"
+     1x #9fa5ac  dashed         around the board
+
+    /pedals/[id]  17 placeholders, "Loading pedal", unknown id -> 404
+    /editor/[id]  37 placeholders, "Loading board",  unknown id -> 404
+
+### Next Tasks
+
+- [ ] **The jack indicators** - six raw hues on the canvas
+      (input/output/power/send/return/other). The last colour outside the
+      system. Needs a grouping decision first: unlike pedal categories, the
+      exact jack type genuinely matters, so folding them into families may be
+      the wrong answer here. Measure before choosing.
+- [ ] **Duplicate a board** - still the one missing CRUD verb.
+- [ ] **`og:image` for shared boards** - they still unfurl as plain text.
+- [ ] **Lint does not cover `.claude/scripts`** - 100 pre-existing errors, and
+      the directory has grown by six files this week.
+- [ ] **No loading state on `/pedals/new`, `/editor/new` or the auth pages.**
+      Not an oversight: they are forms, not queries, and there is nothing to
+      wait for.
+
+---
+
 ## Session: 2026-08-19 (eighth) - B5, B6, and Phase B closed
 
 ### Summary
