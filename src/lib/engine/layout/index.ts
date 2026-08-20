@@ -5,8 +5,8 @@ import { identifySwappableGroups } from '../signal-chain';
 import { COLLISION_SPACING } from '../collision';
 import { rotateSide, rotatedFootprint } from '../geometry/rotation';
 import { canOptimizerRotate, mayRotateTo } from './rotation-eligibility';
-import { ROW_GAP, MIN_ROW_CLEARANCE } from './constants';
-import { deriveRowBands, deriveRowLayout, type RowBand, type RowFit } from './rows';
+import { MIN_ROW_CLEARANCE } from './constants';
+import { deriveRowBands, deriveRowLayout, type RowFit } from './rows';
 import { isDebugEnabled } from '../debug-flag';
 
 

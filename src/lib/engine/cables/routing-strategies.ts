@@ -43,7 +43,6 @@ import { validateCablePath, type ValidationResult } from './validation';
 // Re-export types
 export type { Point, Box, BoardBounds };
 
-import type { Cable } from '@/types';
 
 /**
  * How far outside the board intermediate points may go, in pixels.
@@ -101,14 +100,6 @@ function isPathWithinBounds(path: Point[], boardBounds: BoardBounds | null): boo
 function constrainY(y: number, boardBounds: BoardBounds | null, margin: number = 20): number {
   if (!boardBounds) return y;
   return Math.max(boardBounds.minY + margin, Math.min(boardBounds.maxY - margin, y));
-}
-
-/**
- * Constrain an X coordinate to stay within board bounds
- */
-function constrainX(x: number, boardBounds: BoardBounds | null, margin: number = 20): number {
-  if (!boardBounds) return x;
-  return Math.max(boardBounds.minX + margin, Math.min(boardBounds.maxX - margin, x));
 }
 
 /**

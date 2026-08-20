@@ -1,4 +1,4 @@
-import type { Pedal, PlacedPedal, ChainContext, ChainRule } from '@/types';
+import type { PlacedPedal, ChainRule } from '@/types';
 
 /**
  * Signal chain rules ordered by priority (higher = applied first)

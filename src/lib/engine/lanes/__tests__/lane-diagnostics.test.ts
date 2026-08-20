@@ -17,7 +17,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { routeCablesWithLanes, type LaneRouteRequest } from '../index';
-import { MIN_LANE_SPACING, LANE_SPACING, OBSTACLE_MARGIN, type Box } from '../../geometry';
+import { LANE_SPACING, OBSTACLE_MARGIN, type Box } from '../../geometry';
 import type { ObstacleSet } from '../../obstacles';
 
 /** An obstacle set built by hand, so a corridor's width is exactly known. */
