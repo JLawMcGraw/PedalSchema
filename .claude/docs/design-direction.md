@@ -112,3 +112,41 @@ Each step ends green on `npx tsc --noEmit`, `npm run build`, `npm test`, and
 - **Loosening editor panel density.** See rule 7.
 - **Touching the canvas geometry.** Cable routing, placement and clearance are
   contract-tested; a restyle does not get to move a pedal by a pixel.
+
+---
+
+## The direction had a source all along (found 2026-08-20)
+
+**`.agents/skills/industrial-brutalist-ui`.** Its title is "Industrial
+Brutalism & Tactical Telemetry UI" and its §2.2 is "Tactical Telemetry & CRT
+Terminal". That is where the name came from.
+
+Session six searched `.claude/` and `src/`, found nothing, and concluded the
+definition did not exist in the repository - which cost a phase and a re-pick.
+**It never looked at the skills the project ships with.** If a direction name
+turns up undefined again, search `.agents/skills/` first.
+
+What the skill adds beyond what was already built:
+
+| §  | Rule | Status |
+|---|---|---|
+| 2.2 | dark substrate, phosphor foreground, monospace dominance, dense tabular data | already true |
+| 5 | **absolute rejection of border-radius, 90 degrees everywhere** | done 2026-08-20 |
+| 3.2 | metadata / navigation / unit IDs in tracked uppercase monospace | done 2026-08-20 |
+| 3.1 | macro-typography at `clamp()` scale for structural headers | not applied - see below |
+| 6 | ASCII framing, registration marks, `REV` strings | not applied |
+| 7 | CRT scanlines, halftone, 1-bit dithering | grain only |
+
+**Deviation from §4, deliberately.** The skill mandates hazard red as the only
+accent and permits terminal green for at most one element. This app keeps
+signal green: red already means "will not fit" on a cable and "collision" on a
+pedal, and promoting it to brand accent would destroy a signal the canvas
+depends on. The skill is written for interfaces that carry no error semantics
+of their own. The owner also chose green explicitly on 2026-08-19.
+
+**§3.1 is deliberately unapplied in the panels.** Macro-typography at
+`clamp(4rem, 10vw, 15rem)` needs a canvas to breathe in; a 287px panel has
+none. The honest reading of "extreme scale contrast" at panel width is to push
+the LABELS down into the micro register and let the data lead - which is what
+the Power panel's 1586 does. If the landing page is ever built, that is where
+§3.1 belongs.
