@@ -8,7 +8,12 @@
  * instead of re-deriving it from rendered attributes. Parity between the two
  * is verified separately by verify-twin-parity.js.
  *
- * Usage: node .claude/scripts/extract-positions.js
+ * NAMED `verify-` BECAUSE IT IS A GATE. It was `extract-positions.js`, which
+ * reads as a dump - and the 2026-08-20 audit found it sitting outside
+ * verify-all.sh for that reason, asserting things nobody was running. The
+ * prefix is the contract: if it exits non-zero, the suite must name it.
+ *
+ * Usage: node .claude/scripts/verify-chain-direction.js
  */
 const { chromium } = require('playwright');
 const { loadEnv, login, openEditor, snapshot } = require('./lib/twin');

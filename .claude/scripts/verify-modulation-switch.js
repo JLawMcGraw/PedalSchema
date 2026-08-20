@@ -98,7 +98,15 @@ const MOD = ['modulation', 'tremolo'];
 
     // Drive the real control, not the store, so this also proves the panel is
     // wired to it. The switch only renders when the rig has a usable loop.
-    const modSwitch = page.locator('div:has(> div > span:text-is("Modulation")) button[role="switch"]').first();
+    /*
+     * A STABLE HANDLE, not the label text. This used to be
+     * `div:has(> div > span:text-is("Modulation")) button[role="switch"]`,
+     * which was a bet on both the copy and the DOM shape - and it lost both on
+     * 2026-08-20, when the Routing panel went from six bordered cards to one
+     * settings list and the row was renamed "Modulation in the loop". Because
+     * this gate was not in verify-all.sh, nothing reported the loss.
+     */
+    const modSwitch = page.locator('button[role="switch"][data-setting="modulation-in-loop"]').first();
     const haveControl = await modSwitch.count();
     check(haveControl > 0, 'the Modulation switch is rendered when the loop is on',
       `switches on the Routing tab: ${await page.locator('button[role="switch"]').count()}`);

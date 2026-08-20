@@ -28,12 +28,22 @@ import type { Amp } from '@/types';
  * A divided list says "these belong together" and halves the height.
  */
 function SettingRow({
+  setting,
   label,
   detail,
   checked,
   onChange,
   disabled,
 }: {
+  /**
+   * A stable handle for verification scripts, same reason as
+   * [data-pedal-canvas] and [data-cable-legend]: finding this switch by its
+   * label text is a bet on the copy. `verify-modulation-switch` made that bet
+   * with `span:text-is("Modulation")` and lost it the day the row was renamed
+   * to "Modulation in the loop" - and because that gate was not in
+   * verify-all.sh, nothing reported the loss.
+   */
+  setting: string;
   label: string;
   detail: React.ReactNode;
   checked: boolean;
@@ -47,6 +57,7 @@ function SettingRow({
         <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{detail}</p>
       </div>
       <Switch
+        data-setting={setting}
         className="mt-0.5 shrink-0"
         checked={checked}
         onCheckedChange={onChange}
@@ -171,7 +182,8 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
 
           <div className="divide-y border-y">
             <SettingRow
-              label="Effects loop"
+              setting="effects-loop"
+                label="Effects loop"
               checked={useEffectsLoop}
               onChange={setUseEffectsLoop}
               disabled={!amp?.hasEffectsLoop}
@@ -188,6 +200,7 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
 
             {useEffectsLoop && amp?.hasEffectsLoop && (
               <SettingRow
+                setting="modulation-in-loop"
                 label="Modulation in the loop"
                 checked={modulationInLoop}
                 onChange={setModulationInLoop}
@@ -201,6 +214,7 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
 
             {useEffectsLoop && amp?.hasEffectsLoop && has4CablePedal && (
               <SettingRow
+                setting="four-cable-method"
                 label="4-cable method"
                 checked={use4CableMethod}
                 onChange={setUse4CableMethod}
@@ -213,7 +227,8 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
             )}
 
             <SettingRow
-              label="Optimize can rotate pedals"
+              setting="allow-rotation"
+                label="Optimize can rotate pedals"
               checked={allowRotation}
               onChange={setAllowRotation}
               detail={

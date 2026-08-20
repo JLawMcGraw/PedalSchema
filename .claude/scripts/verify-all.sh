@@ -50,6 +50,9 @@ READ_ONLY=(
   "verify-drag-undo"
   "verify-viewport"
   "verify-library-density"
+  "verify-photo-knockout"
+  "verify-chain-direction"
+  "knockout-regression"
 )
 
 # These WRITE. Each restores what it touched, but they are opt-in so a routine
@@ -57,6 +60,18 @@ READ_ONLY=(
 #
 # optimize-and-save.js is deliberately absent from BOTH lists: it overwrites a
 # hand-arranged layout, which is the owner's decision and not a gate's.
+# Found OUTSIDE both lists by the 2026-08-20 audit, and added:
+#
+#   verify-photo-knockout    passes, 1s, self-contained (synthetic JPEG)
+#   verify-chain-direction   passes, 10s - was `extract-positions.js`, a gate
+#                            wearing a dump's name, which is how it was missed
+#   knockout-regression      passes, 33s, writes nothing. Keeps its name: it is
+#                            referenced by name from verify-knockout-on-board
+#                            and the docs, and the name is older than the rule
+#   verify-modulation-switch WAS BROKEN - its selector was
+#                            `span:text-is("Modulation")` and the Routing panel
+#                            had been rebuilt around it. Nothing reported that,
+#                            because nothing ran it.
 WRITERS=(
   "verify-round-trip"
   "verify-loop-persist"
@@ -64,6 +79,9 @@ WRITERS=(
   "verify-crud"
   "verify-routes"
   "verify-sharing"
+  # Works on a CLONE of a configuration and deletes it in a finally, so it
+  # never touches a real board.
+  "verify-modulation-switch"
   # Creates a Classic Pro of its own, places the six knockout subjects on it
   # and deletes it in a finally. It USED to run against whatever board came
   # first - a real one - which is both why it wrote without being in this list
