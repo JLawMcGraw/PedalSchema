@@ -388,6 +388,75 @@ for (const c of onCanvas) {
   check(r >= 3, `${c.name} ${c.hex} reads against the board: ${r.toFixed(2)}:1 (needs 3)`);
 }
 
+// --- the JACK palette -------------------------------------------------------
+//
+// Colour on a jack dot encodes DIRECTION, not type. Six hues on an 8px mark
+// with no legend anywhere was not an encoding, and it was measurably failing:
+// input and output - 64% of every dot on screen - sat 6.4 dE apart under
+// simulated deuteranopia. The pair that mattered most was the one that did
+// not separate.
+console.log('\n=== the jack palette ===');
+
+const jackSrc = fs.readFileSync(
+  path.join(ROOT, 'src', 'lib', 'constants', 'jack-appearance.ts'),
+  'utf8'
+);
+const jacks = {};
+const jackBlock = jackSrc.slice(jackSrc.indexOf('JACK_COLOURS'));
+for (const m of jackBlock
+  .slice(0, jackBlock.indexOf('};'))
+  .matchAll(/(\w+):\s*'(#[0-9a-f]{6})'/g)) {
+  jacks[m[1]] = { hex: m[2], lin: hexToLinear(m[2]) };
+}
+check(Object.keys(jacks).length === 3, `read ${Object.keys(jacks).length} jack colours (in / out / other)`);
+
+// Every jack type must land in a group, or a dot renders with `undefined`.
+const declaredTypes = [...jackSrc.matchAll(/^\s{2}(\w+):\s*'(in|out|other)'/gm)].map((m) => m[1]);
+const ALL_TYPES = ['input', 'output', 'send', 'return', 'power', 'expression', 'midi_in', 'midi_out'];
+const unmapped = ALL_TYPES.filter((t) => !declaredTypes.includes(t));
+check(unmapped.length === 0, `all ${ALL_TYPES.length} jack types are grouped`, `unmapped: ${unmapped.join(', ')}`);
+
+// send is the loop's output and return is its input - grouping them the other
+// way round would invert the one thing this colour is carrying.
+const groupOf = (t) => {
+  const m = jackSrc.match(new RegExp('^\\s{2}' + t + ": '(in|out|other)'", 'm'));
+  return m ? m[1] : null;
+};
+check(groupOf('input') === 'in' && groupOf('return') === 'in', 'input and return are both `in`');
+check(groupOf('output') === 'out' && groupOf('send') === 'out', 'output and send are both `out`');
+check(groupOf('power') === 'other', 'power is not on the signal path, so it is grey');
+
+let worstJack = Infinity;
+let worstJackPair = '';
+const jk = Object.keys(jacks);
+for (let i = 0; i < jk.length; i++) {
+  for (let j = i + 1; j < jk.length; j++) {
+    const a = jacks[jk[i]];
+    const b = jacks[jk[j]];
+    const c = Math.min(
+      deltaE(simulate(a.lin, MACHADO.protan), simulate(b.lin, MACHADO.protan)),
+      deltaE(simulate(a.lin, MACHADO.deutan), simulate(b.lin, MACHADO.deutan))
+    );
+    if (c < worstJack) {
+      worstJack = c;
+      worstJackPair = `${jk[i]}/${jk[j]}`;
+    }
+  }
+}
+check(
+  worstJack >= CVD_TARGET,
+  `worst jack pair under protan/deutan: ${worstJack.toFixed(1)} dE (needs ${CVD_TARGET}) - ${worstJackPair}`,
+  'the six-hue set scored 6.4 here, on input/output'
+);
+
+// in and out is the distinction the whole encoding exists for, so it is held
+// to more than the bare minimum.
+const inOut = Math.min(
+  deltaE(simulate(jacks.in.lin, MACHADO.protan), simulate(jacks.out.lin, MACHADO.protan)),
+  deltaE(simulate(jacks.in.lin, MACHADO.deutan), simulate(jacks.out.lin, MACHADO.deutan))
+);
+check(inOut >= 20, `in and out separate strongly: ${inOut.toFixed(1)} dE (needs 20)`);
+
 console.log('\n-----------------------------------------');
 if (failures) {
   console.log(`FAIL: ${failures} check(s) failed\n`);

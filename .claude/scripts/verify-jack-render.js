@@ -96,6 +96,10 @@ const PEDAL = process.argv[2] || 'Conspiracy Theory';
         cx: +c.getAttribute('cx'), cy: +c.getAttribute('cy'),
         fill: c.getAttribute('fill'), stroke: c.getAttribute('stroke'),
         jackType: c.getAttribute('data-jack'),
+        // The <title> is the only thing on the canvas that names a jack: there
+        // is no jack legend, and colour groups eight types into three. Without
+        // it the exact type is unrecoverable from the drawing.
+        title: c.querySelector('title')?.textContent?.trim() ?? null,
       }));
       const rects = [...scope.querySelectorAll('rect')].map((r) => ({
         x: +r.getAttribute('x'), y: +r.getAttribute('y'),
@@ -125,6 +129,17 @@ const PEDAL = process.argv[2] || 'Conspiracy Theory';
     console.log(`\n  ${ok ? 'PASS' : 'FAIL'}  ${expectTop} jack(s) recorded on the top edge, ` +
       `${drawnUpper} drawn in the upper half`);
     if (!ok) failures++;
+
+        // Identity must never be colour alone. Colour carries direction only, so
+    // every dot has to be able to say which jack it actually is.
+    const untitled = mine.filter((c) => !c.title);
+    const titleOk = mine.length > 0 && untitled.length === 0;
+    console.log(`  ${titleOk ? 'PASS' : 'FAIL'}  every jack names itself in a <title> ` +
+      `(${mine.length - untitled.length}/${mine.length})`);
+    if (mine.length) {
+      console.log(`        e.g. ${JSON.stringify(mine[0].title)} on a ${mine[0].jackType} jack`);
+    }
+    if (!titleOk) failures++;
 
     console.log(`\n${failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED'}`);
   } catch (err) {

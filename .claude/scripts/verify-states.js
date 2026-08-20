@@ -88,105 +88,55 @@ const check = (ok, label, detail) => {
       .waitFor({ state: 'detached', timeout: 20000 })
       .catch(() => {});
 
-    // --- the skeleton actually renders -------------------------------------
-    console.log('\n=== a skeleton is on screen while the page is still loading ===');
-
-    // HOW THIS REPRODUCES, after two approaches that did not:
+    // --- the list page flushes a fallback, in the same grid ----------------
     //
-    // Holding the RSC request with page.route() renders nothing at all. The
-    // App Router ships loading.tsx AS PART OF that payload, and Next does not
-    // prefetch in dev - block the request and the navigation simply stalls on
-    // the old page.
-    //
-    // A fresh navigation is the real thing. The server streams the shell and
-    // the loading fallback first, then replaces it when the Supabase query
-    // returns, so the skeleton is genuinely on screen for the length of that
-    // round trip. `waitUntil: 'commit'` returns as soon as the response starts
-    // rather than when it finishes, which is what makes the window catchable.
-    const nav = page.goto(BASE + '/pedals', { waitUntil: 'commit' });
+    // READ THE BYTE STREAM, DO NOT RACE THE BROWSER. This check used to
+    // navigate and wait for the skeleton to appear on screen, which is a race
+    // it usually won and sometimes did not. Whether a fallback is ever PAINTED
+    // depends on how the bytes happen to be chunked; whether it was FLUSHED
+    // FIRST is the actual feature, and that is fixed in the response.
+    console.log('\n=== the list page streams a fallback, in the same grid ===');
 
-    let skeletons = 0;
-    let which = { label: null, url: null };
-    let shape = { inAGrid: false, inGrid: 0, gridCols: 0 };
-    try {
-      await page.locator('[data-slot="skeleton"]').first().waitFor({ timeout: 10000 });
-      skeletons = await page.locator('[data-slot="skeleton"]').count();
-      which = await page.evaluate(() => {
-        const el = document.querySelector('[role="status"][aria-busy="true"]');
-        return { label: el ? el.getAttribute('aria-label') : null, url: location.pathname };
-      });
-      shape = await page.evaluate(() => {
-        // The grid holding the MOST placeholders. `closest('.grid')` alone is
-        // not enough: shadcn's own CardHeader is a grid, so the nearest one is
-        // a two-line header inside a single card, not the card grid.
-        const all = [...document.querySelectorAll('[data-slot="skeleton"]')];
-        const candidates = new Set();
-        for (const el of all) {
-          const g = el.closest('.grid');
-          if (g) candidates.add(g);
-        }
-        let grid = null;
-        let best = 0;
-        for (const g of candidates) {
-          const total = g.querySelectorAll('[data-slot="skeleton"]').length;
-          if (total > best) {
-            best = total;
-            grid = g;
-          }
-        }
-        return {
-          inAGrid: !!grid,
-          inGrid: best,
-          gridCols: grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0,
-        };
-      });
-    } catch {
-      /* reported by the checks below, with the numbers */
-    }
+    const listResp = await page.goto(BASE + '/pedals');
+    const listHtml = await listResp.text();
 
-    check(skeletons > 0, `a skeleton was on screen mid-load (${skeletons} placeholders)`);
+    const firstSkeleton = listHtml.indexOf('data-slot="skeleton"');
+    const listLabel = listHtml.indexOf('aria-label="Loading pedals"');
+    // Only the resolved page links to a pedal; the placeholders link nowhere.
+    const listContent = listHtml.search(/href="\/pedals\/(?!new)/);
 
-    // WHICH skeleton, not just "a" skeleton. Each route labels its own, and a
-    // count alone cannot tell you another route's placeholder is showing - an
-    // earlier version of this gate clicked while the DASHBOARD was still
-    // loading, caught its skeleton, and then compared that page's 3-column
-    // grid against the pedals page's 4.
+    check(firstSkeleton >= 0, `the pedals fallback is in the stream (byte ${firstSkeleton})`);
+    check(listLabel >= 0, 'and it names itself, so a screen reader is told the page is busy');
     check(
-      which.label === 'Loading pedals',
-      "it is the PEDALS skeleton, not another route's",
-      `aria-label: ${which.label} | url at the time: ${which.url}`
+      firstSkeleton >= 0 && listContent >= 0 && firstSkeleton < listContent,
+      'the fallback is flushed BEFORE the cards it stands in for',
+      `fallback ${firstSkeleton} vs first card ${listContent}`
     );
-
-    // A skeleton is a loading announcement, not decoration: a screen reader
-    // gets nothing from a grid of empty grey boxes unless something says busy.
-    check(!!which.label, 'the skeleton announces itself as busy to a screen reader');
-
-    check(
-      shape.inAGrid && shape.gridCols >= 2,
-      'the card placeholders sit in a real card grid ' +
-        `(${shape.inGrid} placeholders across ${shape.gridCols} columns)`
-    );
-
-    await nav;
-    await page
-      .locator('a[href^="/pedals/"]:not([href="/pedals/new"])')
-      .first()
-      .waitFor({ timeout: 20000 });
 
     // THE ACTUAL PROMISE OF A SKELETON: the layout does not jump when the data
-    // lands. Matching column counts is what makes that true, and it is the
-    // only reason to prefer this over a spinner.
-    const realCols = await page.evaluate(() => {
-      // Not [href^="/pedals/"] alone: that also matches the "Add Custom Pedal"
-      // button, which sits in the header and has no grid above it.
-      const card = document.querySelector('a[href^="/pedals/"]:not([href="/pedals/new"])');
-      const grid = card && card.closest('.grid');
-      return grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0;
-    });
+    // lands, which means the placeholder grid and the real grid must be the
+    // same grid.
+    //
+    // Compared at the SOURCE, not in the HTML. Counting occurrences of the grid
+    // class in the response looked deterministic and was not: the RSC payload
+    // is serialised into the same document, so the string appeared twice even
+    // when the fallback had been changed to a different grid, and the check
+    // passed on a mutation built to break it.
+    const listLoadingSrc = fs.readFileSync(
+      path.join(group, 'pedals', '(list)', 'loading.tsx'),
+      'utf8'
+    );
+    const listPageSrc = fs.readFileSync(
+      path.join(group, 'pedals', '(list)', 'page.tsx'),
+      'utf8'
+    );
+    const fallbackGrid = listLoadingSrc.match(/gridClassName="([^"]+)"/)?.[1] ?? null;
+    const realGrid = listPageSrc.match(/className="(grid gap[^"]*)"/)?.[1] ?? null;
+    check(!!fallbackGrid && !!realGrid, `read both grids (fallback: ${fallbackGrid}, page: ${realGrid})`);
     check(
-      realCols === shape.gridCols,
-      'the real grid has the same column count as the skeleton did ' +
-        `(${realCols} vs ${shape.gridCols})`
+      fallbackGrid === realGrid,
+      'the fallback grid and the page grid are identical, so nothing reflows',
+      `fallback ${JSON.stringify(fallbackGrid)} vs page ${JSON.stringify(realGrid)}`
     );
 
     // --- the DETAIL pages: a skeleton, and still a 404 ---------------------
@@ -203,45 +153,31 @@ const check = (ok, label, detail) => {
     const UNKNOWN = '00000000-0000-4000-8000-000000000000';
 
     /**
-     * Navigate under a throttled connection, and report what was on screen
-     * before the content arrived.
+     * Does this route flush a loading fallback BEFORE its content?
      *
-     * THE THROTTLING IS THE POINT. Measured without it, the pedal detail page
-     * completes in 388ms and its whole document - fallback AND content -
-     * arrives in effectively one chunk, so React swaps the fallback before the
-     * browser ever paints it. The skeleton was verifiably IN the streamed HTML
-     * and still never visible, which would have read as "the loading state
-     * does not work" when the truth was "the page is too fast to need one
-     * here". Stretching delivery reproduces the condition the skeleton exists
-     * for: a slow connection, which is not a rare case.
+     * READ THE BYTE STREAM, DO NOT RACE THE BROWSER. The first version of this
+     * navigated with the connection throttled and waited for the skeleton to
+     * appear on screen. It was flaky - roughly one suite run in two - and the
+     * diagnostics said why: `after 20016ms: {"ready":"complete","h1":"AW-3",
+     * "anySkeleton":0}`. The page had ALREADY FINISHED. Throttling does not
+     * reliably stretch a same-origin document that the browser can serve in one
+     * chunk, so whether the fallback was ever painted came down to luck.
+     *
+     * The order of the bytes is the actual feature, and it is not a race: the
+     * segment suspended, so the shell and the fallback were flushed first and
+     * the content replaced it later in the same stream. If the fallback appears
+     * after the content, or not at all, the boundary is not doing its job -
+     * whatever any screenshot happens to catch.
      */
-    const cdp = await page.context().newCDPSession(page);
-    const throttle = (on) =>
-      cdp.send('Network.emulateNetworkConditions', {
-        offline: false,
-        latency: on ? 150 : 0,
-        downloadThroughput: on ? 60 * 1024 : -1,
-        uploadThroughput: on ? 60 * 1024 : -1,
-      });
-
-    const skeletonDuring = async (url) => {
-      await throttle(true);
-      const nav = page.goto(url, { waitUntil: 'commit' });
-      let label = null;
-      let count = 0;
-      try {
-        await page.locator('[data-slot="skeleton"]').first().waitFor({ timeout: 10000 });
-        count = await page.locator('[data-slot="skeleton"]').count();
-        label = await page.evaluate(() => {
-          const el = document.querySelector('[role="status"][aria-busy="true"]');
-          return el ? el.getAttribute('aria-label') : null;
-        });
-      } catch {
-        /* reported by the caller */
-      }
-      await nav.catch(() => {});
-      await throttle(false);
-      return { label, count };
+    const flushesFallbackFirst = async (url, label) => {
+      const resp = await page.goto(url);
+      const html = await resp.text();
+      const fallback = html.indexOf('data-slot="skeleton"');
+      const named = html.indexOf(`aria-label="${label}"`);
+      // The content marker: the real page's <h1>, which only the resolved
+      // render produces - the skeletons carry no headings.
+      const content = html.search(/<h1[\s>]/);
+      return { status: resp.status(), fallback, named, content, bytes: html.length };
     };
 
     // A real pedal id, taken from the list rather than hard-coded.
@@ -251,11 +187,18 @@ const check = (ok, label, detail) => {
       .first()
       .getAttribute('href');
 
-    const pedalSkel = await skeletonDuring(BASE + pedalHref);
+    const pedalFlush = await flushesFallbackFirst(BASE + pedalHref, 'Loading pedal');
     check(
-      pedalSkel.count > 0 && pedalSkel.label === 'Loading pedal',
-      `/pedals/[id] shows its own skeleton mid-load`,
-      `${pedalSkel.count} placeholders, aria-label: ${pedalSkel.label}`
+      pedalFlush.fallback >= 0 && pedalFlush.named >= 0,
+      '/pedals/[id] streams its own loading fallback',
+      `skeleton at byte ${pedalFlush.fallback}, labelled at ${pedalFlush.named}, of ${pedalFlush.bytes}`
+    );
+    check(
+      pedalFlush.fallback >= 0 &&
+        pedalFlush.content >= 0 &&
+        pedalFlush.fallback < pedalFlush.content,
+      'and flushes it BEFORE the content, which is what makes it visible at all',
+      `fallback ${pedalFlush.fallback} vs content ${pedalFlush.content}`
     );
     const pedal404 = await page.goto(`${BASE}/pedals/${UNKNOWN}`);
     check(
@@ -275,11 +218,11 @@ const check = (ok, label, detail) => {
       .getAttribute('href');
     check(!!boardHref, `found a real board to open (${boardHref})`);
 
-    const editorSkel = await skeletonDuring(BASE + boardHref);
+    const editorFlush = await flushesFallbackFirst(BASE + boardHref, 'Loading board');
     check(
-      editorSkel.count > 0 && editorSkel.label === 'Loading board',
-      `/editor/[id] shows its own skeleton mid-load`,
-      `${editorSkel.count} placeholders, aria-label: ${editorSkel.label}`
+      editorFlush.fallback >= 0 && editorFlush.named >= 0,
+      '/editor/[id] streams its own loading fallback',
+      `skeleton at byte ${editorFlush.fallback}, labelled at ${editorFlush.named}, of ${editorFlush.bytes}`
     );
     const editor404 = await page.goto(`${BASE}/editor/${UNKNOWN}`);
     // UNKNOWN is a well-formed uuid on purpose: a malformed one is rejected by

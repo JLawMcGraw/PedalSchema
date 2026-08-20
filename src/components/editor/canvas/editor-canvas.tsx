@@ -1,6 +1,7 @@
 'use client';
 
 import { useShallow } from 'zustand/react/shallow';
+import { getJackColour } from '@/lib/constants/jack-appearance';
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useEditorStore } from '@/store/editor-store';
 import { useConfigurationStore } from '@/store/configuration-store';
@@ -634,7 +635,7 @@ export function EditorCanvas({ readOnly = false }: EditorCanvasProps = {}) {
               x={0}
               y={boardHeight * 0.1 - 8}
               textAnchor="middle"
-              fill="#9ca3af"
+              fill="#9fa5ac"
               fontSize={11}
               fontWeight="bold"
             >
@@ -659,12 +660,14 @@ export function EditorCanvas({ readOnly = false }: EditorCanvasProps = {}) {
           <>
             {/* Guitar icon on right */}
             <g transform={`translate(${guitarPos.x}, ${guitarPos.y})`}>
-              <circle r={20} fill="#374151" stroke="#f59e0b" strokeWidth={2} />
+              {/* The guitar is a source, so its jack is an OUTPUT and wears the
+                  same colour as every other output on the board. */}
+              <circle r={20} fill="#242a31" stroke={getJackColour('output')} strokeWidth={2} />
               <text
                 x={0}
                 y={5}
                 textAnchor="middle"
-                fill="#f59e0b"
+                fill={getJackColour('output')}
                 fontSize={10}
                 fontWeight="bold"
               >
@@ -674,7 +677,7 @@ export function EditorCanvas({ readOnly = false }: EditorCanvasProps = {}) {
                 x={0}
                 y={35}
                 textAnchor="middle"
-                fill="#9ca3af"
+                fill="#9fa5ac"
                 fontSize={10}
               >
                 Guitar
@@ -686,8 +689,15 @@ export function EditorCanvas({ readOnly = false }: EditorCanvasProps = {}) {
               {/* Return jack (top) - only show when FX loop enabled */}
               {fxLoopActive && (
                 <g transform={`translate(0, ${ampReturnPos.y})`}>
-                  <circle r={12} fill="#374151" stroke="#22c55e" strokeWidth={2} />
-                  <text x={0} y={4} textAnchor="middle" fill="#22c55e" fontSize={8} fontWeight="bold">
+                  <circle r={12} fill="#242a31" stroke={getJackColour('return')} strokeWidth={2} />
+                  <text
+                    x={0}
+                    y={4}
+                    textAnchor="middle"
+                    fill={getJackColour('return')}
+                    fontSize={8}
+                    fontWeight="bold"
+                  >
                     RTN
                   </text>
                 </g>
@@ -696,8 +706,15 @@ export function EditorCanvas({ readOnly = false }: EditorCanvasProps = {}) {
               {/* Send jack (middle) - only show when FX loop enabled */}
               {fxLoopActive && (
                 <g transform={`translate(0, ${ampSendPos.y})`}>
-                  <circle r={12} fill="#374151" stroke="#3b82f6" strokeWidth={2} />
-                  <text x={0} y={4} textAnchor="middle" fill="#3b82f6" fontSize={8} fontWeight="bold">
+                  <circle r={12} fill="#242a31" stroke={getJackColour('send')} strokeWidth={2} />
+                  <text
+                    x={0}
+                    y={4}
+                    textAnchor="middle"
+                    fill={getJackColour('send')}
+                    fontSize={8}
+                    fontWeight="bold"
+                  >
                     SND
                   </text>
                 </g>
@@ -705,8 +722,15 @@ export function EditorCanvas({ readOnly = false }: EditorCanvasProps = {}) {
 
               {/* Input jack (bottom or center if no FX loop) */}
               <g transform={`translate(0, ${ampInputPos.y})`}>
-                <circle r={12} fill="#374151" stroke="#f59e0b" strokeWidth={2} />
-                <text x={0} y={4} textAnchor="middle" fill="#f59e0b" fontSize={8} fontWeight="bold">
+                <circle r={12} fill="#242a31" stroke={getJackColour('input')} strokeWidth={2} />
+                <text
+                  x={0}
+                  y={4}
+                  textAnchor="middle"
+                  fill={getJackColour('input')}
+                  fontSize={8}
+                  fontWeight="bold"
+                >
                   IN
                 </text>
               </g>

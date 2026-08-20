@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import type { PlacedPedal, Pedal } from '@/types';
 import { getCategoryColor } from '@/lib/constants/pedal-categories';
+import { getJackColour } from '@/lib/constants/jack-appearance';
+import { formatJackType } from '@/lib/format-pedal';
 import { rotateSide, rotatedFootprint } from '@/lib/engine/geometry/rotation';
 import { jacksToRender } from '@/lib/engine/cables/endpoints';
 
@@ -128,7 +130,11 @@ export function PedalRenderer({
           width={width}
           height={height}
           fill="none"
-          stroke={hasCollision ? '#ef4444' : isSelected ? '#3b82f6' : '#555'}
+          // Was #ef4444 / #3b82f6 - raw Tailwind, and the blue sat right on top
+          // of the old blue-ish jack dots. Selection is the accent doing its
+          // job; a collision is the same red as a cable that will not fit,
+          // because they mean the same thing.
+          stroke={hasCollision ? '#ec5b57' : isSelected ? '#56dc85' : '#555'}
           strokeWidth={isSelected || hasCollision ? 3 : 1}
           rx={4}
         />
@@ -173,18 +179,9 @@ export function PedalRenderer({
             jy = y;
         }
 
-        const jackColor =
-          jack.jackType === 'input'
-            ? '#22c55e'
-            : jack.jackType === 'output'
-            ? '#f59e0b'
-            : jack.jackType === 'power'
-            ? '#ef4444'
-            : jack.jackType === 'send'
-            ? '#06b6d4'
-            : jack.jackType === 'return'
-            ? '#8b5cf6'
-            : '#6b7280';
+        // Direction, not type - see lib/constants/jack-appearance for why six
+        // hues on an 8px dot with no legend was not an encoding.
+        const jackColor = getJackColour(jack.jackType);
 
         // An assumed jack is drawn hollow, so a guess never looks like a
         // researched fact. Same position and colour, so it still reads as the
@@ -207,7 +204,16 @@ export function PedalRenderer({
             stroke={jack.assumed ? jackColor : 'white'}
             strokeWidth={jack.assumed ? 1.5 : 1}
             strokeDasharray={jack.assumed ? '2 1.5' : undefined}
-          />
+          >
+            {/* The exact type, in words. Colour groups these into in/out/other,
+                so this is what keeps identity from being colour alone - and it
+                is the only explanation of the dots anywhere, since the canvas
+                has no jack legend. */}
+            <title>
+              {formatJackType(jack.jackType)}
+              {jack.assumed ? ' (assumed)' : ''}
+            </title>
+          </circle>
         );
       })}
 
@@ -262,7 +268,7 @@ export function PedalRenderer({
       {/* Collision warning */}
       {hasCollision && (
         <g>
-          <circle cx={x + 12} cy={y + 12} r={10} fill="#ef4444" />
+          <circle cx={x + 12} cy={y + 12} r={10} fill="#ec5b57" />
           <text
             x={x + 12}
             y={y + 12}
@@ -287,7 +293,7 @@ export function PedalRenderer({
           width={width + 4}
           height={height + 4}
           fill="none"
-          stroke="#3b82f6"
+          stroke="#56dc85"
           strokeWidth={2}
           strokeDasharray="4 2"
           rx={6}

@@ -104,10 +104,16 @@ run_one() {
     # summary, and the line naming which check failed had already scrolled
     # past. Both failing gates on 2026-08-19 had to be re-run standalone to
     # find out why - which is the entire job this runner exists to do.
+    # -A1, because in this project's gate format the EVIDENCE is on the line
+    # under the FAIL, indented. Without it the runner printed "FAIL  /pedals/[id]
+    # shows its own skeleton mid-load" and swallowed the part saying what was on
+    # screen instead - which is the whole difference between "it is missing" and
+    # "the page had already finished".
+    #
     # The tail is kept for gates that die WITHOUT printing a FAIL line - a
     # stack trace has no such line - and de-duplicated against the grep, since
     # a gate's summary is usually in both.
-    { echo "$out" | grep -E 'FAIL|Error|error:' | head -8
+    { echo "$out" | grep -A1 -E 'FAIL|Error|error:' | head -12
       echo "$out" | tail -3
     } | awk 'NF && !seen[$0]++' | sed 's/^/      /'
     failed=$((failed + 1))
