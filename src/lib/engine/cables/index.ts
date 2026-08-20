@@ -6,6 +6,11 @@ import type {
   Amp,
   RoutingConfig,
 } from '@/types';
+import {
+  derivePedalDisplayNames,
+  displayNameFor,
+  type PedalDisplayName,
+} from '@/lib/pedal-display-names';
 
 // Standard patch cable lengths in inches
 const STANDARD_CABLE_LENGTHS = [6, 12, 18, 24, 36, 48, 72, 120];
@@ -362,6 +367,11 @@ export function generateEnhancedCableList(
 ): EnhancedCable[] {
   if (cables.length === 0) return [];
 
+  // Computed ONCE per list, not per endpoint: the ordinals must be consistent
+  // across every label in the same render, and re-deriving per call would be
+  // O(cables x pedals) for an answer that cannot change between them.
+  const displayNames = derivePedalDisplayNames(placedPedals, pedalsById);
+
   const result: EnhancedCable[] = [];
   let groupNumber = 1;
   let subIndex = 0;
@@ -407,8 +417,8 @@ export function generateEnhancedCableList(
     }
 
     // Generate labels
-    const fromLabel = getCableEndpointLabel(cable.fromType, cable.fromPedalId, cable.fromJackType, placedPedals, pedalsById);
-    const toLabel = getCableEndpointLabel(cable.toType, cable.toPedalId, cable.toJackType, placedPedals, pedalsById);
+    const fromLabel = getCableEndpointLabel(cable.fromType, cable.fromPedalId, cable.fromJackType, placedPedals, pedalsById, displayNames);
+    const toLabel = getCableEndpointLabel(cable.toType, cable.toPedalId, cable.toJackType, placedPedals, pedalsById, displayNames);
 
     // Generate cable type label with length
     const lengthStr = formatLengthRange(cable.calculatedLengthInches);
@@ -444,6 +454,11 @@ export function generateSignalFlowDiagram(
 ): SignalFlowSegment[] {
   if (cables.length === 0) return [];
 
+  // Computed ONCE per list, not per endpoint: the ordinals must be consistent
+  // across every label in the same render, and re-deriving per call would be
+  // O(cables x pedals) for an answer that cannot change between them.
+  const displayNames = derivePedalDisplayNames(placedPedals, pedalsById);
+
   const segments: SignalFlowSegment[] = [];
   const sorted = [...cables].sort((a, b) => a.sortOrder - b.sortOrder);
 
@@ -455,7 +470,7 @@ export function generateSignalFlowDiagram(
 
     // Add "from" segment for first cable or transitions
     if (i === 0 || cable.fromType !== sorted[i - 1].toType) {
-      const fromLabel = getFlowLabel(cable.fromType, cable.fromPedalId, cable.fromJackType, placedPedals, pedalsById, 'from');
+      const fromLabel = getFlowLabel(cable.fromType, cable.fromPedalId, cable.fromJackType, placedPedals, pedalsById, 'from', displayNames);
       const isExternal = cable.fromType === 'guitar' || cable.fromType === 'amp_send';
       segments.push({ label: fromLabel, isExternal });
     }
@@ -471,7 +486,7 @@ export function generateSignalFlowDiagram(
     }
 
     // Add "to" segment
-    const toLabel = getFlowLabel(cable.toType, cable.toPedalId, cable.toJackType, placedPedals, pedalsById, 'to');
+    const toLabel = getFlowLabel(cable.toType, cable.toPedalId, cable.toJackType, placedPedals, pedalsById, 'to', displayNames);
     const isExternal = cable.toType === 'amp_input' || cable.toType === 'amp_return';
     segments.push({ label: toLabel, isExternal });
   }
@@ -529,7 +544,8 @@ function getCableEndpointLabel(
   pedalId: string | null,
   jackType: string | null,
   placedPedals: PlacedPedal[],
-  pedalsById: Record<string, Pedal>
+  pedalsById: Record<string, Pedal>,
+  displayNames: Map<string, PedalDisplayName>
 ): string {
   switch (type) {
     case 'guitar':
@@ -547,7 +563,10 @@ function getCableEndpointLabel(
           const pedal = pedalsById[placed.pedalId] || placed.pedal;
           if (pedal) {
             const jackLabel = jackType ? jackType.toUpperCase() : 'INPUT';
-            return `${pedal.name} ${jackLabel}`;
+            // Two CS-3s on a board used to produce "CS-3 OUTPUT -> CS-3 INPUT",
+            // a row that names neither pedal. The ordinal comes from chain
+            // position, so it is the SAME ordinal the Chain panel shows.
+            return `${displayNameFor(displayNames, placed.id, pedal.name)} ${jackLabel}`;
           }
         }
       }
@@ -566,7 +585,8 @@ function getFlowLabel(
   jackType: string | null,
   placedPedals: PlacedPedal[],
   pedalsById: Record<string, Pedal>,
-  direction: 'from' | 'to'
+  direction: 'from' | 'to',
+  displayNames: Map<string, PedalDisplayName>
 ): string {
   switch (type) {
     case 'guitar':
@@ -584,10 +604,11 @@ function getFlowLabel(
           const pedal = pedalsById[placed.pedalId] || placed.pedal;
           if (pedal) {
             // For send/return jacks, show the jack type
+            const shown = displayNameFor(displayNames, placed.id, pedal.name);
             if (jackType === 'send' || jackType === 'return') {
-              return `${pedal.name} ${jackType.toUpperCase()}`;
+              return `${shown} ${jackType.toUpperCase()}`;
             }
-            return pedal.name;
+            return shown;
           }
         }
       }

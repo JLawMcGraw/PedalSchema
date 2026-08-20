@@ -1,6 +1,7 @@
 'use client';
 
 import { PANEL_TITLE } from '@/components/editor/panels/panel-chrome';
+import { derivePedalDisplayNames, displayNameFor } from '@/lib/pedal-display-names';
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useConfigurationStore } from '@/store/configuration-store';
@@ -222,32 +223,16 @@ export function SignalChainPanel() {
     [placedPedals]
   );
 
-  /**
+  /*
    * Two pedals of the same model are common - this board has two CS-3s - and
-   * the old panel rendered both as "CS-3" with nothing to tell them apart. Only
-   * the repeated ones get a suffix, so the common case stays clean.
+   * a bare model name identifies neither. This panel used to work that out
+   * for itself; it now asks the engine, so the ordinal it shows is the same
+   * ordinal the Cables list shows. See lib/pedal-display-names.
    */
-  const displayNames = useMemo(() => {
-    const total = new Map<string, number>();
-    for (const p of sortedPedals) {
-      const name = pedalsById[p.pedalId]?.name ?? p.pedal?.name;
-      if (name) total.set(name, (total.get(name) ?? 0) + 1);
-    }
-    const seen = new Map<string, number>();
-    const out = new Map<string, string>();
-    for (const p of sortedPedals) {
-      const name = pedalsById[p.pedalId]?.name ?? p.pedal?.name;
-      if (!name) continue;
-      if ((total.get(name) ?? 0) > 1) {
-        const n = (seen.get(name) ?? 0) + 1;
-        seen.set(name, n);
-        out.set(p.id, `${name} · ${n}`);
-      } else {
-        out.set(p.id, name);
-      }
-    }
-    return out;
-  }, [sortedPedals, pedalsById]);
+  const displayNames = useMemo(
+    () => derivePedalDisplayNames(placedPedals, pedalsById),
+    [placedPedals, pedalsById]
+  );
 
   const effectsLoopEnabled = amp?.hasEffectsLoop && useEffectsLoop;
   const frontOfAmpPedals = effectsLoopEnabled
@@ -264,7 +249,7 @@ export function SignalChainPanel() {
       <ChainRow
         key={placed.id}
         placed={placed}
-        displayName={displayNames.get(placed.id) ?? pedal.name}
+        displayName={displayNameFor(displayNames, placed.id, pedal.name)}
         category={getCategoryLabel(pedal.category)}
         categoryColour={getCategoryColor(pedal.category)}
         isSelected={selectedPedalId === placed.id}

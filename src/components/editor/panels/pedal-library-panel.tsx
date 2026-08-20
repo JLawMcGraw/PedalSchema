@@ -1,6 +1,7 @@
 'use client';
 
 import { PANEL_TITLE } from '@/components/editor/panels/panel-chrome';
+import { derivePedalDisplayNames } from '@/lib/pedal-display-names';
 import { useShallow } from 'zustand/react/shallow';
 import { useState, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
@@ -239,20 +240,28 @@ function OnThisBoard() {
     useShallow((s) => ({ placedPedals: s.placedPedals, pedalsById: s.pedalsById }))
   );
 
+  /*
+   * Grouped from the engine's answer, not from a second count of its own.
+   *
+   * This list COLLAPSES duplicates ("CS-3 x2") where the Chain panel EXPANDS
+   * them ("CS-3 · 1", "CS-3 · 2"), which is right for an index and right for a
+   * chain respectively - but both are readings of one fact, and that fact is
+   * derived once in lib/pedal-display-names. Counting it again here is how the
+   * three call sites drifted apart in the first place.
+   *
+   * `ids` stay in chain order, so "the first CS-3" means the same pedal here
+   * as it does in the Chain panel.
+   */
   const roster = useMemo(() => {
+    const names = derivePedalDisplayNames(placedPedals, pedalsById);
     const byName = new Map<string, { name: string; count: number; firstId: string; ids: string[] }>();
-    for (const placed of placedPedals) {
-      const name = pedalsById[placed.pedalId]?.name ?? placed.pedal?.name;
-      // A placed pedal whose catalogue entry has not loaded yet has no name to
-      // index by. Skipping it keeps a transient "undefined" row out of the
-      // list; the count below counts rows, so the two cannot disagree.
-      if (!name) continue;
-      const entry = byName.get(name);
-      if (entry) {
-        entry.count += 1;
-        entry.ids.push(placed.id);
+    for (const [placedId, entry] of names) {
+      const existing = byName.get(entry.name);
+      if (existing) {
+        existing.count += 1;
+        existing.ids.push(placedId);
       } else {
-        byName.set(name, { name, count: 1, firstId: placed.id, ids: [placed.id] });
+        byName.set(entry.name, { name: entry.name, count: 1, firstId: placedId, ids: [placedId] });
       }
     }
     return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
