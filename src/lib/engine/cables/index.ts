@@ -132,7 +132,6 @@ import {
  * i, l and o are dropped for the same reason `share-link.ts` drops them, and
  * this is the second time that decision has had to be made in this repo.
  */
-const SUB_INDEX_LETTERS = 'abcdefghjkmnpqrstuvwxyz';
 
 
 /**
@@ -273,7 +272,16 @@ export function generateCableList(cables: CableConnection[]): CableListItem[] {
     } else {
       grouped.set(key, {
         lengthInches: cable.calculatedLengthInches,
-        lengthDisplay: formatLength(cable.calculatedLengthInches),
+        /*
+         * The PURCHASING vocabulary, and the same one the wiring rows use.
+         *
+         * This used `formatLength`, which is exact geometry - it renders 12in
+         * as `1'` and 36in as `3'` while the row for that same cable said
+         * `12"` and `3ft`. One cable, two notations, on one screen: someone
+         * matching a row against the shopping list has to do the conversion
+         * in their head to find out they are looking at the same thing.
+         */
+        lengthDisplay: formatLengthRange(cable.calculatedLengthInches),
         cableType: cable.cableType,
         count: 1,
         description: getCableDescription(cable.cableType),
@@ -291,17 +299,6 @@ export function generateCableList(cables: CableConnection[]): CableListItem[] {
   });
 }
 
-function formatLength(inches: number): string {
-  if (inches < 12) {
-    return `${inches}"`;
-  } else if (inches % 12 === 0) {
-    return `${inches / 12}'`;
-  } else {
-    const feet = Math.floor(inches / 12);
-    const remainingInches = inches % 12;
-    return `${feet}'${remainingInches}"`;
-  }
-}
 
 function getCableDescription(cableType: 'patch' | 'instrument' | 'power'): string {
   switch (cableType) {
@@ -322,14 +319,19 @@ function getCableDescription(cableType: 'patch' | 'instrument' | 'power'): strin
  * Enhanced cable representation for detailed wiring checklists
  */
 export interface EnhancedCable {
-  cableNumber: string;          // "1", "2a", "2b", etc.
-  groupId: number;
   fromLabel: string;            // "Guitar output", "NS-2 SEND"
   toLabel: string;              // "NS-2 INPUT", "Wah INPUT"
   cableTypeLabel: string;       // "Instrument (10-15ft)", "Patch (6\")"
   lengthInches: number;
   cableType: 'patch' | 'instrument';
-  isSubCable: boolean;
+  /**
+   * Which half of the rig this run belongs to.
+   *
+   * The boundary between them - the last pedal into the amp, then the amp's
+   * SEND back out to the first loop pedal - is the biggest structural
+   * transition on a board, and the list used to render it as just another row.
+   */
+  segment: 'front' | 'loop';
 }
 
 /**
@@ -342,13 +344,6 @@ export interface CableSummary {
   totalCount: number;
 }
 
-/**
- * Signal flow segment for text-based diagram
- */
-export interface SignalFlowSegment {
-  label: string;                // "Guitar", "NS-2 INPUT", "[PREAMP]"
-  isExternal: boolean;          // true for Guitar, Amp, Preamp markers
-}
 
 /**
  * Generate enhanced cable list with logical groupings and numbered cables
@@ -371,9 +366,6 @@ export function generateEnhancedCableList(
   const displayNames = derivePedalDisplayNames(placedPedals, pedalsById);
 
   const result: EnhancedCable[] = [];
-  let groupNumber = 1;
-  let subIndex = 0;
-  let lastCableType: 'patch' | 'instrument' | null = null;
   let inEffectsLoop = false;
 
   // Filter out power cables (not part of signal chain) and sort by sortOrder
@@ -381,37 +373,23 @@ export function generateEnhancedCableList(
     .filter(c => c.cableType !== 'power')
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
+  /*
+   * THE NUMBERING IS GONE, and it was not a loss.
+   *
+   * Every row used to carry a label from a group-and-sub-index scheme -
+   * `1, 2, 2b, 2c ... 2t, 3, 4, 5, 5b, 5c, 6` on the 22-pedal board. That is
+   * 24 labels encoding about four groups, with one group holding eighteen of
+   * them, and the sub-letters were pure sequence - which the row order already
+   * gives you. It cost a column and returned almost nothing, and it is the
+   * scheme that once rendered the twelfth cable as "2l", a lowercase L beside
+   * digits, reading as "21".
+   *
+   * What the grouping was really carrying - front of amp versus effects loop -
+   * is kept, as a field that says so.
+   */
   for (const cable of sorted) {
-    // Detect effects loop section
-    const isEffectsLoopCable = cable.fromType === 'amp_send' || cable.toType === 'amp_return';
-    if (isEffectsLoopCable && !inEffectsLoop) {
+    if (cable.fromType === 'amp_send' || cable.toType === 'amp_return') {
       inEffectsLoop = true;
-      // Start new group for effects loop
-      groupNumber++;
-      subIndex = 0;
-      lastCableType = null;
-    }
-
-    // Determine if this starts a new group or continues as sub-cable
-    const startsNewGroup = cable.cableType === 'instrument' ||
-      lastCableType === null ||
-      (lastCableType === 'instrument' && cable.cableType === 'patch');
-
-    if (startsNewGroup) {
-      if (lastCableType !== null) {
-        groupNumber++;
-      }
-      subIndex = 0;
-    } else {
-      subIndex++;
-    }
-
-    // Generate cable number
-    let cableNumber: string;
-    if (cable.cableType === 'instrument' || subIndex === 0) {
-      cableNumber = String(groupNumber);
-    } else {
-      cableNumber = `${groupNumber}${SUB_INDEX_LETTERS[subIndex % SUB_INDEX_LETTERS.length]}`;
     }
 
     // Generate labels
@@ -424,82 +402,18 @@ export function generateEnhancedCableList(
     const cableTypeLabel = `${typeStr} (${lengthStr})`;
 
     result.push({
-      cableNumber,
-      groupId: groupNumber,
       fromLabel,
       toLabel,
       cableTypeLabel,
       lengthInches: cable.calculatedLengthInches,
       cableType: cable.cableType as 'patch' | 'instrument',
-      isSubCable: subIndex > 0,
+      segment: inEffectsLoop ? 'loop' : 'front',
     });
-
-    lastCableType = cable.cableType as 'patch' | 'instrument';
   }
 
   return result;
 }
 
-/**
- * Generate text-based signal flow diagram
- */
-export function generateSignalFlowDiagram(
-  cables: CableConnection[],
-  placedPedals: PlacedPedal[],
-  pedalsById: Record<string, Pedal>,
-  useEffectsLoop: boolean,
-  amp: Amp | null
-): SignalFlowSegment[] {
-  if (cables.length === 0) return [];
-
-  // Computed ONCE per list, not per endpoint: the ordinals must be consistent
-  // across every label in the same render, and re-deriving per call would be
-  // O(cables x pedals) for an answer that cannot change between them.
-  const displayNames = derivePedalDisplayNames(placedPedals, pedalsById);
-
-  const segments: SignalFlowSegment[] = [];
-  const sorted = [...cables].sort((a, b) => a.sortOrder - b.sortOrder);
-
-  // Track if we've added the preamp marker
-  let addedPreamp = false;
-
-  for (let i = 0; i < sorted.length; i++) {
-    const cable = sorted[i];
-
-    // Add "from" segment for first cable or transitions
-    if (i === 0 || cable.fromType !== sorted[i - 1].toType) {
-      const fromLabel = getFlowLabel(cable.fromType, cable.fromPedalId, cable.fromJackType, placedPedals, pedalsById, 'from', displayNames);
-      const isExternal = cable.fromType === 'guitar' || cable.fromType === 'amp_send';
-      segments.push({ label: fromLabel, isExternal });
-    }
-
-    // Add [PREAMP] marker when entering effects loop
-    if (!addedPreamp && cable.fromType === 'amp_send') {
-      // Insert [PREAMP] before the amp_send
-      const lastIdx = segments.length - 1;
-      if (lastIdx >= 0) {
-        segments.splice(lastIdx, 0, { label: '[PREAMP]', isExternal: true });
-      }
-      addedPreamp = true;
-    }
-
-    // Add "to" segment
-    const toLabel = getFlowLabel(cable.toType, cable.toPedalId, cable.toJackType, placedPedals, pedalsById, 'to', displayNames);
-    const isExternal = cable.toType === 'amp_input' || cable.toType === 'amp_return';
-    segments.push({ label: toLabel, isExternal });
-  }
-
-  // Add final amp marker if ending with amp_input (not effects loop)
-  const lastCable = sorted[sorted.length - 1];
-  if (lastCable.toType === 'amp_return' && amp?.hasEffectsLoop) {
-    segments.push({ label: '[POWER AMP]', isExternal: true });
-    segments.push({ label: 'Speaker', isExternal: true });
-  } else if (lastCable.toType === 'amp_input' && !useEffectsLoop) {
-    segments.push({ label: 'Speaker', isExternal: true });
-  }
-
-  return segments;
-}
 
 /**
  * Calculate cable count summary by type
@@ -574,47 +488,6 @@ function getCableEndpointLabel(
   }
 }
 
-/**
- * Get a label for signal flow diagram (shorter than wiring checklist)
- */
-function getFlowLabel(
-  type: CableConnection['fromType'] | CableConnection['toType'],
-  pedalId: string | null,
-  jackType: string | null,
-  placedPedals: PlacedPedal[],
-  pedalsById: Record<string, Pedal>,
-  direction: 'from' | 'to',
-  displayNames: Map<string, PedalDisplayName>
-): string {
-  switch (type) {
-    case 'guitar':
-      return 'Guitar';
-    case 'amp_input':
-      return 'Amp INPUT';
-    case 'amp_send':
-      return 'SEND';
-    case 'amp_return':
-      return 'RETURN';
-    case 'pedal':
-      if (pedalId) {
-        const placed = placedPedals.find(p => p.id === pedalId);
-        if (placed) {
-          const pedal = pedalsById[placed.pedalId] || placed.pedal;
-          if (pedal) {
-            // For send/return jacks, show the jack type
-            const shown = displayNameFor(displayNames, placed.id, pedal.name);
-            if (jackType === 'send' || jackType === 'return') {
-              return `${shown} ${jackType.toUpperCase()}`;
-            }
-            return shown;
-          }
-        }
-      }
-      return 'Pedal';
-    default:
-      return 'Unknown';
-  }
-}
 
 /**
  * Format cable length as a range (for practical purchasing)
