@@ -25,6 +25,11 @@ export interface BoardCardProps {
   boardLabel: string;
   widthInches: number;
   depthInches: number;
+  /** The largest board on the page, so every card shares one scale. */
+  frameWidthInches?: number;
+  frameDepthInches?: number;
+  railWidthInches?: number;
+  railPositionsFromBack?: number[];
   knownDrawMa: number;
   unknownDrawCount: number;
   pedals: ThumbnailPedal[];
@@ -52,6 +57,10 @@ export function BoardCard({
   boardLabel,
   widthInches,
   depthInches,
+  frameWidthInches,
+  frameDepthInches,
+  railWidthInches,
+  railPositionsFromBack,
   knownDrawMa,
   unknownDrawCount,
   pedals,
@@ -167,8 +176,16 @@ export function BoardCard({
           <BoardThumbnail
             widthInches={widthInches}
             depthInches={depthInches}
+            frameWidthInches={frameWidthInches}
+            frameDepthInches={frameDepthInches}
+            railWidthInches={railWidthInches}
+            railPositionsFromBack={railPositionsFromBack}
             pedals={pedals}
-            className="h-24 w-full"
+            /* 144px, not the 96 it started at. Measured across three heights
+               on the real dashboard: at 96px the largest board filled 61% of
+               the strip, at 144px it fills 78% at 9 px/inch, and at 176px it
+               fills 95% but the image swamps the text below it. */
+            className="h-36 w-full"
           />
         </div>
         <CardHeader>

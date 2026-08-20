@@ -41,7 +41,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       description,
       created_at,
       updated_at,
-      boards (name, manufacturer, width_inches, depth_inches),
+      boards (
+        name, manufacturer, width_inches, depth_inches, rail_width_inches,
+        board_rails (position_from_back_inches)
+      ),
       configuration_pedals (
         x_inches,
         y_inches,
@@ -52,6 +55,35 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     .eq('user_id', user?.id)
     .order('updated_at', { ascending: false })
     .range(pageWindow.from, pageWindow.to);
+
+  /*
+   * ONE SCALE FOR EVERY THUMBNAIL ON THE PAGE.
+   *
+   * Each card used to fit its own board to the same 96px band, so the drawing
+   * carried no size information - measured on the real dashboard, 7.68 px/inch
+   * for an 18x12.5in Classic Jr against 6.00 for a 32x16in Classic Pro. The
+   * SMALLER board was drawn 28% too big relative to the larger one, which is
+   * worse than carrying no size at all.
+   *
+   * The frame is the largest board in THIS PAGE of results. That is a
+   * deliberate limit: the query is paginated, so a board on page 2 cannot
+   * influence page 1, and the alternative - a fixed frame sized to the biggest
+   * board in the catalogue - would shrink every real board to fit a Classic
+   * Pro XL nobody owns.
+   */
+  const frame = (configurations ?? []).reduce(
+    (max, config) => {
+      const b = config.boards as unknown as {
+        width_inches: number | null;
+        depth_inches: number | null;
+      } | null;
+      return {
+        width: Math.max(max.width, Number(b?.width_inches ?? 0)),
+        depth: Math.max(max.depth, Number(b?.depth_inches ?? 0)),
+      };
+    },
+    { width: 0, depth: 0 }
+  );
 
   return (
     <div className="container py-8">
@@ -79,6 +111,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               manufacturer: string | null;
               width_inches: number | null;
               depth_inches: number | null;
+              rail_width_inches: number | null;
+              board_rails: Array<{ position_from_back_inches: number }> | null;
             } | null;
             const rows = (config.configuration_pedals ?? []) as unknown as Array<{
               x_inches: number;
@@ -102,6 +136,12 @@ export default async function DashboardPage({ searchParams }: PageProps) {
                 boardLabel={[board?.manufacturer, board?.name].filter(Boolean).join(' ')}
                 widthInches={Number(board?.width_inches ?? 0)}
                 depthInches={Number(board?.depth_inches ?? 0)}
+                frameWidthInches={frame.width}
+                frameDepthInches={frame.depth}
+                railWidthInches={Number(board?.rail_width_inches ?? 0)}
+                railPositionsFromBack={(board?.board_rails ?? []).map((r) =>
+                  Number(r.position_from_back_inches)
+                )}
                 // A null draw is UNKNOWN, not zero - summing it as zero would
                 // report a board as lighter on power than it is. The count of
                 // unknowns rides along so the card can say so.
