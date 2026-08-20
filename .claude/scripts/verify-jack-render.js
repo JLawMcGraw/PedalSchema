@@ -32,7 +32,11 @@ const PEDAL = process.argv[2] || 'Conspiracy Theory';
     // Add the pedal (client state only - never saved)
     await page.fill('input[placeholder*="Search" i]', PEDAL);
     await page.waitForTimeout(400);
-    await page.click(`button:has-text("${PEDAL}")`);
+    // Scoped by handle, not by text: the rail's "On this board" roster
+    // carries the same pedal names, so the bare text selector matches two
+    // elements and works only because the library list happens to come first
+    // in the DOM. Measured: 2 matches unscoped, 1 with the handle.
+    await page.click(`[data-library-pedal="${PEDAL}"]`);
 
     /*
      * Click an EMPTY part of the canvas, found rather than assumed.

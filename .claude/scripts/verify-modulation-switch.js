@@ -93,7 +93,7 @@ const MOD = ['modulation', 'tremolo'];
     // The routing controls live behind a tab - nothing in the right panel
     // exists until it is selected, which is why an earlier version of this
     // script found zero switches on a page that renders five.
-    await page.locator('[role="tab"]:text-is("Routing")').click();
+    await page.locator('[data-panel-tab="routing"]').click();
     await page.waitForTimeout(300);
 
     // Drive the real control, not the store, so this also proves the panel is

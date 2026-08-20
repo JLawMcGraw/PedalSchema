@@ -65,7 +65,7 @@ const uuid = () => require('crypto').randomUUID();
     check(inMemory.pedalConfigs.length === 1, 'the store holds the loop config before saving',
       JSON.stringify(inMemory.pedalConfigs));
 
-    await page.click('button:has-text("Save")');
+    await page.click('[data-save-board]');
     await page.waitForTimeout(2500);
 
     const { data: row } = await sb.from('configurations').select('routing_config').eq('id', cfgId).single();

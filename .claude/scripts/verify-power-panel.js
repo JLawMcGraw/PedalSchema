@@ -46,7 +46,7 @@ const { loadEnv, login, openEditor } = require('./lib/twin');
     console.log(`engine: ${expected.known}mA known, ${expected.unknown} unknown, ` +
       `${expected.count} pedals\n`);
 
-    await page.click('button[role="tab"]:has-text("Power")');
+    await page.click('[data-panel-tab="power"]');
     await page.waitForTimeout(300);
 
     // The panel is the tab's own region, so a number elsewhere on the page
@@ -98,7 +98,7 @@ const { loadEnv, login, openEditor } = require('./lib/twin');
       await page.mouse.click(canvas.x + canvas.width * 0.5, canvas.y + canvas.height * 0.5);
       await page.waitForTimeout(400);
 
-      await page.click('button[role="tab"]:has-text("Power")');
+      await page.click('[data-panel-tab="power"]');
       await page.waitForTimeout(300);
       const t2 = (await page.locator('[role="tabpanel"]:not([hidden])').innerText())
         .replace(/\s+/g, ' ').trim();

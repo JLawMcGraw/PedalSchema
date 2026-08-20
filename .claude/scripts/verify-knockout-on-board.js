@@ -151,13 +151,14 @@ async function main() {
       await search.fill(name);
       await page.waitForTimeout(400);
       /*
-       * SCOPED TO THE LIBRARY LIST. The library's rows live inside <details>
-       * sections; the rail's "On this board" roster does not. Without the
-       * scope, the roster - which fills up as this loop runs - starts matching
-       * `button:has-text("DD-7")` first, and the gate clicks a pedal it has
-       * already placed instead of the library entry.
+       * ADDRESSED BY HANDLE, NOT BY TEXT. The rail's "On this board" roster
+       * carries the same pedal names and fills up as this loop runs, so
+       * `button:has-text("DD-7")` starts matching a pedal already placed
+       * rather than the library entry. `details button` fixed that while
+       * betting on the library staying a <details>; `data-library-pedal` does
+       * not bet on anything but the handle.
        */
-      const row = page.locator(`details button:has-text("${name}")`).first();
+      const row = page.locator(`[data-library-pedal*="${name}"]`).first();
       await row.scrollIntoViewIfNeeded();
       await row.click();
       await page.waitForTimeout(300);

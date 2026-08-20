@@ -307,33 +307,50 @@ export function EditorClient({
                        a lone tab on row two spanned the full 287px.
         With both, tabs size to their labels and wrap like text.
       */}
+      {/*
+        Every trigger carries `data-panel-tab`, keyed on its VALUE rather than
+        its label, so verification scripts have a stable handle - the same
+        reason as [data-pedal-canvas] and [data-cable-legend].
+
+        Nine selectors across six gates used to find these by their text, and
+        the text is not the contract: `Props` renders as "PROPS" only because
+        of a CSS uppercase transform, so `:text-is("Routing")` passes today and
+        would break the day someone types the label in capitals, with the
+        screen looking identical either way. Two gates were already broken this
+        session by exactly that class of bet.
+      */}
       <TabsList className="w-full justify-start rounded-none border-b bg-transparent p-0 h-auto shrink-0 flex-wrap">
         <TabsTrigger
           value="chain"
+          data-panel-tab="chain"
           className={TAB_CLASS}
         >
           Chain
         </TabsTrigger>
         <TabsTrigger
           value="cables"
+          data-panel-tab="cables"
           className={TAB_CLASS}
         >
           Cables
         </TabsTrigger>
         <TabsTrigger
           value="routing"
+          data-panel-tab="routing"
           className={TAB_CLASS}
         >
           Routing
         </TabsTrigger>
         <TabsTrigger
           value="power"
+          data-panel-tab="power"
           className={TAB_CLASS}
         >
           Power
         </TabsTrigger>
         <TabsTrigger
           value="properties"
+          data-panel-tab="properties"
           className={TAB_CLASS}
         >
           Props

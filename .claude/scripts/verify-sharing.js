@@ -66,7 +66,7 @@ const check = (ok, label, detail) => {
     }
 
     // --- the control lives in the Board panel ---------------------------
-    await owner.click('[role="tab"]:has-text("Props")');
+    await owner.click('[data-panel-tab="properties"]');
     await owner.waitForSelector('#board-public', { timeout: 15000 });
     const startsOff = await owner.locator('#board-public').getAttribute('data-state');
     check(startsOff === 'unchecked', 'a board starts unpublished', `switch is ${startsOff}`);
@@ -255,7 +255,7 @@ const check = (ok, label, detail) => {
       `-> ${ownerOnClosed.status()}`
     );
     await owner.goto(url);
-    await owner.click('[role="tab"]:has-text("Props")');
+    await owner.click('[data-panel-tab="properties"]');
     await owner.waitForSelector('#board-public', { timeout: 15000 });
 
     // Re-publishing restores the SAME link rather than orphaning every copy.

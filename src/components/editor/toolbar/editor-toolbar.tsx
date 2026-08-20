@@ -328,7 +328,10 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
           </DropdownMenu>
 
           {/* Save */}
-          <Button onClick={onSave} disabled={isSaving || !isDirty} size="sm">
+          {/* `data-save-board` because three gates click this by its label,
+              and the label is not constant: it reads "Saving..." mid-flight,
+              which does not contain "Save". */}
+          <Button data-save-board onClick={onSave} disabled={isSaving || !isDirty} size="sm">
             {isSaving ? 'Saving...' : 'Save'}
           </Button>
         </div>

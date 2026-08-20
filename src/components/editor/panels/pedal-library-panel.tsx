@@ -168,6 +168,14 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
                     return (
                       <button
                         key={pedal.id}
+                        /* A stable handle for verification scripts. Two gates
+                           select a library entry by its pedal's NAME, and the
+                           rail's "On this board" roster below now carries the
+                           same names - so `button:has-text("Conspiracy Theory")`
+                           matches two elements and works only by DOM order.
+                           Scoping to `details` would fix it while betting on
+                           this list staying a <details>; this does not. */
+                        data-library-pedal={pedal.name}
                         onClick={() => handlePedalClick(pedal)}
                         className={`w-full text-left p-2 rounded-md transition-colors duration-200 overflow-hidden ${
                           isSelected

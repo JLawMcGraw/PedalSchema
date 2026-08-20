@@ -57,7 +57,7 @@ const check = (ok, label, detail) => {
     // the gate had nothing to open and failed on a panel that was fine. The
     // amp select is the stable one: it is the only non-boolean control in the
     // routing panel and is not going anywhere.
-    const routing = page.locator('[role="tab"]:has-text("Routing")').first();
+    const routing = page.locator('[data-panel-tab="routing"]').first();
     await routing.waitFor({ timeout: 10000 });
     await routing.click();
     const select = page.locator('button[role="combobox"]').first();

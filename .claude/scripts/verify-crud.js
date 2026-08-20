@@ -48,7 +48,7 @@ const snap = (page) => page.evaluate(() => window.__getPedalSchemaSnapshot());
 
 /** Save through the real button and wait for the dirty flag to clear. */
 async function save(page) {
-  await page.click('button:has-text("Save")');
+  await page.click('[data-save-board]');
   await page.waitForFunction(
     () => {
       const s = window.__getPedalSchemaSnapshot();
@@ -167,7 +167,7 @@ async function save(page) {
     // --- 6. the description round-trips too -------------------------------
     // It lives in the Board panel, which is the Props tab with nothing
     // selected - the description previously had no UI anywhere in the app.
-    await page.click('[role="tab"]:has-text("Props")');
+    await page.click('[data-panel-tab="properties"]');
     const descBefore = (await snap(page)).description;
     const desc = `crud gate ${Date.now()}`;
     await page.fill('#board-description', desc);
@@ -188,7 +188,7 @@ async function save(page) {
     );
 
     // put the description back
-    await page.click('[role="tab"]:has-text("Props")');
+    await page.click('[data-panel-tab="properties"]');
     await page.fill('#board-description', descBefore ?? '');
     await page.locator('#board-description').blur();
     if ((await snap(page)).isDirty) await save(page);
@@ -224,7 +224,7 @@ async function save(page) {
 
       const card = page.locator(`article:has(a[href="/editor/${dupSource.data.id}"])`);
       await card.locator('button[aria-label^="Actions"]').click();
-      await page.locator('[role="menuitem"]:has-text("Duplicate")').click();
+      await page.locator('[data-card-action="duplicate"]').click();
 
       // Landing on the copy in the editor is the designed behaviour: nobody
       // duplicates a board to look at two identical boards.
@@ -343,14 +343,14 @@ async function save(page) {
 
     // Delete it the way a person would: the card's menu, then the confirm.
     await page.locator(`article:has(a[href="/editor/${created}"]) button[aria-label^="Actions"]`).click();
-    await page.locator('[role="menuitem"]:has-text("Delete")').click();
+    await page.locator('[data-card-action="delete"]').click();
 
-    const confirmVisible = await page.locator('button:has-text("Delete board")').count();
+    const confirmVisible = await page.locator('[data-confirm-delete]').count();
     check(confirmVisible === 1, 'the confirm appears on the card itself, not in a modal');
     const dialogs = await page.locator('[role="dialog"], [role="alertdialog"]').count();
     check(dialogs === 0, 'no modal was opened', `role=dialog count: ${dialogs}`);
 
-    await page.locator('button:has-text("Delete board")').click();
+    await page.locator('[data-confirm-delete]').click();
     await page.waitForFunction(
       (id) => !document.querySelector(`a[href="/editor/${id}"]`),
       created,

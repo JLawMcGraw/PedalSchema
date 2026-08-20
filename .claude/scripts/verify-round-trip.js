@@ -141,7 +141,7 @@ async function readDerived(page) {
       const edited = await readDerived(page);
       check(edited.isDirty === true, 'a drag marks the board dirty');
 
-      await page.locator('button:has-text("Save")').first().click();
+      await page.locator('[data-save-board]').first().click();
       await page.waitForFunction(
         () => window.__getPedalSchemaSnapshot().isDirty === false ||
               window.__getPedalSchemaSnapshot().saveError !== null,

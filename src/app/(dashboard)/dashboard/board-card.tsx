@@ -132,6 +132,7 @@ export function BoardCard({
           )}
           <div className="flex gap-2">
             <Button
+              data-confirm-delete
               variant="destructive"
               size="sm"
               onClick={handleDelete}
@@ -247,11 +248,12 @@ export function BoardCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={handleDuplicate} disabled={duplicating}>
+            <DropdownMenuItem data-card-action="duplicate" onSelect={handleDuplicate} disabled={duplicating}>
               <Copy className="h-4 w-4 mr-2" />
               {duplicating ? 'Duplicating...' : 'Duplicate'}
             </DropdownMenuItem>
             <DropdownMenuItem
+              data-card-action="delete"
               variant="destructive"
               onSelect={() => setConfirming(true)}
             >

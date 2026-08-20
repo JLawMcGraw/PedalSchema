@@ -71,14 +71,16 @@ const findReadouts = (page) =>
     await waitForCanvas(page);
 
     // The panels that hold the numbers. Power is the densest column in the app.
-    for (const tab of ['Power', 'Cables', 'Props']) {
-      const button = page.locator(`[role="tab"]:has-text("${tab}")`).first();
+    // Addressed by `data-panel-tab`, which is the tab's VALUE - the label text
+    // is a display string and was a selector bet two gates already lost.
+    for (const tab of ['power', 'cables', 'properties']) {
+      const button = page.locator(`[data-panel-tab="${tab}"]`).first();
       if (await button.count()) {
         await button.click();
         // Wait for the tab to actually BE selected, not for a guessed number of
         // milliseconds. A sleep here is a race that passes on a fast machine.
         await page
-          .locator(`[role="tab"][data-state="active"]:has-text("${tab}")`)
+          .locator(`[data-panel-tab="${tab}"][data-state="active"]`)
           .waitFor({ timeout: 5000 });
       }
     }
