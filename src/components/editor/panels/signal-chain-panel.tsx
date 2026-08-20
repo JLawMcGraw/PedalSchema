@@ -7,7 +7,7 @@ import { useConfigurationStore } from '@/store/configuration-store';
 import { useDerivedConfiguration } from '@/store/derived';
 import { useEditorStore } from '@/store/editor-store';
 import { getCategoryColor, getCategoryLabel } from '@/lib/constants/pedal-categories';
-import { Warning, Lightbulb, Lock, CaretUp, CaretDown, X } from '@phosphor-icons/react';
+import { Lock, CaretUp, CaretDown, X } from '@phosphor-icons/react';
 import type { PlacedPedal } from '@/types';
 
 /**
@@ -287,37 +287,32 @@ export function SignalChainPanel() {
         part you had to hunt for.
       */}
       {issueCount > 0 && (
-        <div className="shrink-0 divide-y border-b">
-          {warnings.map((warning, index) => (
-            <div key={`w${index}`} className="flex items-start gap-2 px-3 py-2">
-              <Warning
-                className={`mt-0.5 size-3.5 shrink-0 ${
-                  warning.severity === 'error' ? 'text-destructive' : 'text-warning'
-                }`}
+        <div className="shrink-0 border-b">
+          <div className="flex items-baseline justify-between gap-2 px-3 pt-2">
+            <h4 className={PANEL_TITLE}>Notices</h4>
+            <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
+              {issueCount}
+            </span>
+          </div>
+          <div className="divide-y">
+            {warnings.map((warning, index) => (
+              <IssueRow
+                key={`w${index}`}
+                level={warning.severity === 'error' ? 'error' : 'warn'}
+                message={warning.message}
+                detail={warning.suggestion}
+                emphasis
               />
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium leading-snug">{warning.message}</p>
-                {warning.suggestion && (
-                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                    {warning.suggestion}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
-          {suggestions.map((suggestion, index) => (
-            <div key={`s${index}`} className="flex items-start gap-2 px-3 py-2">
-              <Lightbulb className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <p className="text-xs leading-snug">{suggestion.message}</p>
-                {suggestion.suggestion && (
-                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                    {suggestion.suggestion}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
+            ))}
+            {suggestions.map((suggestion, index) => (
+              <IssueRow
+                key={`s${index}`}
+                level="note"
+                message={suggestion.message}
+                detail={suggestion.suggestion}
+              />
+            ))}
+          </div>
         </div>
       )}
 
@@ -350,6 +345,53 @@ export function SignalChainPanel() {
               </Spine>
             )}
           </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One notice, as a log record rather than a paragraph.
+ *
+ * This block used to be an icon beside soft prose - the only prose in a panel
+ * whose every other line is a fixed-gutter record ("` 1 | PW-3   Filter/Wah`"),
+ * so it read as pasted in from another product. A lightbulb also has to be
+ * decoded before it says anything, and it was carrying the ONLY distinction
+ * between "your board is wrong" and "here is an idea".
+ *
+ * The level is now a word in the micro-mono register, in a fixed-width gutter
+ * so every message starts on the same column. That is what makes a list of
+ * notices read as a log: the left edge, not the ornament.
+ */
+function IssueRow({
+  level,
+  message,
+  detail,
+  emphasis = false,
+}: {
+  level: 'error' | 'warn' | 'note';
+  message: string;
+  detail?: string;
+  emphasis?: boolean;
+}) {
+  const tone =
+    level === 'error' ? 'text-destructive' : level === 'warn' ? 'text-warning' : 'text-muted-foreground';
+
+  return (
+    <div className="flex items-baseline gap-2 px-3 py-2">
+      <span
+        className={`w-9 shrink-0 font-mono text-[10px] font-semibold uppercase tracking-widest ${tone}`}
+      >
+        {level}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className={`text-xs leading-snug ${emphasis ? 'font-medium' : ''}`}>{message}</p>
+        {/* The engine's own wording, unchanged. What a rig feature MEANS is
+            the owner's call, so this rewrites the presentation and not a
+            single word of the copy. */}
+        {detail && (
+          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{detail}</p>
         )}
       </div>
     </div>
