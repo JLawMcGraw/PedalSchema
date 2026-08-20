@@ -56,7 +56,6 @@ async function main() {
       // Flip the Effects Loop switch through the real UI (Routing tab)
       await page.getByRole('tab', { name: /routing/i }).click();
       await page.waitForTimeout(500);
-      const row = page.locator('div', { hasText: /^Effects Loop$/ }).locator('..');
       await page.locator('button[role="switch"]').first().click();
       await page.waitForTimeout(1500);
       console.log('toggled Effects Loop via UI');

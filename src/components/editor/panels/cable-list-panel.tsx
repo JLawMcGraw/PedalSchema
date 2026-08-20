@@ -46,8 +46,8 @@ export function CableListPanel() {
   }, [cables]);
 
   const enhancedCables = useMemo(() => {
-    return generateEnhancedCableList(cableConnections, placedPedals, pedalsById, useEffectsLoop, amp);
-  }, [cableConnections, placedPedals, pedalsById, useEffectsLoop, amp]);
+    return generateEnhancedCableList(cableConnections, placedPedals, pedalsById);
+  }, [cableConnections, placedPedals, pedalsById]);
 
   const signalFlow = useMemo(() => {
     return generateSignalFlowDiagram(cableConnections, placedPedals, pedalsById, useEffectsLoop, amp);

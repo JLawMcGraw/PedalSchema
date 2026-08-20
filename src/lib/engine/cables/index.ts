@@ -361,9 +361,7 @@ export interface SignalFlowSegment {
 export function generateEnhancedCableList(
   cables: CableConnection[],
   placedPedals: PlacedPedal[],
-  pedalsById: Record<string, Pedal>,
-  useEffectsLoop: boolean,
-  amp: Amp | null
+  pedalsById: Record<string, Pedal>
 ): EnhancedCable[] {
   if (cables.length === 0) return [];
 

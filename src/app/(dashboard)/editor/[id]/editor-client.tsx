@@ -123,6 +123,21 @@ export function EditorClient({
     if (initialPowerSupply !== undefined) {
       useConfigurationStore.setState({ powerSupply: initialPowerSupply });
     }
+    /*
+     * `initialPowerSupplies` and `initialPowerSupply` are DELIBERATELY not
+     * dependencies, and adding them is not a safe way to silence this.
+     *
+     * They are an array and an object prop, so they carry a new identity on
+     * every render of the parent. In the deps they would re-run this effect
+     * continuously, and this effect calls initConfiguration - which resets the
+     * board to its loaded state. That is the user's unsaved work, thrown away
+     * on a re-render they did not cause.
+     *
+     * There is no stale-closure risk in leaving them out: the effect re-runs
+     * whenever the board's identity changes, and when it does it reads the
+     * props of that render, which are the fresh ones.
+     */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     configId,
     configName,

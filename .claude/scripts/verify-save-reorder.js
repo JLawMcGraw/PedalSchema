@@ -51,7 +51,8 @@ const uuid = () => require('crypto').randomUUID();
   const check = (ok, label, detail) => {
     console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${label}`);
     if (detail) console.log(`        ${detail}`);
-    ok ? pass++ : fail++;
+    if (ok) pass++;
+    else fail++;
   };
 
   try {
@@ -104,6 +105,6 @@ const uuid = () => require('crypto').randomUUID();
     await sb.from('configurations').delete().eq('id', cfgId);
   }
 
-  console.log(`\n${fail === 0 ? 'ALL CHECKS PASSED' : fail + ' CHECK(S) FAILED'}`);
+  console.log(`\n${fail === 0 ? `ALL ${pass} CHECKS PASSED` : `${fail} CHECK(S) FAILED, ${pass} passed`}`);
   process.exit(fail === 0 ? 0 : 1);
 })();

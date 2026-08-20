@@ -30,6 +30,30 @@ const eslintConfig = defineConfig([
     languageOptions: { sourceType: "commonjs" },
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
+  {
+    /*
+     * `_name` means "required by a signature, not needed here".
+     *
+     * `ChainRule.apply` is `(pedals, context)`; five of the rules genuinely do
+     * not consult the context, and the interface is not optional. Same for the
+     * `direction` a label helper takes because its twin needs it. Without this
+     * the only ways to silence them are to lie about the signature or to leave
+     * a standing warning - and a warning list nobody finishes reading is how
+     * the two real defects in this repo stayed hidden under 152 lines of
+     * `no-require-imports`.
+     *
+     * Deliberately does NOT ignore unused CAUGHT ERRORS or unused locals - an
+     * unused local is dead code and an unused `catch (e)` is usually a swallowed
+     * failure. This covers arguments only.
+     */
+    files: ["**/*.ts", "**/*.tsx"],
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { args: "after-used", argsIgnorePattern: "^_", varsIgnorePattern: "^$" },
+      ],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

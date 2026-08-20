@@ -23,7 +23,7 @@
  */
 const path = require('path');
 const { chromium } = require(path.join(__dirname, '../../node_modules/playwright'));
-const { loadEnv, login, openEditor, BASE_URL } = require('./lib/twin');
+const { loadEnv, login, openEditor } = require('./lib/twin');
 loadEnv();
 
 /** The pedals this run is about, by the name shown in the library. */

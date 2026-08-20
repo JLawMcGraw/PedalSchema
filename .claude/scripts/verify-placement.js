@@ -43,9 +43,7 @@ function signalOrder(snapshot) {
     for (const to of next.get(node) || []) walk(to);
   };
   const segmentOf = new Map();
-  let currentSegment = null;
   const walkSegment = (start) => {
-    currentSegment = start;
     const before = new Set(order.keys());
     walk(start);
     for (const id of order.keys()) if (!before.has(id)) segmentOf.set(id, start);

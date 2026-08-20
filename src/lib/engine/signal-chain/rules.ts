@@ -68,7 +68,7 @@ export const SIGNAL_CHAIN_RULES: ChainRule[] = [
     description: 'Classic fuzz pedals (like Fuzz Face) need unbuffered signal directly from pickups for best response',
     priority: 100,
     condition: (pedal) => pedal.category === 'fuzz' && pedal.needsDirectPickup,
-    apply: (pedals, context) => {
+    apply: (pedals, _context) => {
       const directPickupFuzzes: PlacedPedal[] = [];
       const others: PlacedPedal[] = [];
 
@@ -92,7 +92,7 @@ export const SIGNAL_CHAIN_RULES: ChainRule[] = [
     description: 'Tuners work best with clean, unprocessed signal for accurate readings',
     priority: 90,
     condition: (pedal) => pedal.category === 'tuner',
-    apply: (pedals, context) => {
+    apply: (pedals, _context) => {
       const tuners: PlacedPedal[] = [];
       const directPickupFuzzes: PlacedPedal[] = [];
       const others: PlacedPedal[] = [];
@@ -124,7 +124,7 @@ export const SIGNAL_CHAIN_RULES: ChainRule[] = [
     description: 'Noise gates are most effective when placed after high-gain pedals to tame their noise',
     priority: 70,
     condition: (pedal) => pedal.category === 'noise_gate',
-    apply: (pedals, context) => {
+    apply: (pedals, _context) => {
       // Find the last drive/distortion/fuzz pedal
       let lastDriveIndex = -1;
       for (let i = 0; i < pedals.length; i++) {
@@ -287,7 +287,7 @@ export const SIGNAL_CHAIN_RULES: ChainRule[] = [
     description: 'Loopers should be last in the chain to capture your complete processed sound',
     priority: 40,
     condition: (pedal) => pedal.category === 'looper',
-    apply: (pedals, context) => {
+    apply: (pedals, _context) => {
       const loopers: PlacedPedal[] = [];
       const others: PlacedPedal[] = [];
 
@@ -311,7 +311,7 @@ export const SIGNAL_CHAIN_RULES: ChainRule[] = [
     description: 'Volume pedal at end acts as master volume; earlier positions affect gain structure',
     priority: 30,
     condition: (pedal) => pedal.category === 'volume',
-    apply: (pedals, context) => {
+    apply: (pedals, _context) => {
       // Keep volume near end but before looper
       const volume: PlacedPedal[] = [];
       const loopers: PlacedPedal[] = [];

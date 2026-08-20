@@ -230,7 +230,7 @@ export class SignalChainEngine {
   private detectWarnings(
     pedals: PlacedPedal[],
     pedalsById: Record<string, Pedal>,
-    context: ChainContext
+    _context: ChainContext
   ): ChainWarning[] {
     const warnings: ChainWarning[] = [];
 
