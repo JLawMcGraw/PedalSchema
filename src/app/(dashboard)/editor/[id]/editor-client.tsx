@@ -41,6 +41,25 @@ interface EditorClientProps {
   powerSupply?: PowerSupply | null;
 }
 
+/**
+ * The panel tabs.
+ *
+ * Navigation is micro-typography in this system - monospace, uppercase,
+ * tracked - per `.agents/skills/industrial-brutalist-ui` §3.2, which puts all
+ * metadata, navigation and unit IDs in that register. Five tabs previously sat
+ * in ordinary sentence-case sans at the same weight as body copy, so the panel
+ * switcher read like content rather than instrumentation.
+ */
+const TAB_CLASS =
+  // px-2 and tracking-wider, NOT px-2.5/widest: measured, those made the five
+  // tabs 306px wide in a 287px strip and wrapped "Props" onto a second row.
+  // The skill's range for this register is 0.05em-0.1em, so this is still in
+  // spec - it is the loose end of it that did not fit.
+  'h-auto flex-none rounded-none border-b-2 border-transparent px-2 py-2 ' +
+  'font-mono text-[10px] uppercase tracking-wider text-muted-foreground ' +
+  'transition-colors hover:text-foreground ' +
+  'data-[state=active]:border-primary data-[state=active]:text-foreground';
+
 export function EditorClient({
   configId,
   configName,
@@ -276,31 +295,31 @@ export function EditorClient({
       <TabsList className="w-full justify-start rounded-none border-b bg-transparent p-0 h-auto shrink-0 flex-wrap">
         <TabsTrigger
           value="chain"
-          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-2 py-2 h-auto flex-none"
+          className={TAB_CLASS}
         >
           Chain
         </TabsTrigger>
         <TabsTrigger
           value="cables"
-          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-2 py-2 h-auto flex-none"
+          className={TAB_CLASS}
         >
           Cables
         </TabsTrigger>
         <TabsTrigger
           value="routing"
-          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-2 py-2 h-auto flex-none"
+          className={TAB_CLASS}
         >
           Routing
         </TabsTrigger>
         <TabsTrigger
           value="power"
-          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-2 py-2 h-auto flex-none"
+          className={TAB_CLASS}
         >
           Power
         </TabsTrigger>
         <TabsTrigger
           value="properties"
-          className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary text-xs px-2 py-2 h-auto flex-none"
+          className={TAB_CLASS}
         >
           Props
         </TabsTrigger>

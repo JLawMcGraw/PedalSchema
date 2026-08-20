@@ -57,7 +57,7 @@ export function EditableTitle() {
         aria-label="Rename board"
         title="Rename board"
         className={cn(
-          'font-medium truncate rounded-sm px-1 -mx-1 text-left',
+          'font-medium truncate rounded-none px-1 -mx-1 text-left',
           'transition-colors duration-200',
           'hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
         )}
@@ -87,7 +87,7 @@ export function EditableTitle() {
         }
       }}
       className={cn(
-        'font-medium bg-transparent rounded-sm px-1 -mx-1 min-w-0 w-40 sm:w-64',
+        'font-medium bg-transparent rounded-none px-1 -mx-1 min-w-0 w-40 sm:w-64',
         'border border-input outline-none',
         'transition-[color,box-shadow] duration-200',
         'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]'

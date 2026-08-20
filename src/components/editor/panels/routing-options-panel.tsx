@@ -1,5 +1,6 @@
 'use client';
 
+import { PANEL_TITLE } from '@/components/editor/panels/panel-chrome';
 import { useShallow } from 'zustand/react/shallow';
 import { useMemo } from 'react';
 import { useConfigurationStore } from '@/store/configuration-store';
@@ -132,7 +133,7 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
       <div className="px-3 py-2 border-b shrink-0">
-        <h3 className="text-sm font-semibold">Routing</h3>
+        <h3 className={PANEL_TITLE}>Routing</h3>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">

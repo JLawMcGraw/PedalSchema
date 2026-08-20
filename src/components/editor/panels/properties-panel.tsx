@@ -1,5 +1,6 @@
 'use client';
 
+import { PANEL_TITLE } from '@/components/editor/panels/panel-chrome';
 import { useShallow } from 'zustand/react/shallow';
 import { useConfigurationStore } from '@/store/configuration-store';
 import { useDerivedConfiguration } from '@/store/derived';
@@ -51,7 +52,7 @@ export function PropertiesPanel() {
     return (
       <div className="flex flex-col h-full w-full overflow-hidden">
         <div className="px-3 py-2 border-b shrink-0">
-          <h3 className="font-semibold text-sm">Board</h3>
+          <h3 className={PANEL_TITLE}>Board</h3>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
           <BoardDetails />
@@ -74,7 +75,7 @@ export function PropertiesPanel() {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
       <div className="shrink-0 border-b px-3 py-2">
-        <h3 className="text-sm font-semibold">Properties</h3>
+        <h3 className={PANEL_TITLE}>Properties</h3>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
@@ -95,7 +96,7 @@ export function PropertiesPanel() {
         </div>
 
         {hasCollision && (
-          <p className="mx-3 mb-3 rounded border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">
+          <p className="mx-3 mb-3 rounded-none border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">
             Overlaps another pedal
           </p>
         )}

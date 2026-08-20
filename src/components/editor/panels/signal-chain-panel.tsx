@@ -1,5 +1,6 @@
 'use client';
 
+import { PANEL_TITLE } from '@/components/editor/panels/panel-chrome';
 import { useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useConfigurationStore } from '@/store/configuration-store';
@@ -113,11 +114,11 @@ function ChainRow({
         became mouse-only. Opacity keeps them in the tree and focusable, and
         `group-focus-within` brings them into view when tabbing reaches them.
       */}
-      <span className="absolute right-1 flex shrink-0 items-center gap-0.5 rounded bg-background/95 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100">
+      <span className="absolute right-1 flex shrink-0 items-center gap-0.5 rounded-none bg-background/95 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100">
         <button
           title="Move earlier in the chain"
           disabled={!onMoveUp}
-          className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-25"
+          className="rounded-none p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-25"
           onClick={(e) => {
             e.stopPropagation();
             onMoveUp?.();
@@ -128,7 +129,7 @@ function ChainRow({
         <button
           title="Move later in the chain"
           disabled={!onMoveDown}
-          className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-25"
+          className="rounded-none p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-25"
           onClick={(e) => {
             e.stopPropagation();
             onMoveDown?.();
@@ -138,7 +139,7 @@ function ChainRow({
         </button>
         <button
           title={`Remove ${displayName}`}
-          className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-destructive"
+          className="rounded-none p-0.5 text-muted-foreground hover:bg-background hover:text-destructive"
           onClick={(e) => {
             e.stopPropagation();
             onRemove();
@@ -274,7 +275,7 @@ export function SignalChainPanel() {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
       <div className="flex shrink-0 items-baseline justify-between gap-2 border-b px-3 py-2">
-        <h3 className="text-sm font-semibold">Signal chain</h3>
+        <h3 className={PANEL_TITLE}>Signal chain</h3>
         <span className="font-mono text-[10px] text-muted-foreground">
           {sortedPedals.length} pedal{sortedPedals.length !== 1 ? 's' : ''}
         </span>

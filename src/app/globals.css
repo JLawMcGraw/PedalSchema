@@ -59,13 +59,21 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
+  /* The WHOLE scale, not just the base. These are offsets from --radius, so
+     zeroing the base alone still left rounded-xl at 4px and rounded-4xl at
+     16px - and Card uses rounded-xl, which is most of the app. */
+  /* The bare `rounded` and `rounded-xs` utilities read their own theme keys,
+     not --radius, so 73 hardcoded `rounded` classes survived at 4px until
+     these two were added. */
+  --radius-DEFAULT: var(--radius);
+  --radius-xs: var(--radius);
+  --radius-sm: var(--radius);
+  --radius-md: var(--radius);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+  --radius-xl: var(--radius);
+  --radius-2xl: var(--radius);
+  --radius-3xl: var(--radius);
+  --radius-4xl: var(--radius);
 }
 
 /* ---------------------------------------------------------------------------
@@ -83,7 +91,20 @@
 :root {
   color-scheme: dark;
 
-  --radius: 0.5rem;
+  /*
+    NINETY DEGREES, EVERYWHERE.
+
+    `.agents/skills/industrial-brutalist-ui` §5: "Absolute rejection of
+    border-radius. All corners must be exactly 90 degrees to enforce
+    mechanical rigidity." Measured before this: 121 elements at 6px and 46 at
+    4px - soft consumer corners on a tool that is meant to read as measuring
+    equipment.
+
+    One token, so every surface commits at once. `rounded-full` is untouched
+    and deliberately so: the jack dots, chain nodes and the avatar are CIRCLES
+    - data marks and portraits, not softened rectangles.
+  */
+  --radius: 0rem;
 
   --background: oklch(0.145 0.007 250);
   --foreground: oklch(0.96 0.004 250);

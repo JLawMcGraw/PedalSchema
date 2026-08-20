@@ -1,5 +1,6 @@
 'use client';
 
+import { PANEL_TITLE } from '@/components/editor/panels/panel-chrome';
 import { useShallow } from 'zustand/react/shallow';
 import { useConfigurationStore } from '@/store/configuration-store';
 import { useDerivedConfiguration } from '@/store/derived';
@@ -30,7 +31,7 @@ export function PowerPanel() {
     return (
       <div className="flex flex-col h-full w-full overflow-hidden">
         <div className="px-3 py-2 border-b shrink-0">
-          <h3 className="font-semibold text-sm">Power</h3>
+          <h3 className={PANEL_TITLE}>Power</h3>
         </div>
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs p-4 text-center">
           Add pedals to see what they draw
@@ -64,7 +65,7 @@ export function PowerPanel() {
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
       <div className="px-3 py-2 border-b shrink-0">
-        <h3 className="font-semibold text-sm">Power</h3>
+        <h3 className={PANEL_TITLE}>Power</h3>
       </div>
 
       {/* min-h-0 matches the four sibling panels. It is NOT a bug fix: a flex
@@ -104,7 +105,7 @@ export function PowerPanel() {
           <div className="p-3 space-y-2">
             <select
               aria-label="Power supply"
-              className="w-full text-xs border rounded px-2 py-1 bg-background"
+              className="w-full text-xs border rounded-none px-2 py-1 bg-background"
               value={powerSupply?.id ?? ''}
               onChange={(e) =>
                 setPowerSupply(powerSupplies.find((s) => s.id === e.target.value) ?? null)
@@ -275,7 +276,7 @@ export function PowerPanel() {
                 {powerSupply && (
                   <select
                     aria-label={`Output for ${d.name}`}
-                    className="w-full text-xs border rounded px-1.5 py-0.5 bg-background text-muted-foreground"
+                    className="w-full text-xs border rounded-none px-1.5 py-0.5 bg-background text-muted-foreground"
                     value={d.outputId ?? ''}
                     onChange={(e) => assignPedalToOutput(d.id, e.target.value || null)}
                   >

@@ -1,5 +1,6 @@
 'use client';
 
+import { PANEL_TITLE } from '@/components/editor/panels/panel-chrome';
 import { useShallow } from 'zustand/react/shallow';
 import { useMemo } from 'react';
 import { useConfigurationStore } from '@/store/configuration-store';
@@ -63,7 +64,7 @@ export function CableListPanel() {
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
       <div className="px-3 py-2 border-b shrink-0">
-        <h3 className="font-semibold text-sm">Cables & Wiring</h3>
+        <h3 className={PANEL_TITLE}>Cables &amp; wiring</h3>
         <p className="text-xs text-muted-foreground">
           {cables.length} connection{cables.length !== 1 ? 's' : ''}
         </p>

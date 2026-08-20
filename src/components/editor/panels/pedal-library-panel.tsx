@@ -1,5 +1,6 @@
 'use client';
 
+import { PANEL_TITLE } from '@/components/editor/panels/panel-chrome';
 import { useShallow } from 'zustand/react/shallow';
 import { useState, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
@@ -86,7 +87,7 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="p-3 border-b space-y-2 shrink-0">
-        <h3 className="font-semibold text-sm">Add Pedal</h3>
+        <h3 className={PANEL_TITLE}>Add pedal</h3>
         <Input
           placeholder="Search pedals..."
           value={search}
