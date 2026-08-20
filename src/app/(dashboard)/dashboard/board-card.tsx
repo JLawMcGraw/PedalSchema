@@ -32,6 +32,13 @@ export interface BoardCardProps {
   railPositionsFromBack?: number[];
   knownDrawMa: number;
   unknownDrawCount: number;
+  /** Pedals overlapping each other, and pedals hanging off the board. */
+  overlapCount?: number;
+  offBoardCount?: number;
+  /** Supply outputs whose KNOWN draw already exceeds their rating. */
+  outputsOverCount?: number;
+  /** Published AND holding a slug - i.e. actually reachable by a stranger. */
+  isPublic?: boolean;
   pedals: ThumbnailPedal[];
 }
 
@@ -63,6 +70,10 @@ export function BoardCard({
   railPositionsFromBack,
   knownDrawMa,
   unknownDrawCount,
+  overlapCount = 0,
+  offBoardCount = 0,
+  outputsOverCount = 0,
+  isPublic = false,
   pedals,
 }: BoardCardProps) {
   const router = useRouter();
@@ -166,6 +177,22 @@ export function BoardCard({
     );
   }
 
+  /*
+   * Ordered worst-first: a pedal off the board cannot be built at all, two
+   * pedals overlapping is a layout problem, and an output over its rating is a
+   * supply problem you can fix by re-plugging.
+   *
+   * Unrouted cables are deliberately absent - that needs the full router per
+   * board, which is a lot of work to render a list page, and it is the one
+   * fault you see immediately on opening the board.
+   */
+  const faults = [
+    offBoardCount > 0 && `${offBoardCount} off board`,
+    overlapCount > 0 && `${overlapCount} overlap`,
+    outputsOverCount > 0 &&
+      `${outputsOverCount} output${outputsOverCount === 1 ? '' : 's'} over`,
+  ].filter((f): f is string => Boolean(f));
+
   return (
     <article className="relative group">
       <Card className="overflow-hidden pt-0 transition-colors duration-200 group-hover:border-primary/50">
@@ -234,6 +261,30 @@ export function BoardCard({
               </div>
             )}
           </dl>
+          {/*
+            THE FAULTS, and whether anyone else can see this board.
+
+            The dashboard was a list of boards; with these it is a status
+            board, which is the difference between "which boards do I have"
+            and "which board needs me". Nothing renders when a board is clean -
+            an all-clear on every card teaches the reader to stop looking.
+
+            `Public` is not a fault, so it is not destructive-red. It is here
+            because a board can be live on a URL with nothing on this page
+            saying so, and that is the kind of thing you want to notice
+            without opening it.
+          */}
+          {(faults.length > 0 || isPublic) && (
+            <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-widest">
+              {faults.map((f) => (
+                <span key={f} className="text-destructive">
+                  {f}
+                </span>
+              ))}
+              {isPublic && <span className="text-muted-foreground">Public</span>}
+            </div>
+          )}
+
           {description && (
             <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{description}</p>
           )}

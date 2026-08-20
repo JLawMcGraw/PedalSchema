@@ -4,7 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { BoardCard } from './board-card';
 import { resolvePage, DASHBOARD_PAGE_SIZE } from '@/lib/pagination';
-import type { PedalCategory } from '@/types';
+import { detectCollisions } from '@/lib/engine/collision';
+import { derivePowerPlan } from '@/lib/engine/power';
+import type { Board, PedalCategory, Pedal, PlacedPedal, PowerSupply } from '@/types';
 
 interface PageProps {
   searchParams: Promise<{ page?: string }>;
@@ -41,15 +43,25 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       description,
       created_at,
       updated_at,
+      is_public,
+      share_slug,
+      power_supply_id,
       boards (
         name, manufacturer, width_inches, depth_inches, rail_width_inches,
         board_rails (position_from_back_inches)
       ),
+      power_supplies (
+        id, name, manufacturer, is_isolated,
+        power_supply_outputs (id, label, voltage, rated_ma, alternate_modes, is_ac, sort_order)
+      ),
       configuration_pedals (
+        id,
         x_inches,
         y_inches,
         rotation_degrees,
-        pedals (width_inches, depth_inches, category, current_ma)
+        power_output_id,
+        pedal_id,
+        pedals (id, name, width_inches, depth_inches, category, current_ma, voltage)
       )
     `)
     .eq('user_id', user?.id)
@@ -115,17 +127,98 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               board_rails: Array<{ position_from_back_inches: number }> | null;
             } | null;
             const rows = (config.configuration_pedals ?? []) as unknown as Array<{
+              id: string;
               x_inches: number;
               y_inches: number;
               rotation_degrees: number | null;
+              power_output_id: string | null;
+              pedal_id: string;
               pedals: {
+                id: string;
+                name: string;
                 width_inches: number;
                 depth_inches: number;
                 category: PedalCategory;
                 current_ma: number | null;
+                voltage: number | null;
               } | null;
             }>;
             const placed = rows.filter((r) => r.pedals);
+
+            /*
+             * THE FAULTS, computed here on the server.
+             *
+             * Both are pure functions over data this query already fetches, so
+             * a status marker costs no extra round trip. Unrouted cables are
+             * DELIBERATELY not among them: that needs the full router per
+             * board, which is a lot of work to render a list page, and it is a
+             * fault you see the moment you open the board.
+             */
+            const boardForFit = {
+              widthInches: Number(board?.width_inches ?? 0),
+              depthInches: Number(board?.depth_inches ?? 0),
+            } as Board;
+            const placedForFit = placed.map((r) => ({
+              id: r.id,
+              pedalId: r.pedal_id,
+              xInches: Number(r.x_inches),
+              yInches: Number(r.y_inches),
+              rotationDegrees: Number(r.rotation_degrees ?? 0),
+              powerOutputId: r.power_output_id,
+            })) as unknown as PlacedPedal[];
+            const pedalsForFit = Object.fromEntries(
+              placed.map((r) => [
+                r.pedal_id,
+                {
+                  id: r.pedals!.id,
+                  name: r.pedals!.name,
+                  widthInches: Number(r.pedals!.width_inches),
+                  depthInches: Number(r.pedals!.depth_inches),
+                  currentMa: r.pedals!.current_ma,
+                  voltage: r.pedals!.voltage,
+                } as unknown as Pedal,
+              ])
+            );
+            const collisions =
+              boardForFit.widthInches > 0
+                ? detectCollisions(placedForFit, pedalsForFit, boardForFit)
+                : [];
+
+            const supplyRow = config.power_supplies as unknown as {
+              id: string; name: string; manufacturer: string; is_isolated: boolean;
+              power_supply_outputs: Array<{
+                id: string; label: string; voltage: number; rated_ma: number;
+                alternate_modes: Array<{ voltage: number; ratedMa: number }> | null;
+                is_ac: boolean | null; sort_order: number;
+              }>;
+            } | null;
+            /*
+             * Reported as a FAULT, never as a ratio. "1586 of 2000mA" reads as
+             * reassurance, and engine/power exists because that reassurance is
+             * false: a 500mA board on a 2000mA supply still fails if six pedals
+             * share one 100mA output. So the card says something only when an
+             * OUTPUT is over, which is where supplies actually fail.
+             */
+            const plan = supplyRow
+              ? derivePowerPlan(placedForFit, pedalsForFit, {
+                  id: supplyRow.id,
+                  name: supplyRow.name,
+                  manufacturer: supplyRow.manufacturer,
+                  isIsolated: supplyRow.is_isolated,
+                  outputs: (supplyRow.power_supply_outputs ?? [])
+                    .slice()
+                    .sort((a, b) => a.sort_order - b.sort_order)
+                    .map((o) => ({
+                      id: o.id,
+                      label: o.label,
+                      voltage: o.voltage,
+                      ratedMa: o.rated_ma,
+                      alternateModes: o.alternate_modes ?? [],
+                      isAc: o.is_ac ?? false,
+                      sortOrder: o.sort_order,
+                    })),
+                } as unknown as PowerSupply)
+              : null;
             return (
               <BoardCard
                 key={config.id}
@@ -150,6 +243,10 @@ export default async function DashboardPage({ searchParams }: PageProps) {
                   0
                 )}
                 unknownDrawCount={placed.filter((r) => r.pedals!.current_ma == null).length}
+                overlapCount={collisions.filter((c) => c.severity !== 'off-board').length}
+                offBoardCount={collisions.filter((c) => c.severity === 'off-board').length}
+                outputsOverCount={plan?.overCapacityCount ?? 0}
+                isPublic={Boolean(config.is_public && config.share_slug)}
                 pedals={placed.map((r) => ({
                   xInches: Number(r.x_inches),
                   yInches: Number(r.y_inches),
