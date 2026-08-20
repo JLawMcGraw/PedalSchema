@@ -143,7 +143,7 @@ one pedal in Chain and the other in Cables, which is worse than the bare name
 it replaces. 8 new tests, **475 total**.
 
     npm run lint            0 errors, 27 warnings   (was 154 errors)
-    npm test                483 passed, 4 skipped
+    npm test                484 passed, 4 skipped
     npm run build           Compiled successfully
     verify-all.sh --all     29 passed, 0 failed
 
@@ -175,6 +175,60 @@ Noted honestly: the published-original case passes in the gate without
 exercising the interesting input, because the gate's source board is not
 public. That case is covered at unit level instead.
 
+**A shared link previews as the board** (`03da1b6`). `s/[slug]/opengraph-image`
+draws it - same blocks-in-real-positions drawing as the dashboard card, but
+NOT that component: satori takes a subset of CSS and no stylesheet, so it is
+positioned divs, one explicit `display:flex` per box, and hex colours (the
+app's tokens are `oklch()`, which satori does not parse). `metadataBase` added
+to the root layout; without it og:image is emitted as a localhost URL.
+**Set `NEXT_PUBLIC_SITE_URL` in production.** `verify-sharing` fetches the URL
+and reads the PNG's IHDR - a broken og:image and a missing one look identical
+in the HTML.
+
+**`noLegalCandidate` was lying on one path** (`9cdb686`) - and lint found it,
+as an unused variable rather than as a bug. The nothing-to-search path computed
+the right expression, NAMED it, and returned a weaker one:
+
+    const noLegalCandidate = !isFinite(greedy) && !isFinite(baseline);  // named
+    return { noLegalCandidate: !isFinite(greedy), ... };                // shipped
+
+The user's own layout is a candidate. So whenever greedy failed and the
+baseline was legal, `summarizeOptimization` led with **"Could not fit these
+pedals on this board - your layout was left alone"** about a board that fits.
+Reproduced in three constructions before fixing; fingerprint on both real
+boards IDENTICAL (neither reaches that path). The over-full-board property test
+never caught it because there BOTH candidates really are illegal.
+
+**THIS IS WHAT THE LINT WORK WAS FOR.** Not the green: two real defects were
+sitting under 152 lines of `no-require-imports` noise, and both were found
+within an hour of the noise being scoped away. A warning count nobody reads is
+a warning count that hides things.
+
+**Warnings 27 -> 14.** Removed eight dead imports, `constrainX` (the never-called
+twin of a used `constrainY`), and a `useRouter` whose result was never called.
+
+**The 14 that remain are unused PARAMETERS, left deliberately**, and two are
+design questions rather than tidying:
+
+  - `detectCollisions(placedPedals, pedalsById, board)` never reads `board`,
+    so it detects pedal-on-pedal overlap and NOT off-board. `hasPlacementCollision`
+    in layout/ checks both. Is the UI missing an off-board warning, or is the
+    parameter vestigial?
+  - `generateEnhancedCableList(.., useEffectsLoop, amp)` reads neither, while
+    its own docblock says "effects loop section starts new numbering group".
+    Either the cable TYPES already encode that and the params are redundant, or
+    the numbering is not loop-aware and the docblock is aspirational.
+  - six rules take a `ChainContext` they do not need - uniform signature,
+    almost certainly fine.
+  - one `react-hooks/exhaustive-deps` in `editor-client`. **Do not "fix" it by
+    adding the deps**: `initialPowerSupplies` is an array prop, so a new
+    identity every parent render would re-run the mount effect and clobber the
+    user's edits. It needs a documented disable or nothing.
+
+Renaming these to `_board` would assert "deliberately unused" about something
+nobody has checked, which is how the last set of confident-and-wrong comments
+got written.
+
 ### Next Tasks
 
 The three at the top of the previous entry are closed. What remains of it,
@@ -186,11 +240,9 @@ unchanged, plus what this session did not touch:
       NEEDS THE OWNER'S CALL before building; this product may not want it.
 - [ ] **The landing page** - owner ranked it LAST. It remains the most generic
       file in the repo.
-- [ ] **`og:image` for shared boards.**
-- [ ] **27 lint warnings**, now that the errors are gone and they are
-      readable. 26 are `no-unused-vars`, 8 of them in
-      `engine/signal-chain/rules.ts`. Worth one pass to see whether any is a
-      genuine dead branch rather than a stale parameter.
+- [ ] **Two design questions surfaced by the remaining 14 warnings**, above:
+      does `detectCollisions` owe the UI an off-board check, and is the cable
+      numbering meant to be effects-loop aware?
 - [ ] **The roster's cap is tied to one viewport height.** 192px was derived
       at 1600x900. It is a `max-h`, so nothing breaks at other heights, but on
       a very short viewport the roster and the category list compete and the
@@ -311,7 +363,6 @@ promoting it to brand accent would destroy a signal the canvas depends on.
       NEEDS THE OWNER'S CALL before building; this product may not want it.
 - [ ] **The landing page** - owner ranked it LAST. It remains the most generic
       file in the repo.
-- [ ] **`og:image` for shared boards.**
 - [ ] The Cables list still shows "CS-3 -> CS-3": the duplicate-name
       disambiguation added to the chain panel lives in the panel, while those
       labels are generated in the engine.
@@ -950,7 +1001,6 @@ run green at `dda6244`.
       `.claude/docs/` BEFORE building, per `planning-as-repo-docs`.
 - [ ] **Fix the scaffold metadata regardless of direction** - "Create Next App"
       is live in production and needs no aesthetic decision.
-- [ ] **`og:image` for shared boards.**
 - [ ] **`pedal-card.tsx`** duplicates CATEGORY_COLORS/LABELS and collapses the
       currentMa three-state with a truthy check (latent - no pedal has a real 0).
 - [ ] **`verify-all.sh` truncates failures to `tail -4`**, hiding the FAIL line.
