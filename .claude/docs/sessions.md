@@ -4,6 +4,130 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-20 - the redesign that was actually a redesign
+
+### Summary
+
+**The owner rejected the previous phase, correctly.** Their words: "you've done
+next to nothing but change the colour palette. this is not what I'd call a
+visual redesign to improve the product." That was accurate, and the accounting
+is in Architecture Notes - it is the most useful thing in this entry.
+
+This session did the half that had been skipped: layout, hierarchy and
+components. Seven commits, no palette work except one new status token.
+
+**467 tests**, `verify-all.sh --all` **29 passed, 0 failed**.
+
+### What Was Accomplished
+- [x] **Chain** panel rebuilt - a spine, issues first, half-height rows
+- [x] **Routing** - six bordered cards to one settings list
+- [x] **Cables** - amber box gone, 24 rows fit as single lines
+- [x] **Props** - inspector rebuilt, board settings no longer hidden
+- [x] **Dashboard** - every card now DRAWS its board
+- [x] **90 degrees everywhere** - zero rectangular border-radius app-wide
+- [x] Tabs and panel titles into the monospace telemetry register
+- [x] Fixed the 1px page overflow and the 4px right gutter
+- [x] Left rail: redundant category dropdown removed
+- [ ] Left rail dead space, toolbar gap, chain suggestion block - see Next
+
+### Bugs found while redesigning, none of them cosmetic
+
+| Where | What |
+|---|---|
+| `cables/index.ts` | sub-indices came from `String.fromCharCode(97+i)`, so the twelfth cable was **"2l"** - a lowercase L beside digits, reading as "21". The list ran 2j, 2k, **21**, 2m |
+| `properties-panel` | the Signal Location select had **no option for `flexible`** - the default, on 13 of 22 pedals. Radix renders nothing when the value matches no item, and shadcn's trigger is `w-fit`, so it collapsed to a bare caret |
+| `properties-panel` | selecting a pedal **replaced** the board section, so board name, description and publish were reachable only by deselecting |
+| `header.tsx` | `h-14` on an inner div with `border-b` on `<header>` made it 57px against a shell subtracting 56 - the document scrolled and clipped the right panel |
+| chain panel | warnings rendered **after** 22 pedals, 1150px down an 860px panel |
+
+### Architecture Notes
+
+**WHY THE PREVIOUS PHASE WAS A REPAINT.** The skill's fix-priority list has
+seven steps. Phase B did 2 (colour), 3 (states) and 6 (loading/empty/error),
+and skipped **4 (layout and spacing), 5 (replace generic components)** and
+**7 (typography scale)** - the three that make something look redesigned. Worse,
+a legitimate note - "density is correct in the editor panels, do not undo A5" -
+was used to excuse skipping layout EVERYWHERE, including pages that note does
+not describe.
+
+The honest cause: **colour is arithmetic and layout is judgement.** A contrast
+ratio can be gated and shown green; a hierarchy cannot. The work drifted to
+what could be proved rather than what would change the product, and the gates
+made that feel rigorous. Watch for this. If a phase produces six gates and no
+screenshot a person would call different, it went the same way.
+
+**THE "TACTICAL TELEMETRY" DIRECTION WAS NEVER LOST.** It is
+`.agents/skills/industrial-brutalist-ui` - title "Industrial Brutalism &
+Tactical Telemetry UI", section 2.2. Session six searched `.claude/` and
+`src/`, found nothing, declared it undefined and stopped the phase; the owner
+then re-picked from options that had to be invented. **The search never looked
+at the skills the project ships with.** Recorded in `design-direction.md`.
+
+**MEASURING A PANEL IS NOT MEASURING THE PAGE.** Every capture this session
+until the owner complained was of the panel ELEMENT. Both faults they saw -
+the 1px overflow and the 4px gutter - are invisible in a panel screenshot and
+obvious in a viewport one. Screenshot the viewport.
+
+**THREE GATES BROKE, AND NONE HAD FOUND A DEFECT.** All three were measuring a
+proxy rather than the thing:
+
+  - `verify-library-density` used a scrollHeight DELTA as proof that a section
+    reveals its pedals. Making the panel compact enough to fit its viewport
+    broke it - scrollHeight then equals clientHeight and stops moving. It
+    counts revealed rows now.
+  - `verify-surfaces` opened `button[role="combobox"]`, which was the category
+    dropdown removed as redundant.
+  - `verify-surfaces` counted border WIDTH regardless of paint, so shadcn's
+    Switch - `border-2 border-transparent`, sizing its track - failed a check
+    named "every VISIBLE border is a 1px hairline".
+
+**A BLUNT REGEX RENAMED A FUNCTION.** Replacing bare `rounded` with
+`rounded-none` across src/ also hit `roundedPath` in cable-renderer, producing
+`rounded-nonePath`. The build caught it. Scope mechanical replacements to
+className strings, or check the build before believing the diff.
+
+**DELIBERATE DEVIATION FROM THE SKILL'S §4.** It mandates hazard red as the
+only accent, green for at most one element. This app keeps signal green: red
+already means "will not fit" on a cable and "collision" on a pedal, and
+promoting it to brand accent would destroy a signal the canvas depends on.
+
+### Verification
+
+    npx tsc --noEmit         clean
+    npm run build            Compiled successfully
+    npm test                 467 passed, 4 skipped
+    verify-all.sh --all      29 passed, 0 failed
+    database                 2 configurations, 0 seed rows - as found
+    docScrollH               900 of 900 (was 901)
+    right-panel gutter       12px (was 4px)
+    rectangular radii        0 (was 121 at 6px, 46 at 4px)
+
+### Next Tasks - the design continues here
+
+- [ ] **Left rail dead space.** ~200px empty below the categories with
+      "67 pedals" pinned at the bottom. The sections are collapsed by design
+      (A5), so the space is structural - decide what earns it.
+- [ ] **Toolbar gap.** A large void between the board title and the control
+      cluster. Nothing occupies the middle of the top bar.
+- [ ] **The chain panel's suggestion block** is a soft prose paragraph sitting
+      in a monospace telemetry panel. It does not match its surroundings.
+- [ ] **`§3.1` macro-typography is unapplied**, deliberately - it needs a
+      canvas a 287px panel does not have. It belongs on the landing page.
+- [ ] **`§6` ASCII framing / REV strings** - decoration rather than structure.
+      NEEDS THE OWNER'S CALL before building; this product may not want it.
+- [ ] **The landing page** - owner ranked it LAST. It remains the most generic
+      file in the repo.
+- [ ] **`npm run lint` is red** - 152 errors, all `no-require-imports` on
+      CommonJS Node scripts under the app's ESM/TS config. A config override,
+      not 152 edits. src/ itself is 0 errors.
+- [ ] **Duplicate a board** - still the one missing CRUD verb.
+- [ ] **`og:image` for shared boards.**
+- [ ] The Cables list still shows "CS-3 -> CS-3": the duplicate-name
+      disambiguation added to the chain panel lives in the panel, while those
+      labels are generated in the engine.
+
+---
+
 ## Session: 2026-08-19 (tenth) - the jack hues, decided by measurement
 
 ### Summary
