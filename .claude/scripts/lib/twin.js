@@ -139,6 +139,53 @@ async function dragPedalByInches(page, pedalId, dxInches, dyInches) {
   return { start, end };
 }
 
+/**
+ * Create a board through the real UI and return its id.
+ *
+ * Lifted here from verify-crud when a SECOND gate needed it. The knockout gate
+ * used to run against whatever board `openEditor` happened to open - which is
+ * a real board of the owner's, and by 2026-08 that board was full, so adding
+ * its six subject pedals was refused and the gate failed on a condition that
+ * had nothing to do with what it tests.
+ *
+ * `boardName` picks a model by name; without it the first card wins, which is
+ * what verify-crud has always done. A gate that needs ROOM should name the
+ * board it needs rather than hope the catalogue keeps its order.
+ */
+async function createBoard(page, { name, boardName } = {}) {
+  await page.goto(`${BASE_URL}/editor/new`);
+  await page.fill('#name', name || `gate throwaway ${Date.now()}`);
+
+  // The picker renders only once its boards have loaded.
+  const cards = page.locator('[data-slot="card"]:has([data-slot="card-title"])');
+  await cards.first().waitFor({ state: 'visible', timeout: 20000 });
+  const wanted = boardName
+    ? cards.filter({ hasText: boardName }).first()
+    : cards.first();
+  await wanted.waitFor({ state: 'visible', timeout: 10000 });
+  await wanted.click();
+
+  const submit = page.locator('button:has-text("Create Pedalboard")');
+  await submit.waitFor({ state: 'visible', timeout: 10000 });
+  // Enabled means name + board are both set; clicking before that is a no-op
+  // that would look like a creation failure.
+  await page.waitForFunction(
+    () => {
+      const b = [...document.querySelectorAll('button')].find((el) =>
+        el.textContent.includes('Create Pedalboard')
+      );
+      return b && !b.disabled;
+    },
+    null,
+    { timeout: 10000 }
+  );
+  await submit.click();
+
+  await page.waitForURL((u) => /\/editor\/[0-9a-f-]{36}/.test(u.pathname), { timeout: 20000 });
+  const m = page.url().match(/\/editor\/([0-9a-f-]{36})/);
+  return m ? m[1] : null;
+}
+
 module.exports = {
   BASE_URL,
   loadEnv,
@@ -148,4 +195,5 @@ module.exports = {
   snapshot,
   toScreen,
   dragPedalByInches,
+  createBoard,
 };

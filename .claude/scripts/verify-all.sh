@@ -64,6 +64,13 @@ WRITERS=(
   "verify-crud"
   "verify-routes"
   "verify-sharing"
+  # Creates a Classic Pro of its own, places the six knockout subjects on it
+  # and deletes it in a finally. It USED to run against whatever board came
+  # first - a real one - which is both why it wrote without being in this list
+  # and why it failed: by 2026-08 that board was full and the placements were
+  # refused. It was outside the suite for long enough to rot unnoticed, which
+  # is the exact failure this runner was written to stop.
+  "verify-knockout-on-board"
 )
 
 pass=0; failed=0; failures=()

@@ -32,7 +32,7 @@
  */
 const { chromium } = require('playwright');
 const { createClient } = require('@supabase/supabase-js');
-const { loadEnv, login, openEditor, waitForCanvas, BASE_URL } = require('./lib/twin');
+const { loadEnv, login, openEditor, waitForCanvas, createBoard, BASE_URL } = require('./lib/twin');
 
 let failures = 0;
 const check = (ok, label, detail) => {
@@ -298,8 +298,7 @@ async function save(page) {
 
     // ================= DELETE =================
     // A board of this gate's own making, so a failure cannot cost real work.
-    await page.goto(`${BASE_URL}/editor/new`);
-    const created = await createBoard(page);
+    const created = await createBoard(page, { name: `crud gate throwaway ${Date.now()}` });
     check(!!created, 'created a throwaway board to delete', created || 'creation failed');
     if (!created) throw new Error('cannot test delete without a board');
 
@@ -432,31 +431,3 @@ async function save(page) {
  * disabled state to tell us the form is complete. Waiting on that rather than
  * on a fixed timeout is what makes it safe to run inside verify-all.sh.
  */
-async function createBoard(page) {
-  await page.fill('#name', `crud gate throwaway ${Date.now()}`);
-
-  // The picker renders only once its boards have loaded.
-  const firstBoard = page.locator('[data-slot="card"]:has([data-slot="card-title"])').first();
-  await firstBoard.waitFor({ state: 'visible', timeout: 20000 });
-  await firstBoard.click();
-
-  const submit = page.locator('button:has-text("Create Pedalboard")');
-  await submit.waitFor({ state: 'visible', timeout: 10000 });
-  // Enabled means name + board are both set; clicking before that is a no-op
-  // that would look like a creation failure.
-  await page.waitForFunction(
-    () => {
-      const b = [...document.querySelectorAll('button')].find((el) =>
-        el.textContent.includes('Create Pedalboard')
-      );
-      return b && !b.disabled;
-    },
-    null,
-    { timeout: 10000 }
-  );
-  await submit.click();
-
-  await page.waitForURL((u) => /\/editor\/[0-9a-f-]{36}/.test(u.pathname), { timeout: 20000 });
-  const m = page.url().match(/\/editor\/([0-9a-f-]{36})/);
-  return m ? m[1] : null;
-}
