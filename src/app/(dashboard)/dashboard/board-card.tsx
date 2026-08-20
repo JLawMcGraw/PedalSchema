@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { describeSaveError } from '@/lib/save-error';
+import { duplicateConfiguration } from '@/lib/duplicate-configuration';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -13,7 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { DotsThree, Trash } from '@phosphor-icons/react';
+import { DotsThree, Trash, Copy } from '@phosphor-icons/react';
 import { BoardThumbnail, type ThumbnailPedal } from '@/components/boards/board-thumbnail';
 
 export interface BoardCardProps {
@@ -63,7 +64,37 @@ export function BoardCard({
   // card must stay in its pending state across the refresh or it flashes back
   // to normal for a beat before vanishing.
   const [isRefreshing, startRefresh] = useTransition();
+  const [duplicating, setDuplicating] = useState(false);
   const busy = deleting || isRefreshing;
+
+  /*
+   * Duplicate lands the user ON the copy, in the editor.
+   *
+   * The alternative - stay on the dashboard and let the new card appear - is
+   * what a "duplicate" in a file manager does, but this is not filing, it is
+   * the start of an edit. Nobody copies a board to look at two identical
+   * boards; they copy it to change one. The copy is also the only card whose
+   * name they do not know yet, so leaving them to find it on a dashboard is
+   * work for no reason.
+   */
+  async function handleDuplicate() {
+    setDuplicating(true);
+    setError(null);
+    const supabase = createClient();
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth.user) {
+      setError('You are signed out. Sign in and try again.');
+      setDuplicating(false);
+      return;
+    }
+    const result = await duplicateConfiguration(supabase, id, auth.user.id);
+    if (!result.ok) {
+      setError(result.error);
+      setDuplicating(false);
+      return;
+    }
+    router.push(`/editor/${result.id}`);
+  }
 
   async function handleDelete() {
     setDeleting(true);
@@ -191,6 +222,15 @@ export function BoardCard({
           <p className="mt-2 text-xs text-muted-foreground">
             Updated {new Date(updatedAt).toLocaleDateString()}
           </p>
+          {/* A duplicate fails on the ORDINARY card, not the confirm card, so
+              it needs its own place to say why. `relative z-10` lifts it above
+              the stretched link covering the card - otherwise the message is
+              visible and unselectable. */}
+          {error && !confirming && (
+            <p role="alert" className="relative z-10 mt-2 text-sm text-destructive">
+              {error}
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -207,6 +247,10 @@ export function BoardCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={handleDuplicate} disabled={duplicating}>
+              <Copy className="h-4 w-4 mr-2" />
+              {duplicating ? 'Duplicating...' : 'Duplicate'}
+            </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
               onSelect={() => setConfirming(true)}

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Naming a board, and deleting one.
+ * Naming a board, copying one, and deleting one.
  *
  * Both were missing entirely: `setName`/`setDescription` existed in the store
  * and `handleSave` wrote both columns, so a board was permanently called
@@ -16,12 +16,17 @@
  *      correct behaviour until you read it)
  *   5. a rename SURVIVES a save and a reload - i.e. it reaches the database
  *   6. the description round-trips the same way, from the Board panel
- *   7. a board created through the UI can be deleted through the UI, and the
+ *   7. Duplicate copies EVERY column of the configuration and of every placed
+ *      pedal - compared column by column against the database, because the
+ *      failure mode is a copy that looks right and has quietly dropped one
+ *   8. a copy is never published, whatever the original was
+ *   9. a board created through the UI can be deleted through the UI, and the
  *      row is really gone from the dashboard afterwards
  *
  * THIS SCRIPT WRITES. It renames a real configuration and puts the original
- * name back, and it creates and then deletes a throwaway board of its own. It
- * belongs in verify-all.sh's writer list, not the read-only one.
+ * name back; it duplicates a real board and deletes the copy; and it creates
+ * and then deletes a throwaway board of its own. It belongs in verify-all.sh's
+ * writer list, not the read-only one.
  *
  * Usage: node .claude/scripts/verify-crud.js
  */
@@ -187,6 +192,109 @@ async function save(page) {
     await page.fill('#board-description', descBefore ?? '');
     await page.locator('#board-description').blur();
     if ((await snap(page)).isDirty) await save(page);
+
+    // ================= DUPLICATE =================
+    /*
+     * Duplicate is verified against the DATABASE, column by column, not
+     * against the screen. The failure mode this guards is a copy that LOOKS
+     * right: `configuration_pedals` has gained four columns across four
+     * migrations, and a hand-written column list would silently drop each one
+     * on the day it landed. Nothing throws. The copy just quietly loses its
+     * rotation locks.
+     *
+     * So the assertion is: every column of every child row is equal, except
+     * the ones we deliberately re-assign.
+     */
+    // Keyed by ID, not by name. The RENAME section above is still holding this
+    // board under a temporary name and does not put it back until `finally`,
+    // so looking it up as "test" finds nothing - which is exactly what this
+    // gate reported the first time it ran.
+    const sourceId = editorUrl.match(/\/editor\/([0-9a-f-]{36})/)[1];
+    const dupSource = await sb
+      .from('configurations')
+      .select('*')
+      .eq('id', sourceId)
+      .single();
+    check(!!dupSource.data, 'found the board to duplicate', dupSource.error?.message || sourceId);
+
+    let copyId = null;
+    if (dupSource.data) {
+      await page.goto(`${BASE_URL}/dashboard`);
+      await page.waitForLoadState('networkidle');
+
+      const card = page.locator(`article:has(a[href="/editor/${dupSource.data.id}"])`);
+      await card.locator('button[aria-label^="Actions"]').click();
+      await page.locator('[role="menuitem"]:has-text("Duplicate")').click();
+
+      // Landing on the copy in the editor is the designed behaviour: nobody
+      // duplicates a board to look at two identical boards.
+      await page.waitForURL(
+        (u) => /\/editor\/[0-9a-f-]{36}/.test(u.pathname) && !u.pathname.includes(dupSource.data.id),
+        { timeout: 20000 }
+      );
+      copyId = page.url().match(/\/editor\/([0-9a-f-]{36})/)?.[1] ?? null;
+      check(!!copyId && copyId !== dupSource.data.id,
+        'duplicating lands on the copy, not the original', `${copyId}`);
+
+      const { data: copyRow } = await sb.from('configurations').select('*').eq('id', copyId).single();
+
+      const expectedName = `${dupSource.data.name} (copy)`;
+      check(copyRow?.name === expectedName, 'the copy is named after the original',
+        `"${copyRow?.name}" (expected "${expectedName}")`);
+
+      // THE ONE THAT FAILS NOTHING. A copy inheriting is_public puts a board
+      // the user believes is private behind a live URL.
+      check(copyRow?.is_public === false && copyRow?.share_slug === null,
+        'the copy is NOT published, whatever the original was',
+        `is_public=${copyRow?.is_public} share_slug=${copyRow?.share_slug} ` +
+        `(original: is_public=${dupSource.data.is_public})`);
+
+      // Every other column carried across.
+      const NOT_COPIED = ['id', 'created_at', 'updated_at', 'share_slug', 'is_public', 'name'];
+      const configDrift = Object.keys(dupSource.data).filter(
+        (k) => !NOT_COPIED.includes(k) &&
+          JSON.stringify(dupSource.data[k]) !== JSON.stringify(copyRow?.[k])
+      );
+      check(configDrift.length === 0,
+        'every other configuration column carried across',
+        configDrift.length ? `DROPPED/CHANGED: ${configDrift.join(', ')}` : `${Object.keys(dupSource.data).length} columns compared`);
+
+      // --- the child rows, column by column -----------------------------
+      const ord = (rows) => [...rows].sort((a, b) => a.chain_position - b.chain_position);
+      const { data: srcPedals } = await sb.from('configuration_pedals').select('*').eq('configuration_id', dupSource.data.id);
+      const { data: copyPedals } = await sb.from('configuration_pedals').select('*').eq('configuration_id', copyId);
+
+      check(srcPedals.length === copyPedals.length,
+        'the copy has the same number of pedals',
+        `${srcPedals.length} -> ${copyPedals.length}`);
+
+      const PLACED_NOT_COPIED = ['id', 'configuration_id', 'created_at'];
+      const a = ord(srcPedals), b = ord(copyPedals);
+      const drift = [];
+      for (let i = 0; i < Math.min(a.length, b.length); i++) {
+        for (const k of Object.keys(a[i])) {
+          if (PLACED_NOT_COPIED.includes(k)) continue;
+          if (JSON.stringify(a[i][k]) !== JSON.stringify(b[i][k])) {
+            drift.push(`row ${i} ${k}: ${JSON.stringify(a[i][k])} -> ${JSON.stringify(b[i][k])}`);
+          }
+        }
+      }
+      check(drift.length === 0,
+        'every placed-pedal column carried across, on every row',
+        drift.length
+          ? `DROPPED: ${drift.slice(0, 4).join(' | ')}`
+          : `${a.length} rows x ${Object.keys(a[0] ?? {}).length} columns compared`);
+
+      // The parent is re-assigned, not shared - a copy pointing at the
+      // original's rows would look identical here and corrupt both boards on
+      // the first edit.
+      check(copyPedals.every((r) => r.configuration_id === copyId),
+        'the copied rows belong to the COPY, not the original');
+
+      // --- clean up: the copy is this gate's own litter ------------------
+      const { error: cleanupError } = await sb.from('configurations').delete().eq('id', copyId);
+      check(!cleanupError, 'deleted the copy this gate created', cleanupError?.message);
+    }
 
     // ================= DELETE =================
     // A board of this gate's own making, so a failure cannot cost real work.
