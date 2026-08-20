@@ -455,16 +455,48 @@ export const useConfigurationStore = create<ConfigurationState>()(
         get().normalizeChain();
       },
 
+      /**
+       * Turn a pedal, and keep it on the board.
+       *
+       * A quarter turn SWAPS the footprint - a 2.87x5.08in pedal becomes
+       * 5.08x2.87 - so a pedal sitting flush to the right edge grew 2.21in
+       * past it, silently. Placement and drag have always clamped
+       * (editor-canvas), and this did not, which made rotation the one way a
+       * user could put a pedal off the board through the UI.
+       *
+       * Clamping MOVES the pedal, which is a real cost - but `recordHistory`
+       * above means one undo puts it back, and the alternative was a board
+       * that silently will not fit. Where the rotated footprint is larger than
+       * the board itself the clamp cannot save it: `board - w` goes negative,
+       * the pedal pins to 0 and still overhangs, and `detectCollisions`
+       * reports it off-board. That is the honest outcome, and the reason both
+       * halves of this fix exist.
+       */
       rotatePedal: (placedPedalId) => {
         recordHistory();
         set((state) => {
-          const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
-          if (pedal) {
-            pedal.rotationDegrees = (pedal.rotationDegrees + 90) % 360;
-            state.isDirty = true;
-          }
-        });
+          const placed = state.placedPedals.find((p) => p.id === placedPedalId);
+          if (!placed) return;
 
+          placed.rotationDegrees = (placed.rotationDegrees + 90) % 360;
+
+          const pedal = state.pedalsById[placed.pedalId] || placed.pedal;
+          if (pedal && state.board) {
+            const { widthInches, depthInches } = rotatedFootprint(
+              pedal,
+              placed.rotationDegrees
+            );
+            placed.xInches = Math.max(
+              0,
+              Math.min(placed.xInches, state.board.widthInches - widthInches)
+            );
+            placed.yInches = Math.max(
+              0,
+              Math.min(placed.yInches, state.board.depthInches - depthInches)
+            );
+          }
+          state.isDirty = true;
+        });
       },
 
       updatePedalChainPosition: (placedPedalId, newPosition) => {
