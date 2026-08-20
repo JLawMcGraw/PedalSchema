@@ -169,6 +169,31 @@ function ChainEnd({ label, tone = 'signal' }: { label: string; tone?: 'signal' |
   );
 }
 
+/**
+ * The spine: one continuous rule behind the nodes, so it reads as a chain.
+ *
+ * DECLARED AT MODULE SCOPE, and it has to be. This lived inside
+ * SignalChainPanel's body, which gave it a fresh function identity on every
+ * render - so React saw a different component TYPE at that position each time
+ * and rebuilt the subtree instead of reconciling it. Measured in a browser
+ * before the change: a `useEffect(..., [])` inside it fired 12 times during
+ * load and 8 more across two selections, and a chain row captured before a
+ * re-render came back `isConnected === false`. Every render was destroying and
+ * rebuilding both spines and all 22 rows.
+ *
+ * It closes over nothing, which is what made the fix a move rather than a
+ * rewrite - and is also why the defect survived: there was no visible symptom
+ * pointing at it.
+ */
+function Spine({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative">
+      <span aria-hidden className="absolute bottom-3 left-4 top-3 w-px bg-border" />
+      {children}
+    </div>
+  );
+}
+
 export function SignalChainPanel() {
   const {
     placedPedals, pedalsById, removePedal, amp, useEffectsLoop,
@@ -261,14 +286,6 @@ export function SignalChainPanel() {
       />
     );
   };
-
-  /** The spine: one continuous rule behind the nodes, so it reads as a chain. */
-  const Spine = ({ children }: { children: React.ReactNode }) => (
-    <div className="relative">
-      <span aria-hidden className="absolute bottom-3 left-4 top-3 w-px bg-border" />
-      {children}
-    </div>
-  );
 
   const issueCount = warnings.length + suggestions.length;
 
