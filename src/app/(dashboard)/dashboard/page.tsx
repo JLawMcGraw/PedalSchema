@@ -12,6 +12,32 @@ interface PageProps {
   searchParams: Promise<{ page?: string }>;
 }
 
+/** One field of the rig strip: micro label, data leading. */
+function RigField({
+  label,
+  value,
+  unit,
+  hint,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  hint?: string;
+}) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <dt className="font-mono text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+        {label}
+      </dt>
+      <dd className="font-mono text-sm tabular-nums">
+        {value}
+        {unit && <span className="text-muted-foreground">{unit}</span>}
+        {hint && <span className="ml-2 font-sans text-xs text-muted-foreground">{hint}</span>}
+      </dd>
+    </div>
+  );
+}
+
 export default async function DashboardPage({ searchParams }: PageProps) {
   const { page: rawPage } = await searchParams;
   const supabase = await createClient();
@@ -32,7 +58,63 @@ export default async function DashboardPage({ searchParams }: PageProps) {
 
   const pageWindow = resolvePage(rawPage, count ?? 0, DASHBOARD_PAGE_SIZE);
 
-  const { data: configurations } = await supabase
+  /*
+   * WHAT YOU OWN, across every board - not just this page of them.
+   *
+   * Its own query on purpose. The card list is paginated, so summing the page
+   * would silently report a fraction of the rig as the whole of it, and it
+   * would keep changing as you paged. This asks for every placed pedal the
+   * user has, and nothing else.
+   *
+   * HOW MANY OF EACH YOU OWN, inferred as the MOST that model appears on any
+   * ONE board. Neither simpler rule is right:
+   *
+   *   count every placement  - a DS-1 on two boards is one pedal you own,
+   *                            moved between them, and this counts two.
+   *   count distinct models  - the two CS-3s on `test` are two real pedals
+   *                            sharing one catalogue id, and this counts one.
+   *
+   * The most a model appears on a single board is the fewest you must own to
+   * build that board, and boards are built from the same shelf. It is still an
+   * inference - someone with two identical rigs owns two of everything - but
+   * it is the one that is right about both cases above.
+   */
+  const { data: ownedRows } = await supabase
+    .from('configuration_pedals')
+    .select('pedal_id, configuration_id, pedals (current_ma), configurations!inner (user_id)')
+    .eq('configurations.user_id', user?.id);
+
+  const perBoard = new Map<string, Map<string, number>>();
+  const drawOf = new Map<string, number | null>();
+  for (const row of (ownedRows ?? []) as unknown as Array<{
+    pedal_id: string;
+    configuration_id: string;
+    pedals: { current_ma: number | null } | null;
+  }>) {
+    if (!drawOf.has(row.pedal_id)) drawOf.set(row.pedal_id, row.pedals?.current_ma ?? null);
+    const board = perBoard.get(row.configuration_id) ?? new Map<string, number>();
+    board.set(row.pedal_id, (board.get(row.pedal_id) ?? 0) + 1);
+    perBoard.set(row.configuration_id, board);
+  }
+  const ownedCount = new Map<string, number>();
+  for (const board of perBoard.values()) {
+    for (const [pedalId, n] of board) {
+      ownedCount.set(pedalId, Math.max(ownedCount.get(pedalId) ?? 0, n));
+    }
+  }
+  const rig = {
+    boards: count ?? 0,
+    pedals: [...ownedCount.values()].reduce((sum, n) => sum + n, 0),
+    knownDrawMa: [...ownedCount.entries()].reduce(
+      (sum, [pedalId, n]) => sum + (drawOf.get(pedalId) ?? 0) * n,
+      0
+    ),
+    unknownCount: [...ownedCount.entries()]
+      .filter(([pedalId]) => drawOf.get(pedalId) == null)
+      .reduce((sum, [, n]) => sum + n, 0),
+  };
+
+  const { data: configurations, error: loadError } = await supabase
     .from('configurations')
     // The placed pedals come back too, so each card can DRAW the board rather
     // than describe it. Only the five fields a thumbnail and a stat line need
@@ -105,14 +187,40 @@ export default async function DashboardPage({ searchParams }: PageProps) {
               the heading had not already said. The count is what a person
               actually wants at the top of a list. */}
           <h1 className="text-3xl font-bold tracking-tight">My pedalboards</h1>
-          <p className="text-sm text-muted-foreground">
-            {count ?? 0} board{count === 1 ? '' : 's'}
-          </p>
         </div>
         <Link href="/editor/new">
           <Button>New Board</Button>
         </Link>
       </div>
+
+      {/*
+        THE RIG, in the register the editor toolbar uses for the same job.
+
+        The subtitle used to be "2 boards", which the cards below already say
+        by existing. This answers a question the app could always answer and
+        never did: what do you actually own. It reads across EVERY board, not
+        the page of them shown underneath.
+      */}
+      {rig.boards > 0 && (
+        <dl className="mb-8 flex flex-wrap items-baseline gap-x-8 gap-y-2 border-y py-3">
+          <RigField label="Boards" value={String(rig.boards)} />
+          <RigField label="Pedals" value={String(rig.pedals)} />
+          {/* An unrecorded draw is not a draw of zero - engine/power's rule,
+              and the same "at least" the Power panel and the editor readout
+              show. A bare total here would report the shelf as lighter on
+              power than it is. */}
+          <RigField
+            label="Draw"
+            value={`${rig.unknownCount > 0 ? '≥' : ''}${rig.knownDrawMa}`}
+            unit="mA"
+            hint={
+              rig.unknownCount > 0
+                ? `${rig.unknownCount} with no recorded draw`
+                : undefined
+            }
+          />
+        </dl>
+      )}
 
       {configurations && configurations.length > 0 ? (
         <>
@@ -293,6 +401,36 @@ export default async function DashboardPage({ searchParams }: PageProps) {
             </nav>
           )}
         </>
+      ) : loadError ? (
+        /*
+         * A FAILED QUERY IS NOT AN EMPTY ACCOUNT, and this page could not tell
+         * them apart.
+         *
+         * PostgREST fails the WHOLE select when one column is wrong, so
+         * `configurations` comes back null and every board vanishes behind
+         * "No pedalboards yet" - with nothing anywhere saying a request had
+         * failed. It happened on 2026-08-20: a select still asked for
+         * `alternate_voltages` after a migration renamed it, and three real
+         * boards rendered as an empty account. It cost a debugging cycle here;
+         * it would cost a user their entire list with no explanation, and the
+         * obvious reading of that screen is "my data is gone".
+         */
+        <Card className="border-destructive/50">
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <h3 className="mb-2 text-lg font-semibold text-destructive">
+              Your boards could not be loaded
+            </h3>
+            <p className="mb-1 text-center text-muted-foreground">
+              Nothing has been lost - this page could not read them.
+            </p>
+            <p className="mb-4 max-w-md text-center font-mono text-xs text-muted-foreground">
+              {loadError.message}
+            </p>
+            <Link href="/dashboard">
+              <Button variant="outline">Try again</Button>
+            </Link>
+          </CardContent>
+        </Card>
       ) : (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
