@@ -106,6 +106,47 @@ until proven otherwise.
     toolbar overlap          none at any of the four widths
     FIT vs canvas legend     "2 UNROUTED" vs "2 cables will not fit"  agree
 
+### Addendum - same session: the bug, the lint, and the names
+
+Three more, on the owner's instruction: fix the bug, then item 1, then item 2.
+
+**`Spine` was rebuilding all 22 chain rows on every render** (`88f5621`). It
+was declared inside `SignalChainPanel`, so it had a new function identity - and
+therefore a new component TYPE - on every render. Measured with mount counters
+rather than reasoned about:
+
+    Spine mounts (load)   12 -> 4
+    ChainRow mounts       132 -> 44        (44 = 22 rows x 2, StrictMode)
+    across 2 selections   132->220 (+88) -> 44->44 (0)
+
+**THE FIRST PROBE REPORTED THE CHAIN HEALTHY, AND WAS MEASURING THE WRONG
+NODE.** It captured the first `PW-3` span in document order to test whether it
+survived a re-render. That span is the left rail's roster - built earlier the
+same session - and is not inside `Spine` at all. Scoping the probe to the panel
+reversed the verdict. **A cross-reference that can only pass is not evidence**,
+and this one was created BY the session's own earlier work: the probe was
+written against a DOM that had changed since the technique was last used.
+
+**The lint item was wrong, and the wrongness was the interesting part**
+(`f8c1d14`). Carried for several sessions as "152 errors, all
+`no-require-imports`, a config override". Actual: **154 errors**, and the two
+extras were the `Spine` defect above. 152 lines of noise were CAMOUFLAGE for a
+real bug, and every reader had reasonably stopped at the count. The override is
+scoped to `.claude/scripts/**` and `scraper/**` by path - a blanket disable
+would let a `require()` into the app bundle. 154 -> 0 errors, 27 warnings left.
+
+**One answer to "which CS-3 is this"** (`dd8d7fd`). `lib/pedal-display-names`
+now owns it; Chain expands, Cables expands (was `CS-3 -> CS-3`), the roster
+collapses to `CS-3 x2`. **The ordinals come from chain position, always** -
+taken from the caller's iteration order instead, `CS-3 · 2` would have named
+one pedal in Chain and the other in Cables, which is worse than the bare name
+it replaces. 8 new tests, **475 total**.
+
+    npm run lint            0 errors, 27 warnings   (was 154 errors)
+    npm test                475 passed, 4 skipped
+    npm run build           Compiled successfully
+    verify-all.sh --all     29 passed, 0 failed
+
 ### Next Tasks
 
 The three at the top of the previous entry are closed. What remains of it,
@@ -117,16 +158,12 @@ unchanged, plus what this session did not touch:
       NEEDS THE OWNER'S CALL before building; this product may not want it.
 - [ ] **The landing page** - owner ranked it LAST. It remains the most generic
       file in the repo.
-- [ ] **`npm run lint` is red** - 152 errors, all `no-require-imports` on
-      CommonJS Node scripts under the app's ESM/TS config. A config override,
-      not 152 edits. src/ itself is 0 errors.
 - [ ] **Duplicate a board** - still the one missing CRUD verb.
 - [ ] **`og:image` for shared boards.**
-- [ ] The Cables list still shows "CS-3 -> CS-3": the duplicate-name
-      disambiguation added to the chain panel lives in the panel, while those
-      labels are generated in the engine. **The new rail roster is a third
-      implementation of the same idea** (it collapses duplicates to "CS-3 x2").
-      Three call sites now want one engine-side answer.
+- [ ] **27 lint warnings**, now that the errors are gone and they are
+      readable. 26 are `no-unused-vars`, 8 of them in
+      `engine/signal-chain/rules.ts`. Worth one pass to see whether any is a
+      genuine dead branch rather than a stale parameter.
 - [ ] **The roster's cap is tied to one viewport height.** 192px was derived
       at 1600x900. It is a `max-h`, so nothing breaks at other heights, but on
       a very short viewport the roster and the category list compete and the
@@ -247,9 +284,6 @@ promoting it to brand accent would destroy a signal the canvas depends on.
       NEEDS THE OWNER'S CALL before building; this product may not want it.
 - [ ] **The landing page** - owner ranked it LAST. It remains the most generic
       file in the repo.
-- [ ] **`npm run lint` is red** - 152 errors, all `no-require-imports` on
-      CommonJS Node scripts under the app's ESM/TS config. A config override,
-      not 152 edits. src/ itself is 0 errors.
 - [ ] **Duplicate a board** - still the one missing CRUD verb.
 - [ ] **`og:image` for shared boards.**
 - [ ] The Cables list still shows "CS-3 -> CS-3": the duplicate-name
