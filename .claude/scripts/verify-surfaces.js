@@ -50,6 +50,16 @@ const check = (ok, label, detail) => {
     await waitForCanvas(page);
 
     // Open a floating surface, so there is a real shadow to measure.
+    //
+    // Via the ROUTING tab. This used to grab the first combobox on screen,
+    // which was the library panel's category dropdown - and that control was
+    // removed on 2026-08-20 as a duplicate of the grouped list beneath it, so
+    // the gate had nothing to open and failed on a panel that was fine. The
+    // amp select is the stable one: it is the only non-boolean control in the
+    // routing panel and is not going anywhere.
+    const routing = page.locator('[role="tab"]:has-text("Routing")').first();
+    await routing.waitFor({ timeout: 10000 });
+    await routing.click();
     const select = page.locator('button[role="combobox"]').first();
     await select.waitFor({ timeout: 10000 });
     await select.click();
@@ -101,8 +111,14 @@ const check = (ok, label, detail) => {
         if (cs.boxShadow && cs.boxShadow !== 'none') {
           shadows[cs.boxShadow] = (shadows[cs.boxShadow] || 0) + 1;
         }
+        // VISIBLE borders only. This counted width alone, and shadcn's Switch
+        // carries `border-2 border-transparent` purely to size its track - so
+        // the check reported a 2px border on a control that paints none, and
+        // failed on markup that was correct.
         const bw = cs.borderTopWidth;
-        if (bw && bw !== '0px') borders[bw] = (borders[bw] || 0) + 1;
+        if (bw && bw !== '0px' && resolve(cs.borderTopColor).a > 0) {
+          borders[bw] = (borders[bw] || 0) + 1;
+        }
         if (
           cs.position === 'fixed' &&
           cs.pointerEvents === 'none' &&

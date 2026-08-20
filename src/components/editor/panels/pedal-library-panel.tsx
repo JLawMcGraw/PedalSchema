@@ -5,20 +5,11 @@ import { useShallow } from 'zustand/react/shallow';
 import { useState, useMemo } from 'react';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useEditorStore } from '@/store/editor-store';
 import { useConfigurationStore } from '@/store/configuration-store';
 import {
   getCategoryColor,
   getCategoryLabel,
-  getFamilyColor,
-  PEDAL_CATEGORIES,
 } from '@/lib/constants/pedal-categories';
 import { groupPedalsByCategory, groupStartsOpen } from '@/lib/pedal-grouping';
 import { CaretRight } from '@phosphor-icons/react';
@@ -30,7 +21,6 @@ interface PedalLibraryPanelProps {
 
 export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
   const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const { pedalToAdd, setPedalToAdd } = useEditorStore(
     useShallow((s) => ({ pedalToAdd: s.pedalToAdd, setPedalToAdd: s.setPedalToAdd }))
   );
@@ -38,25 +28,15 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
     useShallow((s) => ({ board: s.board, placedPedals: s.placedPedals }))
   );
 
-  // Get categories that have pedals
-  const availableCategories = useMemo(() => {
-    const categories = new Set(pedals.map((p) => p.category));
-    return PEDAL_CATEGORIES.filter((c) => categories.has(c.value)).sort(
-      (a, b) => a.defaultOrder - b.defaultOrder
-    );
-  }, [pedals]);
-
   const filteredPedals = useMemo(() => {
     return pedals.filter((p) => {
       const matchesSearch =
         search === '' ||
         p.name.toLowerCase().includes(search.toLowerCase()) ||
         p.manufacturer.toLowerCase().includes(search.toLowerCase());
-      const matchesCategory =
-        selectedCategory === 'all' || p.category === selectedCategory;
-      return matchesSearch && matchesCategory;
+      return matchesSearch;
     });
-  }, [pedals, search, selectedCategory]);
+  }, [pedals, search]);
 
   const groups = useMemo(() => groupPedalsByCategory(filteredPedals), [filteredPedals]);
 
@@ -70,7 +50,11 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
    * cleared search from leaving every section hanging open.
    */
   const [openOverrides, setOpenOverrides] = useState<Record<string, boolean>>({});
-  const defaultOpen = (count: number) => groupStartsOpen(search !== '', selectedCategory, count);
+    // 'all', always: the category dropdown is gone. The grouped list below IS
+  // the category filter, and having both meant two controls for one job with
+  // the select duplicating what the sections already show. groupStartsOpen
+  // keeps its parameter because it is unit-tested against it.
+  const defaultOpen = (count: number) => groupStartsOpen(search !== '', 'all', count);
   const isOpen = (category: string, count: number) =>
     openOverrides[category] ?? defaultOpen(count);
 
@@ -101,31 +85,6 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
           }}
           className="h-8"
         />
-        <Select
-          value={selectedCategory}
-          onValueChange={(value) => {
-            setSelectedCategory(value);
-            setOpenOverrides({});
-          }}
-        >
-          <SelectTrigger className="h-8 text-xs">
-            <SelectValue placeholder="All Categories" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Categories</SelectItem>
-            {availableCategories.map((cat) => (
-              <SelectItem key={cat.value} value={cat.value}>
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: getFamilyColor(cat.family) }}
-                  />
-                  {cat.label}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </div>
 
       {pedalToAdd && (
@@ -158,7 +117,7 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
                   setOpenOverrides((prev) => ({ ...prev, [group.category]: isNowOpen }));
                 }}
               >
-                <summary className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer list-none hover:bg-muted transition-colors duration-200 [&::-webkit-details-marker]:hidden">
+                <summary className="flex items-center gap-2 px-2 py-1 cursor-pointer list-none hover:bg-muted transition-colors duration-200 [&::-webkit-details-marker]:hidden">
                   {/* Rotated from the `open` state we already hold rather than a
                       CSS variant, so it cannot depend on variant support.
 
@@ -173,12 +132,18 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
                       open ? 'rotate-90' : ''
                     }`}
                   />
+                  {/* A rule, not a dot - the same mark the chain rows use for
+                      the same thing. In chain order the families cluster, so
+                      sixteen dots read as four amber circles in a row followed
+                      by four blue ones; a 2px rule beside the label says the
+                      same thing without pretending to be sixteen categories. */}
                   <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    aria-hidden
+                    className="h-3.5 w-0.5 shrink-0 rounded-full"
                     style={{ backgroundColor: group.color }}
                   />
-                  <span className="text-xs font-medium truncate flex-1">{group.label}</span>
-                  <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium">{group.label}</span>
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                     {group.pedals.length}
                   </span>
                 </summary>

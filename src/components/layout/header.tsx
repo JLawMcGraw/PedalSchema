@@ -60,9 +60,15 @@ export function Header({ user }: HeaderProps) {
     { href: '/amps', label: 'Amps' },
   ];
 
+  // h-14 goes on the HEADER, not just the inner row. The border-b used to land
+  // outside the measured height, making this 57px while the editor shell
+  // subtracts 3.5rem (56px) - so the shell was a pixel taller than the
+  // viewport, the document scrolled, and the bottom of the right panel was cut
+  // off. Tailwind's preflight sets box-sizing: border-box, so with the height
+  // here the border is part of the 56.
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-14 items-center px-4">
+    <header className="sticky top-0 z-50 h-14 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="flex h-full items-center px-4">
         {/* Mobile menu button */}
         {user && (
           <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>

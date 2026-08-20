@@ -60,7 +60,7 @@ function ChainRow({
   return (
     <div
       onClick={onSelect}
-      className={`group relative flex items-center gap-2 py-1 pl-8 pr-1 cursor-pointer transition-colors ${
+      className={`group relative flex items-center gap-2 py-1 pl-8 pr-3 cursor-pointer transition-colors ${
         isSelected ? 'bg-primary/15' : 'hover:bg-muted/60'
       }`}
     >
@@ -114,7 +114,7 @@ function ChainRow({
         became mouse-only. Opacity keeps them in the tree and focusable, and
         `group-focus-within` brings them into view when tabbing reaches them.
       */}
-      <span className="absolute right-1 flex shrink-0 items-center gap-0.5 rounded-none bg-background/95 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100">
+      <span className="absolute right-2 flex shrink-0 items-center gap-0.5 rounded-none bg-background/95 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100">
         <button
           title="Move earlier in the chain"
           disabled={!onMoveUp}

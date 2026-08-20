@@ -38,6 +38,15 @@ const state = (page) =>
       open: sections.filter((d) => d.open).length,
       searchBoxPresent: !!document.querySelector('input[placeholder="Search pedals..."]'),
       contentH: viewport ? viewport.scrollHeight : null,
+      // Pedal rows inside OPEN sections. The height delta used to stand in for
+      // this, and stopped working the moment the panel got compact enough for
+      // its content to fit the viewport: scrollHeight then equals clientHeight
+      // and does not move when a section opens. Counting what was revealed is
+      // the thing the check was always trying to say.
+      revealed: [...document.querySelectorAll('details[open]')].reduce(
+        (n, d) => n + d.querySelectorAll('button, [role="button"]').length,
+        0
+      ),
       viewH: viewport ? viewport.clientHeight : null,
       // Tailwind v4 compiles rotate-90 to the `rotate` PROPERTY. Reading
       // `transform` here returns "none" either way and proves nothing.
@@ -81,9 +90,9 @@ const state = (page) =>
     );
     check(opened.open === 1, 'and opens exactly the section clicked', `${opened.open} open`);
     check(
-      opened.contentH > base.contentH,
+      opened.revealed > base.revealed,
       'which reveals its pedals',
-      `content ${base.contentH} -> ${opened.contentH}px`
+      `${base.revealed} -> ${opened.revealed} pedal rows (content ${base.contentH} -> ${opened.contentH}px)`
     );
     check(
       opened.firstChevronRotate !== base.firstChevronRotate,
