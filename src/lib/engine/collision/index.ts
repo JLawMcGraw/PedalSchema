@@ -65,7 +65,28 @@ export function getOverlapArea(a: BoundingBox, b: BoundingBox): number {
 }
 
 /**
- * Detect all collisions between placed pedals
+ * How far past an edge a pedal may sit before it counts as off the board.
+ *
+ * The same 0.01in the layout engine's `hasPlacementCollision` uses. It has to
+ * be: the engine refuses a candidate layout on those bounds and the UI reports
+ * the fault on these, and a board the optimizer calls illegal while the canvas
+ * calls it fine is the P1.5 mistake wearing a different hat. It is also what
+ * keeps a pedal placed flush to an edge - a tidy board, not a broken one -
+ * from reporting a fault on floating-point dust.
+ */
+const OFF_BOARD_TOLERANCE = 0.01;
+
+/**
+ * Detect all collisions between placed pedals, and any pedal off the board.
+ *
+ * THE BOARD ARGUMENT WAS IGNORED FOR YEARS. This function took a `Board` and
+ * never read it, so it answered "do any two pedals overlap" while the whole UI
+ * asked it "is anything wrong with this layout" - the canvas outline, the
+ * properties panel and the toolbar's FIT field all read its output. A pedal
+ * hanging off the edge was invisible in all three.
+ *
+ * The likely reason it was never fixed: `Collision.pedalIds` was a
+ * `[string, string]`, and a pedal off the board is a party of one.
  */
 export function detectCollisions(
   placedPedals: PlacedPedal[],
@@ -81,6 +102,24 @@ export function detectCollisions(
     if (pedal) {
       const box = getPedalBoundingBox(placed, pedal);
       boundingBoxes.set(placed.id, { ...box, name: pedal.name });
+    }
+  }
+
+  /*
+   * Bounds first, so an off-board pedal is reported even when it also
+   * overlaps something - they are different faults with different fixes, and
+   * collapsing them would tell someone to move a pedal that needs to come back
+   * onto the board. The box is the ROTATED footprint, which is the whole point
+   * on the path that makes this reachable.
+   */
+  for (const [id, box] of boundingBoxes) {
+    const off =
+      box.x < -OFF_BOARD_TOLERANCE ||
+      box.y < -OFF_BOARD_TOLERANCE ||
+      box.x + box.width > board.widthInches + OFF_BOARD_TOLERANCE ||
+      box.y + box.height > board.depthInches + OFF_BOARD_TOLERANCE;
+    if (off) {
+      collisions.push({ pedalIds: [id], severity: 'off-board' });
     }
   }
 

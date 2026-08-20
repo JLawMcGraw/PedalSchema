@@ -273,8 +273,15 @@ export interface BoundingBox {
 }
 
 export interface Collision {
-  pedalIds: [string, string];
-  severity: 'overlap' | 'clearance';
+  /**
+   * The pedals involved. TWO for an overlap or a clearance breach, ONE for a
+   * pedal that is off the board - which is why this is an array and not the
+   * pair it used to be. `off-board` is a property of a single pedal and had
+   * nowhere to go in a `[string, string]`, which is the likeliest reason
+   * detectCollisions took a `board` for years and never read it.
+   */
+  pedalIds: string[];
+  severity: 'overlap' | 'clearance' | 'off-board';
 }
 
 export interface ChainWarning {

@@ -44,13 +44,24 @@ export function BoardReadout() {
    * built at all, while a cable that will not route is a board you can build
    * and then re-plan. Reporting the milder fault while the worse one is live
    * would be the readout lying by omission.
+   *
+   * OFF-BOARD IS NAMED SEPARATELY. This field said "N OVERLAP" for every
+   * collision, which was true while `detectCollisions` only ever found
+   * overlaps. It now also reports a pedal hanging off the edge, and the two
+   * faults have different fixes - "move these apart" versus "this one is not
+   * on the board" - so one label for both would send the reader looking for a
+   * neighbour that does not exist.
    */
+  const offBoard = collisions.filter((c) => c.severity === 'off-board').length;
+  const overlaps = collisions.length - offBoard;
   const fit =
-    collisions.length > 0
-      ? { text: `${collisions.length} OVERLAP`, bad: true }
-      : unrouted > 0
-        ? { text: `${unrouted} UNROUTED`, bad: true }
-        : { text: 'OK', bad: false };
+    offBoard > 0
+      ? { text: `${offBoard} OFF BOARD`, bad: true }
+      : overlaps > 0
+        ? { text: `${overlaps} OVERLAP`, bad: true }
+        : unrouted > 0
+          ? { text: `${unrouted} UNROUTED`, bad: true }
+          : { text: 'OK', bad: false };
 
   return (
     <div
