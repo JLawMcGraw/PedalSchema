@@ -4,6 +4,133 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-21 - 167 KB per page load, for data that never changed
+
+### Summary
+
+Started as "continue the redesign", became an infrastructure session on the
+owner's redirect: **Supabase reported the organisation past its egress quota**,
+with the Fair Use Policy applying from **2026-09-20**.
+
+The owner's actual question was whether the FREE TIER WAS THE WRONG
+ARCHITECTURE. It was not, and that mattered - the answer to a quota warning is
+not automatically "upgrade the plan".
+
+**`loadConfiguration` re-fetched the entire catalogue on every editor render.**
+Measured against the live database rather than estimated:
+
+    pedals + jacks             67 rows    151,804 bytes
+    amps                       12 rows      8,012 bytes
+    power_supplies + outputs    5 rows     11,446 bytes
+    -----------------------------------------------------
+    TOTAL per editor load                 171,262 bytes = 167.2 KB
+
+5.5 GB / 167.2 KB = **~33,000 editor loads**. A few months of development with
+hot reload reaches that without trying. Nothing was wrong with the plan; the app
+was asking for the same 67 pedals every time the page rendered.
+
+**Also found, by lint, not by a test:** a conditional `useMemo` in the Power
+panel that crashes the panel when the first pedal is added to an empty board.
+Pre-existing, shipped in the previous session's own code-review commit.
+
+**495 tests**, **36 gates** (from 35), lint 0, build clean.
+
+### What Was Accomplished
+
+- [x] **`lib/catalogue`** - the catalogue served from a cross-request cache
+- [x] **`verify-catalogue-cache`** - gate 36, proving the partition is total
+- [x] **og:image** - `revalidate = 86400`; it was dynamic
+- [x] **Dashboard rig query** - drops a join that repeated one uuid per pedal
+- [x] **Power panel conditional-hook crash** - hoisted above the early return
+- [ ] Routing panel redesign - the session's original subject, not started
+
+### Key Changes
+| File | Change |
+|---|---|
+| `lib/catalogue.ts` | NEW - system rows cached, user rows live, merged |
+| `lib/load-configuration.ts` | three queries -> one cached call; ~115 lines lighter |
+| `scripts/verify-catalogue-cache.js` | NEW - gate 36 |
+| `s/[slug]/opengraph-image.tsx` | `revalidate = 86400` |
+| `dashboard/page.tsx` | ids from the count query; rig query drops the join |
+| `panels/power-panel.tsx` | `useMemo` above the empty-board return |
+
+### Technical Decisions
+
+1. **The split is what makes it cacheable, and it is not an optimisation - it
+   is the only correct shape.** The catalogue is two sets: `is_system = true`
+   rows are readable by anyone and identical for every caller; `created_by`
+   rows are private and change the moment someone adds gear. The system half
+   caches globally; the user's half is read live and merged. Caching the UNION
+   would key on the user id and hand every account its own copy of the same 67
+   rows - and `unstable_cache` cannot call `cookies()`, which an authenticated
+   client requires, so it could not have been built that way regardless.
+2. **The cached query filters `is_system` EXPLICITLY** rather than leaning on
+   the anon role's RLS view of the table. The filter DEFINES the cached set. A
+   policy change would otherwise quietly alter what every caller is served out
+   of one shared entry - a bug that only appears for the second user.
+3. **A day on the og:image.** The picture is a PREVIEW, not the board. Someone
+   who edits a published layout sees a stale thumbnail for a while and the link
+   still opens the live board. Trading a stale thumbnail for bandwidth is the
+   right way round; trading bandwidth for a thumbnail nobody is looking at is
+   not.
+4. **`getUser`, not `getSession`.** The session is unverified cookie data, and
+   this decides which gear rows get attached to someone's board.
+
+### Architecture Notes
+
+**THE QUOTA WARNING WAS NOT AN ARCHITECTURE PROBLEM, AND SAYING SO WAS THE
+WORK.** The prompt a quota email invites is "upgrade, or redesign the data
+layer". The measurement said neither: one repeated read accounted for it, and
+the free tier is correctly sized for this app. **Measure before re-planning** -
+the bill named a symptom, not a cause.
+
+**THE GATE GUARDS A FAILURE WITH NO SYMPTOM.** A row with `is_system = false`
+and `created_by = null` belongs to neither half of the split, so it would
+disappear from the library with nothing reporting it - no error, no empty
+state, just a pedal that is not there any more. `verify-catalogue-cache`
+proves the partition against the DATABASE rather than against the policy text,
+and it also asserts that the anon role can read the cached half, since the
+cache is filled by a session-less client. Today: 67 + 12 + 5 rows, all system,
+**0 orphaned**. It is IN `verify-all.sh`; this repo has already paid twice for
+gates that lived outside it.
+
+**BYTE ARITHMETIC IS NOT PROOF THAT A CACHE HITS.** The 167.2 KB figure says
+what a load COSTS, not that anything now avoids it. Proved separately, in a
+production build with the fetcher instrumented to record only cache MISSES:
+
+    load 1..5   library = 67 pedals   cumulative catalogue fetches = 1
+
+Four of five loads served from cache, and the library intact at 67 on every
+one. The instrumentation was removed afterwards - `require()` in `src/` is a
+lint error here, deliberately.
+
+**LINT FOUND THE CRASH THE CODE REVIEW INTRODUCED.** `2264f15` added a
+`useMemo` to the Power panel to match its siblings and placed it BELOW the
+empty-board early return. So the component called three hooks on an empty
+board and four on any other, and dropping the FIRST pedal onto a board changed
+the hook count between two renders of a mounted panel - "Rendered more hooks
+than during the previous render". **The previous session's own quality pass
+shipped it, and the test suite is green either way**, because no test adds a
+pedal to an empty board with the Power tab open. That is the second session
+running in which `npm run lint` found a real defect that nothing else did.
+
+### Next Tasks
+
+- [ ] **Routing panel redesign** - the session's original subject. It is the
+      one panel its siblings have all been through: a double-padded amp
+      selector, a Signal-flow block drawn with inline `ArrowRight` icons
+      instead of the spine the Chain and Cables panels use for the same idea,
+      and a Pedal-loops section still on bordered cards with Badge/Checkbox
+- [ ] **Check the real numbers** - Supabase's usage dashboard, in a week.
+      167.2 KB/load and 4-of-5 cached are bench measurements; cached egress
+      actually falling is the only confirmation that counts. Fair Use applies
+      **2026-09-20**
+- [ ] **`revalidateTag('catalogue')` on gear edits** - `CATALOGUE_TAG` is
+      exported and unused. Adding a custom pedal is fine (that half is live),
+      but a system-row edit takes up to an hour to appear
+
+---
+
 ## Session: 2026-08-20 (second) - the measurements, and four bugs that were hiding behind counts
 
 ### Summary
