@@ -518,6 +518,20 @@ different marks read as two different diagrams.
 
 ## Session: 2026-08-21 - 167 KB per page load, for data that never changed
 
+> **CORRECTED THE SAME DAY - THIS FIXED THE WRONG HALF.** Everything below is
+> true and the catalogue cache was worth having, but it did not touch the
+> cause. Supabase escalated hours later to **40.78 GB** with the grace period
+> cut to **2026-08-24**, and the measurement then found the real source:
+> **cached egress is the CDN in front of STORAGE, not Postgres.** 67 rows of
+> JSON cannot make 40 GB; 85 full-resolution PNGs served by raw `<img>` tags
+> can, at 25.97 MB for one `/pedals` load. See the sixth entry.
+>
+> **The lesson is narrower than "measure first" - it is MEASURE THE RIGHT
+> METER.** This session measured carefully, arrived at a real defect, fixed
+> it, and declared the question answered without ever checking which line on
+> the bill was the one moving. A correct measurement of the wrong quantity is
+> still the wrong answer, and it is more convincing than a guess.
+
 ### Summary
 
 Started as "continue the redesign", became an infrastructure session on the
