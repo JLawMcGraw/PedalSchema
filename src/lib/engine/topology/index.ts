@@ -170,25 +170,48 @@ export function deriveSignalTopology(
     const beforeLoop: PlacedPedal[] = [];
     const inLoop: PlacedPedal[] = [];
     const afterLoop: PlacedPedal[] = [];
+    const inAmpLoop: PlacedPedal[] = [];
 
     for (const placed of sorted) {
       if (placed.id === loopPedal.id) continue;
+
+      /*
+       * MEMBERSHIP BEATS LOCATION, AND LOCATION BEATS POSITION.
+       *
+       * Being inside the gate's send/return is something the player asked
+       * for by name - it is a list of pedal ids - so it outranks a location
+       * the chain rules derived. After that the amp's own loop takes what is
+       * addressed to it, exactly as the standard branch does, and whatever
+       * is left falls before or after the hub by chain position.
+       *
+       * THIS BRANCH USED TO STOP AT THE HUB. It never read
+       * `effectsLoopEnabled`, so a rig with a gate in front AND time effects
+       * in the amp's loop - an ordinary rig - was wired with every cable
+       * into the amp INPUT, while the Chain panel showed those same pedals
+       * under Send/Return because the chain rules HAD moved them. Two panels
+       * describing different rigs, and the placer optimising against the
+       * wrong one: the loop pedals were packed into the primary run and
+       * their cable cost scored against jacks they were not plugged into.
+       */
       if (memberIds.includes(placed.id)) inLoop.push(placed);
+      else if (effectsLoopEnabled && placed.location === 'effects_loop') inAmpLoop.push(placed);
       else if (placed.chainPosition < loopPedal.chainPosition) beforeLoop.push(placed);
       else afterLoop.push(placed);
     }
 
     if (inLoop.length > 0) {
-      return {
-        mode: 'pedal-loop',
-        hub: loopPedal,
-        effectsLoopEnabled,
-        segments: [
-          { id: 'before-hub', pedals: beforeLoop, from: ext('guitar'), to: pedalAnchor(loopPedal.id, 'input') },
-          { id: 'hub-loop', pedals: inLoop, from: pedalAnchor(loopPedal.id, 'send'), to: pedalAnchor(loopPedal.id, 'return') },
-          { id: 'after-hub', pedals: afterLoop, from: pedalAnchor(loopPedal.id, 'output'), to: ext('amp_input') },
-        ],
-      };
+      const segments: Segment[] = [
+        { id: 'before-hub', pedals: beforeLoop, from: ext('guitar'), to: pedalAnchor(loopPedal.id, 'input') },
+        { id: 'hub-loop', pedals: inLoop, from: pedalAnchor(loopPedal.id, 'send'), to: pedalAnchor(loopPedal.id, 'return') },
+        { id: 'after-hub', pedals: afterLoop, from: pedalAnchor(loopPedal.id, 'output'), to: ext('amp_input') },
+      ];
+      // Same rule as standard mode: no send->return patch cable is suggested
+      // for an empty loop.
+      if (inAmpLoop.length > 0) {
+        segments.push({ id: 'amp-loop', pedals: inAmpLoop, from: ext('amp_send'), to: ext('amp_return') });
+      }
+
+      return { mode: 'pedal-loop', hub: loopPedal, effectsLoopEnabled, segments };
     }
   }
 
@@ -282,6 +305,8 @@ export function primaryChain(topology: SignalTopology): PlacedPedal[] {
       // beforeLoop -> hub -> members -> afterLoop (ends at amp input).
       // The members ARE part of the primary run, immediately after their hub,
       // so the group packs contiguously and send/return stay short.
+      // Pedals in the AMP's loop are not named here and so are not in it -
+      // they are placed as an amp-side cluster, like standard mode's.
       return [
         ...(byId.get('before-hub')?.pedals ?? []),
         ...(topology.hub ? [topology.hub] : []),
@@ -300,9 +325,14 @@ export function ampClusters(topology: SignalTopology): Segment[] {
     case '4cm':
       return topology.segments.filter((s) => s.id === 'amp-loop' || s.id === 'after-hub');
     case 'standard':
-      return topology.segments.filter((s) => s.id === 'amp-loop');
     case 'pedal-loop':
-      return [];
+      // The hub's own members are NOT a cluster - they belong inline in the
+      // primary run, right after their hub, so the group packs contiguously
+      // and send/return stay short (see primaryChain). Anything wired to the
+      // AMP's jacks is a cluster in either mode; this used to return nothing
+      // for pedal-loop because the mode could not produce an amp-loop
+      // segment at all.
+      return topology.segments.filter((s) => s.id === 'amp-loop');
   }
 }
 

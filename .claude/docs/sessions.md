@@ -4,6 +4,87 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-21 (third) - the branch that stopped at the hub
+
+### Summary
+
+The engine bug the redesigned Routing panel exposed, fixed, on the owner's
+call: **the point of this app is an optimal layout, so the topology the
+optimiser scores against has to be right.**
+
+`deriveSignalTopology`'s pedal-loop branch never read `effectsLoopEnabled`.
+A rig with a gate in front and time effects in the amp's loop - an ordinary
+rig - was wired with every cable into the amp INPUT, while the Chain panel
+showed those same pedals under Send/Return because the chain rules HAD moved
+them. Two panels describing different rigs.
+
+Measured in the app, J$ Home, turning the effects loop on:
+
+    before   location=[]                  endpoints={guitar, amp_input}
+    after    location=[Aqua-Puss, Flint]  endpoints={guitar, amp_input}   BUG
+    fixed    location=[Aqua-Puss, Flint]  endpoints={guitar, amp_input,
+                                                     amp_send, amp_return}
+             amp_send -> Aqua-Puss,  Flint -> amp_return
+
+**498 tests** (from 495), **37 gates**, lint 0, build clean, `--all` 37/37.
+
+### What Was Accomplished
+
+- [x] **`deriveSignalTopology`** - the pedal-loop branch now emits an
+      `amp-loop` segment, by the same rule the standard branch uses
+- [x] **`ampClusters`** - pedal-loop mode returns its amp-loop segment, so the
+      placer packs those pedals against the amp edge instead of threading
+      them into the primary run
+- [x] **Three tests** written RED first, in `topology.test.ts`
+
+### Key Changes
+| File | Change |
+|---|---|
+| `engine/topology/index.ts` | pedal-loop branch reads `effectsLoopEnabled`; `ampClusters` covers it |
+| `engine/topology/__tests__/topology.test.ts` | 3 tests - wiring, cluster hand-off, and the OFF case |
+
+### Technical Decisions
+
+1. **Membership beats location, and location beats position.** Being inside
+   the gate's send/return is something the player asked for by name - it is a
+   list of pedal ids - so it outranks a location the chain rules derived.
+   After that the amp's own loop takes what is addressed to it, exactly as
+   the standard branch does, and the remainder falls before or after the hub
+   by chain position.
+2. **A test for the OFF case, written at the same time.** `derive(false,
+   false, true)` asserts that no `amp-loop` segment appears and the last
+   segment still ends at `amp_input`. It passed before the fix and after it,
+   which is the point: it is the guard against over-correcting, and it was
+   the one new test that was GREEN in the red run.
+
+### Architecture Notes
+
+**THE OPTIMISER DID NOT REGRESS, AND THE FIRST MEASUREMENT SAID IT DID.**
+Optimize on the fixed topology moved total cable from 126in to 138in, which
+read as a 9.5% regression until the optimiser's own cost was read instead of
+raw inches:
+
+    before 527.3   after 240.9   delta -286.4
+    signal-flow reversals  -326
+    cable length           +9.6in
+    complex routing        +30 (3 cables)
+
+It traded 9.6in of cable for 326 points of signal-flow reversal, which is the
+objective working. **Cable inches are one of six dimensions in
+`calculateRoutingCost`, not the score** - and the incumbent layout had been
+optimal for the OTHER topology, so re-planning under the corrected one is
+expected to move pedals. `summarizeOptimization` had the answer the whole
+time; the mistake was measuring a proxy that was easier to reach.
+
+### Next Tasks
+
+- [ ] **The Signal flow block's layout** - the owner does not like it. The
+      data is right (gate 37 proves it); the presentation is open
+- [ ] **`rounded-full` on Badge**, **raw `text-red-500` in the auth blocks**,
+      and the **Supabase numbers** - all carried from the entry below
+
+---
+
 ## Session: 2026-08-21 (second) - the diagram was a drawing, and it disagreed with the wiring
 
 ### Summary
@@ -105,11 +186,8 @@ different marks read as two different diagrams.
 
 ### Next Tasks
 
-- [ ] **The amp FX loop is ignored while a pedal loop is active** - the
-      measurement above. `deriveSignalTopology`'s pedal-loop branch returns
-      before it looks at `effectsLoopEnabled`, so `after-hub` always ends at
-      `amp_input`. The Chain panel says those pedals are in the loop; the
-      cables say they are in front. One of the two has to give
+- [x] **The amp FX loop is ignored while a pedal loop is active** - FIXED in
+      the same session, see the entry above this one
 - [ ] **`rounded-full` on Badge** - a pill, against §5, in four files outside
       the editor panels (amps, pedal detail, toolbar, pedal-card)
 - [ ] **Raw `text-red-500` in the three auth/new-board error blocks** - the

@@ -12,7 +12,7 @@
 import { describe, it, expect } from 'vitest';
 import { makePedalSet, makeAmp } from '../../__tests__/support/fixtures';
 import { signalChainEngine } from '../../signal-chain';
-import { deriveSignalTopology } from '../index';
+import { ampClusters, deriveSignalTopology, primaryChain } from '../index';
 
 function derive(use4CableMethod: boolean, useEffectsLoop: boolean, ns2UseLoop = false,
   modulationInLoop = false) {
@@ -101,6 +101,69 @@ describe('NS-2 pedal loop wiring (non-4CM)', () => {
     expect(inLoop).not.toContain('reverb');
     expect(seg.get('hub-loop')!.from).toMatchObject({ kind: 'pedal', jack: 'send' });
     expect(seg.get('hub-loop')!.to).toMatchObject({ kind: 'pedal', jack: 'return' });
+  });
+
+  /*
+   * A GATE IN FRONT AND TIME EFFECTS IN THE AMP'S LOOP IS AN ORDINARY RIG.
+   *
+   * This branch used to return before it ever looked at the amp loop, so a
+   * board with both said one thing in the Chain panel - delay and reverb
+   * under Send/Return, because the chain rules had moved them there - and
+   * wired another: every cable went to the amp INPUT and the amp's send and
+   * return were never used. Measured in the app on 2026-08-21:
+   *
+   *   loop off   location=[]                  endpoints={guitar, amp_input}
+   *   loop on    location=[Aqua-Puss, Flint]  endpoints={guitar, amp_input}
+   *
+   * The placer optimises against this topology, so the consequence was not
+   * cosmetic: those two pedals were being packed into the primary run and
+   * their cable cost scored against the wrong jacks.
+   */
+  it('wires the amp effects loop too, when the rig has one', () => {
+    const { topology } = derive(false, true, true);
+    expect(topology.mode).toBe('pedal-loop');
+    const seg = new Map(topology.segments.map((s) => [s.id, s]));
+
+    // The gate's own loop is unchanged - drives still inside it
+    expect(names(seg.get('hub-loop')!.pedals)).toEqual(
+      expect.arrayContaining(['boost', 'od', 'dist'])
+    );
+
+    // AMP SEND -> time FX -> AMP RETURN
+    expect(seg.get('amp-loop')).toBeDefined();
+    expect(seg.get('amp-loop')!.from).toEqual({ kind: 'external', type: 'amp_send' });
+    expect(seg.get('amp-loop')!.to).toEqual({ kind: 'external', type: 'amp_return' });
+    expect(names(seg.get('amp-loop')!.pedals)).toEqual(
+      expect.arrayContaining(['delay', 'reverb'])
+    );
+
+    // and they are in the loop INSTEAD of the front run, not as well as it
+    expect(names(seg.get('after-hub')!.pedals)).not.toContain('delay');
+    expect(names(seg.get('after-hub')!.pedals)).not.toContain('reverb');
+    expect(names(primaryChain(topology))).not.toContain('delay');
+
+    // Every pedal is in exactly one place
+    const everywhere = [
+      ...topology.segments.flatMap((s) => names(s.pedals)),
+      ...(topology.hub ? [topology.hub.pedalId] : []),
+    ];
+    expect(new Set(everywhere).size).toBe(everywhere.length);
+    expect(everywhere.length).toBe(12);
+  });
+
+  it('hands the amp loop to the placer as an amp-side cluster', () => {
+    // Same rule as standard mode: pedals wired to the amp's own jacks are
+    // packed against the amp edge, not threaded into the primary run.
+    const { topology } = derive(false, true, true);
+    const clusters = ampClusters(topology);
+    expect(clusters.map((c) => c.id)).toEqual(['amp-loop']);
+  });
+
+  it('adds no amp-loop segment when the amp loop is off', () => {
+    const { topology } = derive(false, false, true);
+    expect(topology.segments.find((s) => s.id === 'amp-loop')).toBeUndefined();
+    expect(topology.segments.at(-1)!.to).toEqual({ kind: 'external', type: 'amp_input' });
+    expect(ampClusters(topology)).toEqual([]);
   });
 });
 
