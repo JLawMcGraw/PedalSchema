@@ -4,6 +4,103 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-21 (fifth) - a chain has a shape, and the panel was hiding it
+
+### Summary
+
+Two rounds of the owner looking at the Signal flow block and not believing it.
+
+**Round one: "so messy, i cant tell whats happening."** Eighteen pedals in a
+287px row rendered as `PW-3, CP-1X, CS-3 · 1, CS-3 · 2, OC-5, PS-` - five and
+a half names, one cut mid-word - and it was the WIDEST, BUSIEST thing in the
+panel, so the list nobody could read was drowning out the structure it was
+supposed to support. Replaced with a count.
+
+**Round two, and the better point: "just looking at it now tells no real
+information."** Correct. `18 pedals` is honest and says nothing. What a player
+wants from a chain is its SHAPE, and the owner named the vocabulary: tuner,
+filters and pitch, dynamics, gain, EQ and boost, modulation, time.
+
+So a run is now read out stage by stage:
+
+    Guitar
+      FILTER     PW-3
+      DYNAMICS   CP-1X, CS-3 · 1, CS-3 · 2       3
+      FILTER     OC-5, PS-6                      2
+      MOD        DC-2W, PH-3                     2
+      GAIN       DS-1, DS-1W, HM-2W, MT-2W,
+                 FZ-1W                           5
+      UTIL       NS-2
+      EQ         EQ-200, GE-7, GEB-7             3
+      UTIL       IR-2
+    Dual Rectifier                             IN
+     |  FX SEND
+     |  TIME     DD-7, DM-2W, Timeline, BigSky   4
+     |  FX RETURN
+
+**498 tests, 37 gates**, lint 0, build clean, `--all` 37/37.
+
+### What Was Accomplished
+
+- [x] **`ChainStage`** - a stage column ON `PEDAL_CATEGORIES`, not a table
+      beside it
+- [x] **Stage rows** - consecutive same-stage groups, in chain order, with the
+      family rule the Chain panel already uses
+- [x] **Names wrap, never truncate**; past six in one stage the count takes over
+- [x] **Gate 37**: the breakdown keeps the chain in order, and every run row
+      names its stage
+
+### Key Changes
+| File | Change |
+|---|---|
+| `constants/pedal-categories.ts` | `ChainStage`, `CHAIN_STAGES`, `stage` on every category |
+| `panels/routing-options-panel.tsx` | `FlowStage`, `StageRow`; run rows split by stage |
+| `scripts/verify-signal-flow.js` | chain-order assertion, stage attribute |
+
+### Technical Decisions
+
+1. **The stage is a COLUMN ON THE CATEGORY TABLE, not a lookup beside it.**
+   `defaultOrder` was already the single source of truth for chain order; a
+   stage only says which positions are read out under one heading. As a column
+   it cannot be forgotten: a new category will not compile without a stage.
+2. **Grouping is by CONSECUTIVE stage, in chain order - never sorted.** A
+   stage that legitimately appears twice appears twice: the wah is FILTER and
+   so are the pitch pedals four positions later, and a gate after the drives
+   and a looper at the end are both UTIL and are not the same thing happening.
+   Sorting by stage would have produced a tidier list describing a board
+   nobody owns, and it would have passed every coverage check the gate had -
+   which is why the gate grew one that reads the ids back in DOM order and
+   requires ascending chain positions.
+3. **The app's boost order is kept, and the guides disagree with it.** Every
+   pedal-order guide puts boost AFTER the dirt ("boost your solos"); this app
+   orders it at 50, in front of it ("push the drive harder"). Both are real
+   practice, the engine already sorts by `defaultOrder`, and **a display
+   grouping does not get to re-litigate the engine's order** - so boost reads
+   out under GAIN, where the engine puts it.
+4. **`tracking-widest` came off the stage label.** That tracking is for a micro
+   label standing alone; this one is a data column, and the extra 0.1em was
+   exactly enough to render "DYNAMI...".
+
+### Architecture Notes
+
+**THE TWO WRONG ANSWERS WERE BOTH ABOUT ALTITUDE.** The names list was too low
+- individual pedals, in a panel about topology. The bare count was too high -
+a number with no structure. The stage is the altitude the question is asked
+at, and it was already in the codebase as `defaultOrder`; nothing new had to
+be invented, only banded and labelled.
+
+**A GROUPING IS A CLAIM ABOUT ORDER, AND CLAIMS GET GATED.** Every other
+assertion in gate 37 is about coverage and agreement, and all of them would
+pass a version of this that sorted the rows by stage. The order assertion is
+the only one that would fail, which is exactly why it earns its place.
+
+### Next Tasks
+
+- [ ] **`rounded-full` on Badge**, **raw `text-red-500` in the auth blocks**,
+      and the **Supabase numbers** - carried
+
+---
+
 ## Session: 2026-08-21 (fourth) - a loop, drawn as a loop
 
 ### Summary
@@ -96,9 +193,8 @@ the spine was miscounted as a run of zero.
 
 ### Next Tasks
 
-- [ ] **Long names truncate sooner inside a bracket** - "Conspiracy Theory,
-      TS9 Tube Screa..." at depth 1. Known and accepted when the candidate was
-      picked; revisit if it bites
+- [x] **Long names truncate sooner inside a bracket** - it bit immediately;
+      names now wrap and runs read out by stage. See the entry above
 - [ ] **`rounded-full` on Badge**, **raw `text-red-500` in the auth blocks**,
       and the **Supabase numbers** - carried
 

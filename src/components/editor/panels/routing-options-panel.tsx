@@ -19,6 +19,12 @@ import {
   type PedalDisplayName,
 } from '@/lib/pedal-display-names';
 import { deriveSignalTopology, type Anchor, type SignalTopology } from '@/lib/engine/topology';
+import {
+  getCategoryStage,
+  getStageShortLabel,
+  getCategoryColor,
+  type ChainStage,
+} from '@/lib/constants/pedal-categories';
 import type { Amp, Pedal, PlacedPedal } from '@/types';
 
 /**
@@ -82,10 +88,33 @@ interface FlowNode {
   terminal: boolean;
 }
 
-/** A run of pedals between two devices. */
+/**
+ * One stage of a run: the consecutive pedals doing the same job.
+ *
+ * A run is not an undifferentiated pile of pedals, and drawing it as one was
+ * the panel's second wrong answer in a row. `PW-3, CP-1X, CS-3 · 1, CS-3 · 2,
+ * OC-5, PS-` was eighteen pedals truncated mid-name; `18 pedals` replaced it
+ * with something honest that still told you nothing. What a player wants from
+ * a chain is its SHAPE - a wah, three compressors, five dirt boxes, a gate,
+ * three EQs - which is the vocabulary every pedal-order guide is written in.
+ *
+ * Grouping is by CONSECUTIVE stage, in chain order, so nothing is reordered
+ * for display and a stage that legitimately appears twice appears twice: a
+ * gate after the drives and a looper at the end are both `utility`, and they
+ * are not the same thing happening.
+ */
+interface FlowStage {
+  stage: ChainStage;
+  label: string;
+  colour: string;
+  names: string[];
+  ids: string[];
+}
+
+/** A run of pedals between two devices, read out stage by stage. */
 interface FlowRun {
   kind: 'run';
-  names: string[];
+  stages: FlowStage[];
   ids: string[];
 }
 
@@ -135,6 +164,30 @@ function buildFlow(
   const nameOf = (placed: PlacedPedal): string => {
     const pedal = pedalsById[placed.pedalId] || placed.pedal;
     return displayNameFor(displayNames, placed.id, pedal?.name ?? 'Pedal');
+  };
+
+  /** Split a run into consecutive same-stage groups, in chain order. */
+  const stagesOf = (pedals: PlacedPedal[]): FlowStage[] => {
+    const out: FlowStage[] = [];
+    for (const placed of pedals) {
+      const pedal = pedalsById[placed.pedalId] || placed.pedal;
+      const category = pedal?.category ?? 'utility';
+      const stage = getCategoryStage(category);
+      const last = out[out.length - 1];
+      if (last && last.stage === stage) {
+        last.names.push(nameOf(placed));
+        last.ids.push(placed.id);
+      } else {
+        out.push({
+          stage,
+          label: getStageShortLabel(stage),
+          colour: getCategoryColor(category),
+          names: [nameOf(placed)],
+          ids: [placed.id],
+        });
+      }
+    }
+    return out;
   };
 
   const describe = (anchor: Anchor): Described => {
@@ -257,7 +310,7 @@ function buildFlow(
     if (seg.pedals.length > 0) {
       current().push({
         kind: 'run',
-        names: seg.pedals.map(nameOf),
+        stages: stagesOf(seg.pedals),
         ids: seg.pedals.map((p) => p.id),
       });
     }
@@ -354,19 +407,60 @@ function NodeRow({ node, depth }: { node: FlowNode; depth: number }) {
   );
 }
 
+/**
+ * How many names a stage can carry before they stop being names.
+ *
+ * Past a handful a list is not identifying anything and the COUNT is the whole
+ * answer - and at 287px it was not even a list, it was five and a half names
+ * with one cut mid-word. Under it the names fit and are worth having, because
+ * the group you actually interrogate is small: the two pedals in a loop, the
+ * three compressors in a row. The ordered inventory lives one tab away in the
+ * Chain panel, which draws it properly.
+ */
+const NAMES_UP_TO = 6;
+
 function RunRow({ run, depth }: { run: FlowRun; depth: number }) {
   return (
+    <>
+      {run.stages.map((stage, i) => (
+        <StageRow key={i} stage={stage} depth={depth} />
+      ))}
+    </>
+  );
+}
+
+function StageRow({ stage, depth }: { stage: FlowStage; depth: number }) {
+  const named = stage.names.length <= NAMES_UP_TO;
+  return (
     <div
-      data-flow-run={run.ids.length}
-      data-flow-pedal-ids={run.ids.join('|')}
+      data-flow-run={stage.ids.length}
+      data-flow-stage={stage.stage}
+      data-flow-pedal-ids={stage.ids.join('|')}
       className={`flex items-baseline gap-2 py-0.5 ${rowPad(depth)}`}
     >
-      <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-        {run.names.join(', ')}
+      {/* The family rule the Chain panel already uses for the same job - an
+          index mark against the label, not a chip competing with it. */}
+      <span
+        aria-hidden
+        className="mt-px h-3 w-0.5 shrink-0 self-center"
+        style={{ backgroundColor: stage.colour }}
+      />
+      {/* `tracking-widest` is for a micro label standing alone; this one is a
+          DATA COLUMN, and the extra 0.1em was enough to truncate "DYNAMICS"
+          in 52px. */}
+      <span className="w-[56px] shrink-0 truncate font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+        {stage.label}
       </span>
-      <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
-        {run.ids.length}
+      {/* Wraps rather than truncates: a name cut in half is worse than a
+          second line. */}
+      <span className="min-w-0 flex-1 text-[11px] leading-snug text-muted-foreground">
+        {named ? stage.names.join(', ') : `${stage.ids.length} pedals`}
       </span>
+      {named && stage.ids.length > 1 && (
+        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+          {stage.ids.length}
+        </span>
+      )}
     </div>
   );
 }

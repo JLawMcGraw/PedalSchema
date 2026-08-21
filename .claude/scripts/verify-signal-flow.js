@@ -78,6 +78,7 @@ const readFlow = (page) =>
         : {
             kind: 'run',
             count: Number(el.getAttribute('data-flow-run')),
+            stage: el.getAttribute('data-flow-stage'),
             ids: (el.getAttribute('data-flow-pedal-ids') || '').split('|').filter(Boolean),
             depth: depthOf(el),
           }
@@ -99,6 +100,7 @@ const readTruth = (page) =>
       // message. Comparing names cannot tell two CS-3s apart, and this board
       // has two.
       pedalIds: s.placedPedals.map((p) => p.id),
+      chainPosition: Object.fromEntries(s.placedPedals.map((p) => [p.id, p.chainPosition])),
       pedalNames: s.placedPedals.map((p) => (s.pedalsById[p.pedalId] || p.pedal)?.name ?? '?'),
       externalEndpoints: [
         ...new Set(
@@ -257,6 +259,45 @@ const modeReadout = (page) =>
     };
     const first = agrees(flow, truth.externalEndpoints);
     check(first.ok, 'the external jacks in the diagram are the ones the cables use', first.detail);
+
+    // --- STAGES ------------------------------------------------------------
+    //
+    // A run is read out stage by stage - TUNER, DYNAMICS, GAIN - because
+    // `18 pedals` is honest and says nothing while the stage breakdown is the
+    // shape of the chain. A GROUPING MUST NEVER REORDER, and that is the whole
+    // risk of introducing one: the rows are consecutive-stage groups taken in
+    // chain order, so reading the ids back in DOM order has to give ascending
+    // chain positions within any unbroken block of runs. A grouping that
+    // sorted by stage instead would still pass every coverage check above and
+    // would be describing a board nobody owns.
+    let reordered = null;
+    let block = [];
+    const closeBlock = () => {
+      for (let i = 1; i < block.length; i++) {
+        if (truth.chainPosition[block[i]] <= truth.chainPosition[block[i - 1]]) {
+          reordered = reordered || `${block[i - 1]} then ${block[i]}`;
+        }
+      }
+      block = [];
+    };
+    for (const step of flow) {
+      if (step.kind === 'run') block.push(...step.ids);
+      else closeBlock();
+    }
+    closeBlock();
+    check(
+      reordered === null,
+      'the stage breakdown keeps the chain in order',
+      reordered
+        ? `out of order: ${reordered}`
+        : `${runs.length} stage rows, chain order intact`
+    );
+
+    check(
+      runs.every((r) => r.stage),
+      'every run row names the stage it is reading out',
+      [...new Set(runs.map((r) => r.stage))].join(', ')
+    );
 
     // --- BRACKETS ----------------------------------------------------------
     //

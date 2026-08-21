@@ -73,30 +73,79 @@ export const PEDAL_FAMILIES: {
   },
 ];
 
+/**
+ * THE STAGES OF A SIGNAL CHAIN, which is the vocabulary players actually use.
+ *
+ * "Tuner first, then wah and pitch, then compression, then the dirt, then EQ,
+ * then modulation, then delay and reverb last" is how every pedal-order guide
+ * on earth explains a board, and it is the level a routing diagram should
+ * talk at: `18 pedals` is honest and says nothing, while
+ * `DYNAMICS 3 · GAIN 5 · EQ 3` is the shape of the chain.
+ *
+ * This is a BANDING OF `defaultOrder`, not a second opinion about order.
+ * `defaultOrder` stays the single source of truth for what goes where; a
+ * stage only says which of those positions get read out under one heading.
+ * It is a column on the table below rather than a lookup beside it, so a new
+ * category cannot be added without deciding which stage it belongs to.
+ *
+ * ONE DELIBERATE DIVERGENCE from the common guides: they place BOOST after
+ * the dirt ("boost your solos"), and this app orders it at 50, in front of
+ * it ("push the drive harder"). Both are real practice. The app already
+ * decided, `defaultOrder` is what the engine sorts by, and a display grouping
+ * does not get to re-litigate it - so boost is read out under GAIN, where the
+ * engine puts it.
+ */
+export type ChainStage =
+  | 'tuner'
+  | 'filter'
+  | 'dynamics'
+  | 'gain'
+  | 'eq'
+  | 'modulation'
+  | 'time'
+  | 'utility';
+
+export const CHAIN_STAGES: {
+  value: ChainStage;
+  label: string;
+  /** For a 287px panel, where the full label does not fit beside content. */
+  short: string;
+}[] = [
+  { value: 'tuner', label: 'Tuner', short: 'Tuner' },
+  { value: 'filter', label: 'Filter & pitch', short: 'Filter' },
+  { value: 'dynamics', label: 'Dynamics', short: 'Dynamics' },
+  { value: 'gain', label: 'Gain', short: 'Gain' },
+  { value: 'eq', label: 'EQ', short: 'EQ' },
+  { value: 'modulation', label: 'Modulation', short: 'Mod' },
+  { value: 'time', label: 'Time', short: 'Time' },
+  { value: 'utility', label: 'Utility', short: 'Util' },
+];
+
 export const PEDAL_CATEGORIES: {
   value: PedalCategory;
   label: string;
   defaultOrder: number;
   family: PedalFamily;
+  stage: ChainStage;
 }[] = [
-  { value: 'tuner', label: 'Tuner', defaultOrder: 10, family: 'utility' },
-  { value: 'filter', label: 'Filter / Wah', defaultOrder: 20, family: 'shaping' },
-  { value: 'compressor', label: 'Compressor', defaultOrder: 30, family: 'shaping' },
-  { value: 'pitch', label: 'Pitch', defaultOrder: 40, family: 'shaping' },
-  { value: 'boost', label: 'Boost', defaultOrder: 50, family: 'gain' },
-  { value: 'overdrive', label: 'Overdrive', defaultOrder: 60, family: 'gain' },
-  { value: 'distortion', label: 'Distortion', defaultOrder: 70, family: 'gain' },
-  { value: 'fuzz', label: 'Fuzz', defaultOrder: 80, family: 'gain' },
-  { value: 'noise_gate', label: 'Noise Gate', defaultOrder: 90, family: 'utility' },
-  { value: 'eq', label: 'EQ', defaultOrder: 100, family: 'shaping' },
-  { value: 'modulation', label: 'Modulation', defaultOrder: 110, family: 'modulation' },
-  { value: 'tremolo', label: 'Tremolo', defaultOrder: 120, family: 'modulation' },
-  { value: 'delay', label: 'Delay', defaultOrder: 130, family: 'time' },
-  { value: 'reverb', label: 'Reverb', defaultOrder: 140, family: 'time' },
-  { value: 'looper', label: 'Looper', defaultOrder: 160, family: 'utility' },
-  { value: 'volume', label: 'Volume', defaultOrder: 150, family: 'utility' },
-  { value: 'utility', label: 'Utility', defaultOrder: 200, family: 'utility' },
-  { value: 'multi_fx', label: 'Multi-FX', defaultOrder: 100, family: 'utility' },
+  { value: 'tuner', label: 'Tuner', defaultOrder: 10, family: 'utility', stage: 'tuner' },
+  { value: 'filter', label: 'Filter / Wah', defaultOrder: 20, family: 'shaping', stage: 'filter' },
+  { value: 'compressor', label: 'Compressor', defaultOrder: 30, family: 'shaping', stage: 'dynamics' },
+  { value: 'pitch', label: 'Pitch', defaultOrder: 40, family: 'shaping', stage: 'filter' },
+  { value: 'boost', label: 'Boost', defaultOrder: 50, family: 'gain', stage: 'gain' },
+  { value: 'overdrive', label: 'Overdrive', defaultOrder: 60, family: 'gain', stage: 'gain' },
+  { value: 'distortion', label: 'Distortion', defaultOrder: 70, family: 'gain', stage: 'gain' },
+  { value: 'fuzz', label: 'Fuzz', defaultOrder: 80, family: 'gain', stage: 'gain' },
+  { value: 'noise_gate', label: 'Noise Gate', defaultOrder: 90, family: 'utility', stage: 'utility' },
+  { value: 'eq', label: 'EQ', defaultOrder: 100, family: 'shaping', stage: 'eq' },
+  { value: 'modulation', label: 'Modulation', defaultOrder: 110, family: 'modulation', stage: 'modulation' },
+  { value: 'tremolo', label: 'Tremolo', defaultOrder: 120, family: 'modulation', stage: 'modulation' },
+  { value: 'delay', label: 'Delay', defaultOrder: 130, family: 'time', stage: 'time' },
+  { value: 'reverb', label: 'Reverb', defaultOrder: 140, family: 'time', stage: 'time' },
+  { value: 'looper', label: 'Looper', defaultOrder: 160, family: 'utility', stage: 'utility' },
+  { value: 'volume', label: 'Volume', defaultOrder: 150, family: 'utility', stage: 'utility' },
+  { value: 'utility', label: 'Utility', defaultOrder: 200, family: 'utility', stage: 'utility' },
+  { value: 'multi_fx', label: 'Multi-FX', defaultOrder: 100, family: 'utility', stage: 'utility' },
 ];
 
 /** Short forms, for the places that have no room for the full label. */
@@ -156,4 +205,19 @@ export function getCategoryShortLabel(category: PedalCategory): string {
 
 export function getCategoryDefaultOrder(category: PedalCategory): number {
   return PEDAL_CATEGORIES.find((c) => c.value === category)?.defaultOrder || 100;
+}
+
+const UNKNOWN_STAGE: ChainStage = 'utility';
+
+/** Which stage of the chain a category is read out under. */
+export function getCategoryStage(category: PedalCategory): ChainStage {
+  return PEDAL_CATEGORIES.find((c) => c.value === category)?.stage ?? UNKNOWN_STAGE;
+}
+
+export function getStageLabel(stage: ChainStage): string {
+  return CHAIN_STAGES.find((s) => s.value === stage)?.label ?? stage;
+}
+
+export function getStageShortLabel(stage: ChainStage): string {
+  return CHAIN_STAGES.find((s) => s.value === stage)?.short ?? stage;
 }
