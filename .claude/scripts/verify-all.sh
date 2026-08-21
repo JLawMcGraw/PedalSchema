@@ -58,6 +58,11 @@ READ_ONLY=(
   # if it keeps passing while a browser still reports one, that is evidence the
   # cause is in that browser.
   "verify-hydration"
+  # The catalogue cache serves `is_system = true` rows and reads the caller's
+  # own live. That is only equivalent to the query it replaced while those two
+  # sets partition the table - a row that is neither would vanish from the
+  # library silently. This gate proves the partition against the database.
+  "verify-catalogue-cache"
 )
 
 # These WRITE. Each restores what it touched, but they are opt-in so a routine

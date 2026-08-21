@@ -51,11 +51,21 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   // because the account has three boards - but an eleventh would simply not
   // have existed as far as the UI was concerned. `count: 'exact'` is what
   // makes the page count knowable; head:false so the rows come back too.
-  const { count } = await supabase
+  /*
+   * The ids AND the count, from one request.
+   *
+   * This was `head: true`, which returns the count and no rows - and then the
+   * rig query below re-derived ownership with a `configurations!inner(user_id)`
+   * join, embedding the same uuid in every placement row it returned. Asking
+   * for the ids here costs one uuid per BOARD and lets that query filter on
+   * `configuration_id` directly, which costs nothing per PEDAL.
+   */
+  const { data: ownedConfigRows, count } = await supabase
     .from('configurations')
-    .select('id', { count: 'exact', head: true })
+    .select('id', { count: 'exact' })
     .eq('user_id', user?.id);
 
+  const ownedConfigIds = (ownedConfigRows ?? []).map((r) => r.id as string);
   const pageWindow = resolvePage(rawPage, count ?? 0, DASHBOARD_PAGE_SIZE);
 
   /*
@@ -80,10 +90,14 @@ export default async function DashboardPage({ searchParams }: PageProps) {
    * it is the one that is right about both cases above.
    */
   const [{ data: ownedRows }, { data: configurations, error: loadError }] = await Promise.all([
-    supabase
-      .from('configuration_pedals')
-      .select('pedal_id, configuration_id, pedals (current_ma), configurations!inner (user_id)')
-      .eq('configurations.user_id', user?.id),
+    // An account with no boards has no placements either, so the round trip is
+    // skipped outright rather than sent with an empty `in` list.
+    ownedConfigIds.length
+      ? supabase
+          .from('configuration_pedals')
+          .select('pedal_id, configuration_id, pedals (current_ma)')
+          .in('configuration_id', ownedConfigIds)
+      : Promise.resolve({ data: [] }),
     supabase
       .from('configurations')
       // The placed pedals come back too, so each card can DRAW the board rather

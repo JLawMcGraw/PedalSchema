@@ -29,6 +29,25 @@ export function PowerPanel() {
   );
   const selectPedal = useEditorStore((s) => s.selectPedal);
 
+  /*
+   * The fourth call site for this, found by looking at the panel: two CS-3s
+   * listed as "CS-3" and "CS-3", eleven rows apart, both wanting an output
+   * assignment. Deciding which one to plug where is impossible when they have
+   * the same name. Same ordinals as the Chain panel and the Cables list,
+   * because they all come from chain position.
+   *
+   * ABOVE THE EMPTY-BOARD RETURN, and it has to be. It sat below, so this
+   * component called three hooks on an empty board and four on any other -
+   * and dropping the FIRST pedal onto a board therefore changed the hook
+   * count between two renders of a mounted panel, which is the
+   * "Rendered more hooks than during the previous render" crash. An empty
+   * board makes it memoise an empty map, which costs nothing.
+   */
+  const displayNames = useMemo(
+    () => derivePedalDisplayNames(placedPedals, pedalsById),
+    [placedPedals, pedalsById]
+  );
+
   if (power.pedalCount === 0) {
     return (
       <div className="flex flex-col h-full w-full overflow-hidden">
@@ -42,18 +61,6 @@ export function PowerPanel() {
 
   const hasUnknown = power.unknown.length > 0;
   const highDrawIds = new Set(power.highDraw.map((h) => h.placedPedalId));
-
-  /*
-   * The fourth call site for this, found by looking at the panel: two CS-3s
-   * listed as "CS-3" and "CS-3", eleven rows apart, both wanting an output
-   * assignment. Deciding which one to plug where is impossible when they have
-   * the same name. Same ordinals as the Chain panel and the Cables list,
-   * because they all come from chain position.
-   */
-  const displayNames = useMemo(
-    () => derivePedalDisplayNames(placedPedals, pedalsById),
-    [placedPedals, pedalsById]
-  );
 
   // Every pedal that draws current, biggest first - the order you would plan a
   // supply in.

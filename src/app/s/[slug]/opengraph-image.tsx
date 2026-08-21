@@ -25,6 +25,23 @@ import { rotatedFootprint } from '@/lib/engine/geometry/rotation';
  * `oklch()`, which satori does not parse.
  */
 export const runtime = 'nodejs';
+
+/**
+ * Cached for a day.
+ *
+ * Without this the route is dynamic, so EVERY crawler hit - and every retry,
+ * and every preview refresh - runs `loadConfiguration` against Supabase and
+ * re-renders the PNG. A link pasted anywhere busy turns into a stream of
+ * identical queries and identical images, all of them egress.
+ *
+ * A day is the right order of magnitude because the picture is a PREVIEW, not
+ * the board: someone who edits a published layout and re-shares it sees the
+ * old thumbnail for a while, and the link they are sharing still opens the
+ * live board. Trading a stale thumbnail for the bandwidth is the correct way
+ * round; trading the bandwidth for a thumbnail nobody is looking at is not.
+ */
+export const revalidate = 86400;
+
 export const alt = 'A pedalboard layout';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';

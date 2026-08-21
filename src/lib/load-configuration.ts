@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getCatalogue, transformPedal } from '@/lib/catalogue';
 import type { Board, Pedal, Amp, PlacedPedal, RoutingConfig, PowerSupply } from '@/types';
 
 /**
@@ -103,51 +104,33 @@ export async function loadConfiguration(
 
   if (error || !config) return null;
 
-  // Power supplies, with their outputs. System rows plus the user's own -
-  // RLS decides which, so this query does not have to.
-  const { data: supplyRows } = await supabase
-    .from('power_supplies')
-    .select('*, outputs:power_supply_outputs(*)')
-    .order('manufacturer');
+  /*
+   * The catalogue - every pedal, amp and supply on offer - comes from
+   * `lib/catalogue`, which serves the shipped rows from a cross-request cache.
+   * It used to be three queries issued here on every single editor open, and
+   * the pedal one alone pulls 67 rows with their jacks. See the note in that
+   * module: this is the read that put the project past its egress quota.
+   *
+   * The user id decides only whether a SECOND, small query runs for gear the
+   * caller added themselves. `getUser` rather than `getSession` because the
+   * session is unverified cookie data, and this picks which rows to attach to
+   * someone's board.
+   */
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  const powerSupplies: PowerSupply[] = (supplyRows || []).map(
-    (r: Record<string, unknown>) => ({
-      id: r.id as string,
-      name: r.name as string,
-      manufacturer: r.manufacturer as string,
-      isIsolated: r.is_isolated as boolean,
-      isSystem: r.is_system as boolean,
-      createdBy: (r.created_by as string | null) ?? null,
-      notes: (r.notes as string | null) ?? null,
-      outputs: ((r.outputs as Record<string, unknown>[]) || [])
-        .map((o) => ({
-          id: o.id as string,
-          supplyId: o.supply_id as string,
-          label: o.label as string,
-          voltage: o.voltage as number,
-          ratedMa: o.rated_ma as number,
-          alternateModes: (o.alternate_modes as Array<{ voltage: number; ratedMa: number }>) ?? [],
-          isAc: (o.is_ac as boolean) ?? false,
-          sortOrder: o.sort_order as number,
-        }))
-        .sort((a, b) => a.sortOrder - b.sortOrder),
-    })
-  );
+  const catalogue = await getCatalogue(supabase, user?.id ?? null);
+  const { powerSupplies } = catalogue;
 
   const powerSupply =
     powerSupplies.find((s2) => s2.id === (config.power_supply_id as string | null)) ?? null;
 
-  const { data: allPedals } = includeLibrary
-    ? await supabase
-        .from('pedals')
-        .select(`*, jacks:pedal_jacks(*)`)
-        .order('manufacturer')
-        .order('name')
-    : { data: [] };
-
-  const { data: allAmps } = includeLibrary
-    ? await supabase.from('amps').select('*').order('manufacturer').order('name')
-    : { data: [] };
+  // A read-only viewer gets no library: the panels that offer it are the
+  // editor's, and shipping 67 pedals to draw someone else's board is work
+  // nobody asked for. Unchanged behaviour - the arrays were empty here before.
+  const availablePedals: Pedal[] = includeLibrary ? catalogue.availablePedals : [];
+  const availableAmps: Amp[] = includeLibrary ? catalogue.availableAmps : [];
 
   // Transform data to match our types
   const board: Board = {
@@ -190,38 +173,6 @@ export async function loadConfiguration(
       }
     : null;
 
-  const transformPedal = (p: Record<string, unknown>): Pedal => ({
-    id: p.id as string,
-    name: p.name as string,
-    manufacturer: p.manufacturer as string,
-    category: p.category as Pedal['category'],
-    widthInches: Number(p.width_inches),
-    depthInches: Number(p.depth_inches),
-    heightInches: Number(p.height_inches),
-    voltage: p.voltage as number,
-    currentMa: p.current_ma as number | null,
-    polarity: p.polarity as Pedal['polarity'],
-    defaultChainPosition: p.default_chain_position as number | null,
-    preferredLocation: p.preferred_location as Pedal['preferredLocation'],
-    supports4Cable: p.supports_4_cable as boolean,
-    needsBufferBefore: p.needs_buffer_before as boolean,
-    needsDirectPickup: p.needs_direct_pickup as boolean,
-    isSystem: p.is_system as boolean,
-    createdBy: p.created_by as string | null,
-    createdAt: p.created_at as string,
-    updatedAt: p.updated_at as string,
-    imageUrl: p.image_url as string | null,
-    notes: p.notes as string | null,
-    jacks: ((p.jacks as Record<string, unknown>[]) || []).map((j) => ({
-      id: j.id as string,
-      pedalId: j.pedal_id as string,
-      jackType: j.jack_type as Pedal['jacks'][0]['jackType'],
-      side: j.side as Pedal['jacks'][0]['side'],
-      positionPercent: j.position_percent as number,
-      label: j.label as string | null,
-    })),
-  });
-
   const placedPedals: PlacedPedal[] = (config.configuration_pedals || []).map(
     (cp: Record<string, unknown>) => ({
       id: cp.id as string,
@@ -248,24 +199,6 @@ export async function loadConfiguration(
       pedalsById[placed.pedalId] = placed.pedal;
     }
   }
-
-  const availablePedals: Pedal[] = (allPedals || []).map(transformPedal);
-
-  const availableAmps: Amp[] = (allAmps || []).map((a) => ({
-    id: a.id,
-    name: a.name,
-    manufacturer: a.manufacturer,
-    hasEffectsLoop: a.has_effects_loop,
-    loopType: a.loop_type,
-    loopLevel: a.loop_level,
-    sendJackLabel: a.send_jack_label,
-    returnJackLabel: a.return_jack_label,
-    isSystem: a.is_system,
-    createdBy: a.created_by,
-    createdAt: a.created_at,
-    notes: a.notes,
-  }));
-
 
   return {
     id: config.id as string,
