@@ -64,3 +64,10 @@ supabase/backups/
 .dev.db
 supabase/.temp/
 public/repro/
+
+# Local rollback copies of Supabase Storage. `.backups/pedal-images-2026-08-21`
+# is the byte-exact set of originals taken before the 2026-08-21 re-encode
+# (85 objects, 77.56 MB, up to 3014px) - re-uploading it restores the bucket
+# exactly. 78 MB of binary that must never reach the repository, and must
+# never be deleted casually either: it is the only copy of the originals.
+.backups/
