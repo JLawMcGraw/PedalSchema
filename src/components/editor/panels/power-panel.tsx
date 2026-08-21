@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { PANEL_TITLE } from '@/components/editor/panels/panel-chrome';
 import { useShallow } from 'zustand/react/shallow';
 import { useConfigurationStore } from '@/store/configuration-store';
@@ -49,7 +50,10 @@ export function PowerPanel() {
    * the same name. Same ordinals as the Chain panel and the Cables list,
    * because they all come from chain position.
    */
-  const displayNames = derivePedalDisplayNames(placedPedals, pedalsById);
+  const displayNames = useMemo(
+    () => derivePedalDisplayNames(placedPedals, pedalsById),
+    [placedPedals, pedalsById]
+  );
 
   // Every pedal that draws current, biggest first - the order you would plan a
   // supply in.

@@ -1,4 +1,5 @@
 import { getCategoryColor } from '@/lib/constants/pedal-categories';
+import { isRotated } from '@/lib/engine/geometry/rotation';
 import type { PedalCategory } from '@/types';
 
 export interface ThumbnailPedal {
@@ -103,9 +104,7 @@ export function BoardThumbnail({
       ))}
 
       {pedals.map((p, i) => {
-        // A rotated pedal occupies its own footprint turned 90 degrees, and
-        // ignoring that drew quarter-turn pedals overlapping their neighbours.
-        const turned = Math.abs(p.rotation % 180) === 90;
+        const turned = isRotated(p.rotation);
         const pw = turned ? p.depthInches : p.widthInches;
         const ph = turned ? p.widthInches : p.depthInches;
         return (

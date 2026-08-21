@@ -4,6 +4,7 @@ import { loadConfiguration } from '@/lib/load-configuration';
 import { isValidShareSlug } from '@/lib/share-link';
 import { getCategoryColor } from '@/lib/constants/pedal-categories';
 import { derivePowerSummary } from '@/lib/engine/power';
+import { rotatedFootprint } from '@/lib/engine/geometry/rotation';
 
 /**
  * What a shared board looks like when someone pastes the link.
@@ -79,16 +80,15 @@ export default async function Image({ params }: { params: Promise<{ slug: string
 
   const pedals = config.placedPedals.map((placed) => {
     const pedal = config.pedalsById[placed.pedalId] ?? placed.pedal;
-    // A rotated pedal occupies its footprint turned 90 degrees. Ignoring this
-    // drew quarter-turn pedals overlapping their neighbours on the dashboard.
-    const turned = Math.abs((placed.rotationDegrees ?? 0) % 180) === 90;
-    const w = pedal?.widthInches ?? 2.5;
-    const d = pedal?.depthInches ?? 4.5;
+    const { widthInches: w, depthInches: d } = rotatedFootprint(
+      { widthInches: pedal?.widthInches ?? 2.5, depthInches: pedal?.depthInches ?? 4.5 },
+      placed.rotationDegrees ?? 0
+    );
     return {
       left: placed.xInches * scale,
       top: placed.yInches * scale,
-      width: (turned ? d : w) * scale,
-      height: (turned ? w : d) * scale,
+      width: w * scale,
+      height: d * scale,
       colour: pedal ? getCategoryColor(pedal.category) : MUTED,
     };
   });

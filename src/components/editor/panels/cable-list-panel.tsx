@@ -9,6 +9,7 @@ import {
   generateCableList,
   generateEnhancedCableList,
   calculateCableSummary,
+  formatLengthRange,
   type EnhancedCable,
 } from '@/lib/engine/cables';
 
@@ -75,8 +76,8 @@ export function CableListPanel() {
   const summary = useMemo(() => calculateCableSummary(cableConnections), [cableConnections]);
   const cableList = useMemo(() => generateCableList(cableConnections), [cableConnections]);
 
-  const front = enhancedCables.filter((c) => c.segment === 'front');
-  const loop = enhancedCables.filter((c) => c.segment === 'loop');
+  const front = useMemo(() => enhancedCables.filter((c) => c.segment === 'front'), [enhancedCables]);
+  const loop = useMemo(() => enhancedCables.filter((c) => c.segment === 'loop'), [enhancedCables]);
 
   if (cables.length === 0) {
     return (
@@ -195,8 +196,7 @@ function Run({
   );
 }
 
-/** "Patch (6")" -> `6"`. The type is already implied by the run it sits in. */
+/** The length alone — the type is already implied by the run it sits in. */
 function formatShort(cable: EnhancedCable): string {
-  const m = cable.cableTypeLabel.match(/\(([^)]+)\)/);
-  return m ? m[1] : `${cable.lengthInches}"`;
+  return formatLengthRange(cable.lengthInches);
 }

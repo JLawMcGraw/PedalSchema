@@ -390,6 +390,8 @@ export function generateEnhancedCableList(
   for (const cable of sorted) {
     if (cable.fromType === 'amp_send' || cable.toType === 'amp_return') {
       inEffectsLoop = true;
+    } else if (cable.fromType === 'amp_return') {
+      inEffectsLoop = false;
     }
 
     // Generate labels
@@ -492,7 +494,7 @@ function getCableEndpointLabel(
 /**
  * Format cable length as a range (for practical purchasing)
  */
-function formatLengthRange(inches: number): string {
+export function formatLengthRange(inches: number): string {
   if (inches <= 6) return '6"';
   if (inches <= 12) return '12"';
   if (inches <= 18) return '18"';

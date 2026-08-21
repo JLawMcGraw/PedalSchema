@@ -79,10 +79,47 @@ export default async function DashboardPage({ searchParams }: PageProps) {
    * inference - someone with two identical rigs owns two of everything - but
    * it is the one that is right about both cases above.
    */
-  const { data: ownedRows } = await supabase
-    .from('configuration_pedals')
-    .select('pedal_id, configuration_id, pedals (current_ma), configurations!inner (user_id)')
-    .eq('configurations.user_id', user?.id);
+  const [{ data: ownedRows }, { data: configurations, error: loadError }] = await Promise.all([
+    supabase
+      .from('configuration_pedals')
+      .select('pedal_id, configuration_id, pedals (current_ma), configurations!inner (user_id)')
+      .eq('configurations.user_id', user?.id),
+    supabase
+      .from('configurations')
+      // The placed pedals come back too, so each card can DRAW the board rather
+      // than describe it. Only the five fields a thumbnail and a stat line need
+      // - not the whole pedal row, and no jacks.
+      .select(`
+        id,
+        name,
+        description,
+        created_at,
+        updated_at,
+        is_public,
+        share_slug,
+        power_supply_id,
+        boards (
+          name, manufacturer, width_inches, depth_inches, rail_width_inches,
+          board_rails (position_from_back_inches)
+        ),
+        power_supplies (
+          id, name, manufacturer, is_isolated,
+          power_supply_outputs (id, label, voltage, rated_ma, alternate_modes, is_ac, sort_order)
+        ),
+        configuration_pedals (
+          id,
+          x_inches,
+          y_inches,
+          rotation_degrees,
+          power_output_id,
+          pedal_id,
+          pedals (id, name, width_inches, depth_inches, category, current_ma, voltage)
+        )
+      `)
+      .eq('user_id', user?.id)
+      .order('updated_at', { ascending: false })
+      .range(pageWindow.from, pageWindow.to),
+  ]);
 
   const perBoard = new Map<string, Map<string, number>>();
   const drawOf = new Map<string, number | null>();
@@ -113,42 +150,6 @@ export default async function DashboardPage({ searchParams }: PageProps) {
       .filter(([pedalId]) => drawOf.get(pedalId) == null)
       .reduce((sum, [, n]) => sum + n, 0),
   };
-
-  const { data: configurations, error: loadError } = await supabase
-    .from('configurations')
-    // The placed pedals come back too, so each card can DRAW the board rather
-    // than describe it. Only the five fields a thumbnail and a stat line need
-    // - not the whole pedal row, and no jacks.
-    .select(`
-      id,
-      name,
-      description,
-      created_at,
-      updated_at,
-      is_public,
-      share_slug,
-      power_supply_id,
-      boards (
-        name, manufacturer, width_inches, depth_inches, rail_width_inches,
-        board_rails (position_from_back_inches)
-      ),
-      power_supplies (
-        id, name, manufacturer, is_isolated,
-        power_supply_outputs (id, label, voltage, rated_ma, alternate_modes, is_ac, sort_order)
-      ),
-      configuration_pedals (
-        id,
-        x_inches,
-        y_inches,
-        rotation_degrees,
-        power_output_id,
-        pedal_id,
-        pedals (id, name, width_inches, depth_inches, category, current_ma, voltage)
-      )
-    `)
-    .eq('user_id', user?.id)
-    .order('updated_at', { ascending: false })
-    .range(pageWindow.from, pageWindow.to);
 
   /*
    * ONE SCALE FOR EVERY THUMBNAIL ON THE PAGE.

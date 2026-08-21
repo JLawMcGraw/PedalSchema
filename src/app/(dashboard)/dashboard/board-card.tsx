@@ -85,7 +85,7 @@ export function BoardCard({
   // to normal for a beat before vanishing.
   const [isRefreshing, startRefresh] = useTransition();
   const [duplicating, setDuplicating] = useState(false);
-  const busy = deleting || isRefreshing;
+  const busy = deleting || isRefreshing || duplicating;
 
   /*
    * Duplicate lands the user ON the copy, in the editor.
@@ -100,20 +100,25 @@ export function BoardCard({
   async function handleDuplicate() {
     setDuplicating(true);
     setError(null);
-    const supabase = createClient();
-    const { data: auth } = await supabase.auth.getUser();
-    if (!auth.user) {
-      setError('You are signed out. Sign in and try again.');
+    try {
+      const supabase = createClient();
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth.user) {
+        setError('You are signed out. Sign in and try again.');
+        setDuplicating(false);
+        return;
+      }
+      const result = await duplicateConfiguration(supabase, id, auth.user.id);
+      if (!result.ok) {
+        setError(result.error);
+        setDuplicating(false);
+        return;
+      }
+      router.push(`/editor/${result.id}`);
+    } catch {
+      setError('Something went wrong. Check your connection and try again.');
       setDuplicating(false);
-      return;
     }
-    const result = await duplicateConfiguration(supabase, id, auth.user.id);
-    if (!result.ok) {
-      setError(result.error);
-      setDuplicating(false);
-      return;
-    }
-    router.push(`/editor/${result.id}`);
   }
 
   async function handleDelete() {

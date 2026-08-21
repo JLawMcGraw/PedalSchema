@@ -38,14 +38,16 @@ export function boxesOverlap(a: BoundingBox, b: BoundingBox, spacing: number = 0
 }
 
 /**
- * Check if a pedal is within board bounds
+ * Check if a pedal is within board bounds, with an optional tolerance for
+ * floating-point dust.  The default (0) gives exact bounds; `detectCollisions`
+ * passes `OFF_BOARD_TOLERANCE` so both checks share one implementation.
  */
-export function isWithinBounds(box: BoundingBox, board: Board): boolean {
+export function isWithinBounds(box: BoundingBox, board: Board, tolerance = 0): boolean {
   return (
-    box.x >= 0 &&
-    box.y >= 0 &&
-    box.x + box.width <= board.widthInches &&
-    box.y + box.height <= board.depthInches
+    box.x >= -tolerance &&
+    box.y >= -tolerance &&
+    box.x + box.width <= board.widthInches + tolerance &&
+    box.y + box.height <= board.depthInches + tolerance
   );
 }
 
@@ -113,12 +115,7 @@ export function detectCollisions(
    * on the path that makes this reachable.
    */
   for (const [id, box] of boundingBoxes) {
-    const off =
-      box.x < -OFF_BOARD_TOLERANCE ||
-      box.y < -OFF_BOARD_TOLERANCE ||
-      box.x + box.width > board.widthInches + OFF_BOARD_TOLERANCE ||
-      box.y + box.height > board.depthInches + OFF_BOARD_TOLERANCE;
-    if (off) {
+    if (!isWithinBounds(box, board, OFF_BOARD_TOLERANCE)) {
       collisions.push({ pedalIds: [id], severity: 'off-board' });
     }
   }
