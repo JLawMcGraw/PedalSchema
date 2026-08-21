@@ -4,6 +4,106 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-21 (fourth) - a loop, drawn as a loop
+
+### Summary
+
+The owner did not like the Signal flow block and asked for research before a
+redraw. The research answered it in one line: **a send/return is universally
+drawn as a DETOUR - a branch that leaves the main path and rejoins it at the
+same point** - never as one more step in the sequence. Mixer and studio
+practice, Helix, node-graph editors: all of them offset the branch onto its
+own axis, and the offset is what encodes the branch.
+
+The block drew every mode as one straight column, so a loop read as "and
+then", which is the one thing a loop is not. On the 4-cable method that cost
+the whole idea of the method: **the gate's loop ENCLOSES the drives and the
+amp's preamp**, and a flat list can name all four jacks in order without ever
+saying what contains what.
+
+Four candidates were mocked at the real 287px width with real data; the owner
+picked the detour rail.
+
+    Guitar
+      TU-3, Chorus Ensemble Deluxe, BF-3        3
+    NS-2                        INPUT -> OUTPUT
+     |  SEND
+     |    Conspiracy Theory, TS9 Tube Screa..   2
+     |  * Blues Deluxe       IN -> PREAMP OUT
+     |  RETURN
+      Aqua-Puss, Flint, RC-1                    3
+    Blues Deluxe                  POWER AMP IN
+
+**498 tests, 37 gates**, lint 0, build clean, `--all` 37/37.
+
+### What Was Accomplished
+
+- [x] **`buildFlow` returns a TREE** - `FlowLoop` items nest, derived from the
+      anchors' own jack types
+- [x] **The bracket** - one rule down the side of what the loop contains, with
+      a tick where the path leaves the rail and another where it rejoins
+- [x] **Gate 37 grew four assertions** about the drawing, and its 4CM
+      assertion was rewritten around ENCLOSURE
+- [x] **Research artifact** - the four candidates, published
+
+### Key Changes
+| File | Change |
+|---|---|
+| `panels/routing-options-panel.tsx` | flat step list -> nested `FlowItem` tree; `LoopRow`, `JackRow` |
+| `scripts/verify-signal-flow.js` | bracket assertions, depth-aware reader, 4CM rewritten |
+
+### Technical Decisions
+
+1. **NOT EVERY SEND OPENS A BRACKET, and that is the whole subtlety.** Under
+   4CM the amp's send does not go back to the amp - it goes on to the gate's
+   RETURN, which is the X that makes the method work. So a send opens a
+   bracket only when a later segment returns to the SAME device, and only when
+   that return lands before the currently-open bracket closes. Brackets nest;
+   they never overlap. Pair the amp's send with the amp's own return and 4CM
+   opens a bracket that never closes.
+2. **The amp inside the gate's loop is a MERGED NODE, not a second bracket.**
+   The published mock drew an inner bracket labelled "preamp". That label
+   would have been invented: the topology's segment there is
+   `amp_send -> hub return`, which is the return CABLE, not the preamp. The
+   merged node `Blues Deluxe IN -> PREAMP OUT` says the same thing out of data
+   that exists. **This panel's whole history is a diagram that made things
+   up; the fix does not get to make up a nicer thing.**
+3. **The bracket rows name only the JACK.** The device is on the node the
+   bracket hangs from. Repeating "NS-2" inside the NS-2's own bracket spends
+   the width that the truncation risk was about.
+4. **One device is one node, however many jacks the path touches.**
+   `pushNode` walks back past the device's OWN detour to merge, which is what
+   lets a hub read `NS-2 IN -> OUTPUT` with its send/return bracket sitting
+   between the two halves of that sentence.
+
+### Architecture Notes
+
+**THE STALE ASSERTION WAS THE OLD DRAWING'S, AND IT FAILED CORRECTLY.** Gate
+37 asserted "the hub is drawn twice - into the preamp and back out", which was
+true of the flat column and is false now: the hub is one rail node plus two
+bracket edges. It was rewritten to assert the thing that actually matters and
+that the old drawing could never have satisfied - **the amp carries
+`amp_input` and `amp_send` on a node at depth > 0**, i.e. the preamp is inside
+the gate's loop. A test that has to change when a defect is fixed is fine; one
+that keeps passing across the fix was testing the wrong thing.
+
+**THE HANDLES SURVIVED THE REWRITE INTACT.** Every bracket edge is still a
+`data-flow-node` with its device, jacks and endpoint types, so coverage and
+cable-agreement kept passing unchanged through a total restructure of the
+component. `readFlow` used `querySelectorAll`, not `children`, which is why
+nesting cost it nothing - the same choice that was made two sessions ago after
+the spine was miscounted as a run of zero.
+
+### Next Tasks
+
+- [ ] **Long names truncate sooner inside a bracket** - "Conspiracy Theory,
+      TS9 Tube Screa..." at depth 1. Known and accepted when the candidate was
+      picked; revisit if it bites
+- [ ] **`rounded-full` on Badge**, **raw `text-red-500` in the auth blocks**,
+      and the **Supabase numbers** - carried
+
+---
+
 ## Session: 2026-08-21 (third) - the branch that stopped at the hub
 
 ### Summary
@@ -78,8 +178,8 @@ time; the mistake was measuring a proxy that was easier to reach.
 
 ### Next Tasks
 
-- [ ] **The Signal flow block's layout** - the owner does not like it. The
-      data is right (gate 37 proves it); the presentation is open
+- [x] **The Signal flow block's layout** - redrawn as a detour rail, see the
+      entry above this one
 - [ ] **`rounded-full` on Badge**, **raw `text-red-500` in the auth blocks**,
       and the **Supabase numbers** - all carried from the entry below
 

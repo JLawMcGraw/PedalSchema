@@ -55,6 +55,15 @@ const readFlow = (page) =>
     // BY ATTRIBUTE, not by child index: the spine is the first child of this
     // element and carries neither handle. Reading `children` counted it as a
     // run of `Number(null)` = 0 and printed a phantom leading segment.
+    // How many brackets this row is inside. A detour is drawn as nesting now,
+    // so depth is part of what the panel is claiming.
+    const depthOf = (el) => {
+      let d = 0;
+      for (let n = el.parentElement; n && n !== root; n = n.parentElement) {
+        if (n.hasAttribute('data-flow-loop')) d++;
+      }
+      return d;
+    };
     return [...root.querySelectorAll('[data-flow-node], [data-flow-run]')].map((el) =>
       el.hasAttribute('data-flow-node')
         ? {
@@ -63,11 +72,14 @@ const readFlow = (page) =>
             placedId: el.getAttribute('data-flow-node-id') || null,
             jacks: (el.getAttribute('data-flow-jacks') || '').split('|').filter(Boolean),
             endpoints: (el.getAttribute('data-flow-endpoints') || '').split('|').filter(Boolean),
+            edge: el.getAttribute('data-flow-loop-edge') || null,
+            depth: depthOf(el),
           }
         : {
             kind: 'run',
             count: Number(el.getAttribute('data-flow-run')),
             ids: (el.getAttribute('data-flow-pedal-ids') || '').split('|').filter(Boolean),
+            depth: depthOf(el),
           }
     );
   });
@@ -96,6 +108,28 @@ const readTruth = (page) =>
         ),
       ].sort(),
     };
+  });
+
+/** Every bracket on screen, with the two rows that are supposed to bound it. */
+const readLoops = (page) =>
+  page.evaluate(() => {
+    const root = document.querySelector('[data-signal-flow]');
+    if (!root) return [];
+    return [...root.querySelectorAll('[data-flow-loop]')].map((el) => {
+      // Direct children only: a nested bracket's edges belong to IT, not to
+      // the bracket around it.
+      const edges = [...el.children].filter((c) => c.hasAttribute('data-flow-loop-edge'));
+      return {
+        device: el.getAttribute('data-flow-loop'),
+        placedOwner: edges[0]?.getAttribute('data-flow-node-id') || null,
+        opens: edges.filter((c) => c.getAttribute('data-flow-loop-edge') === 'open').length,
+        closes: edges.filter((c) => c.getAttribute('data-flow-loop-edge') === 'close').length,
+        jacks: edges.map((c) => c.getAttribute('data-flow-jacks')),
+        // A bracket with nothing in it is a bracket that should not have been
+        // drawn - the detour would have no reason to exist.
+        contents: el.querySelectorAll('[data-flow-run], [data-flow-node]:not([data-flow-loop-edge])').length,
+      };
+    });
   });
 
 const modeReadout = (page) =>
@@ -129,9 +163,10 @@ const modeReadout = (page) =>
       'flow:  ' +
         flow
           .map((s) =>
-            s.kind === 'node'
+            '  '.repeat(s.depth) +
+            (s.kind === 'node'
               ? `[${s.device}${s.jacks.length ? ' ' + s.jacks.join('>') : ''}]`
-              : `(${s.count})`
+              : `(${s.count})`)
           )
           .join(' ') +
         '\n'
@@ -223,6 +258,48 @@ const modeReadout = (page) =>
     const first = agrees(flow, truth.externalEndpoints);
     check(first.ok, 'the external jacks in the diagram are the ones the cables use', first.detail);
 
+    // --- BRACKETS ----------------------------------------------------------
+    //
+    // A loop is drawn as a detour: one rule down the side of everything it
+    // contains, ticked where the path leaves the rail and where it rejoins.
+    // The failure this guards is a bracket that opens and never closes, which
+    // is what 4CM produces if the send/return matching ignores nesting - the
+    // amp's send does not go back to the amp there, it goes on to the gate's
+    // return, and pairing it with the amp's own return opens a bracket that
+    // has no end.
+    const loops = await readLoops(page);
+    console.log(
+      `  loops: ${loops.length ? loops.map((l) => `${l.device}[${l.jacks.join('..')}]`).join(' ') : '(none)'}`
+    );
+    check(
+      loops.every((l) => l.opens === 1 && l.closes === 1),
+      'every bracket opens once and closes once',
+      loops.map((l) => `${l.device}: ${l.opens} open / ${l.closes} close`).join('; ') || 'no brackets'
+    );
+    check(
+      loops.every((l) => l.jacks.every(Boolean)),
+      'both edges of every bracket name a jack'
+    );
+    check(
+      loops.every((l) => l.contents > 0),
+      'no bracket is empty',
+      loops.map((l) => `${l.device}: ${l.contents} inside`).join('; ') || 'no brackets'
+    );
+
+    // A send/return endpoint belongs to a bracket edge, never to a plain node
+    // on the rail: that is the whole distinction the drawing makes.
+    const loopEndpointOffRail = flow.filter(
+      (s) =>
+        s.kind === 'node' &&
+        !s.edge &&
+        s.endpoints.some((e) => e === 'amp_send' || e === 'amp_return')
+    );
+    check(
+      loopEndpointOffRail.length === 0,
+      "the amp's loop jacks are drawn as a detour, not as steps on the path",
+      loopEndpointOffRail.map((s) => `${s.device} ${s.jacks.join('>')}`).join('; ') || 'clean'
+    );
+
     // --- RESPONSE ----------------------------------------------------------
     const modeBefore = await modeReadout(page);
     check(
@@ -301,16 +378,41 @@ const modeReadout = (page) =>
           `${ids4.length} in runs + ${hubs4.length} hub node(s)`
         );
 
-        // The method IS the hub spanning the preamp: the signal enters the
-        // hub, leaves by its send into the amp input, comes back from the amp
-        // send to the hub return, and leaves the hub's output to the amp
-        // return. Four amp jacks, two hub visits. A diagram that cannot show
-        // that is not showing the 4-cable method.
-        const hubVisits = flow4.filter((s) => s.kind === 'node' && s.placedId);
+        /*
+         * THE ENCLOSURE IS THE METHOD, AND THIS IS THE ASSERTION FOR IT.
+         *
+         * 4CM is not "four cables in this order" - it is the gate's loop
+         * wrapping the drives AND the amp's preamp. So the test is not that
+         * the hub appears twice (it did, in the flat drawing this replaced,
+         * and that told you nothing about containment). It is that the amp
+         * sits INSIDE the hub's bracket, entered at its input and left by its
+         * send, while the hub itself is one node on the rail carrying both
+         * the jacks the main path uses.
+         */
+        const loops4 = await readLoops(page);
         check(
-          hubVisits.length === 2,
-          'the hub is drawn twice - into the preamp and back out',
-          hubVisits.map((n) => `${n.device} ${n.jacks.join('>')}`).join('  ')
+          loops4.length === 1 && loops4[0].placedOwner !== null,
+          'exactly one bracket, and it belongs to the hub',
+          loops4.map((l) => `${l.device}[${l.jacks.join('..')}]`).join(' ') || 'none'
+        );
+
+        const inside = flow4.filter((s) => s.kind === 'node' && s.depth > 0 && !s.edge);
+        const preampInside = inside.find(
+          (n) => n.endpoints.includes('amp_input') && n.endpoints.includes('amp_send')
+        );
+        check(
+          !!preampInside,
+          "the amp's preamp is drawn INSIDE the gate's loop",
+          preampInside
+            ? `${preampInside.device} ${preampInside.jacks.join(' > ')} at depth ${preampInside.depth}`
+            : `nothing nested: ${inside.map((n) => n.device).join(', ') || '(no nested nodes)'}`
+        );
+
+        const hubOnRail = flow4.find((s) => s.kind === 'node' && s.depth === 0 && s.placedId);
+        check(
+          !!hubOnRail && hubOnRail.jacks.length === 2,
+          'the hub is one node on the rail, carrying the two jacks the path uses',
+          hubOnRail ? `${hubOnRail.device} ${hubOnRail.jacks.join(' > ')}` : 'no hub on the rail'
         );
 
         const endpoints4 = await page.evaluate(() => [

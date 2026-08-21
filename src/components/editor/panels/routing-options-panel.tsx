@@ -46,8 +46,26 @@ import type { Amp, Pedal, PlacedPedal } from '@/types';
 // Signal flow, from the engine's own topology
 // ---------------------------------------------------------------------------
 
+/**
+ * A DETOUR IS DRAWN AS A DETOUR.
+ *
+ * Studio and mixer practice draws a send/return as a branch that leaves the
+ * main path and rejoins it at the same point - never as one more step in the
+ * sequence. The first version of this block drew every mode as one straight
+ * column, so a loop read as "and then", which is the one thing a loop is not.
+ * On the 4-cable method that cost the whole idea of the method: the gate's
+ * loop ENCLOSES the drives and the amp's preamp, and a flat list can name all
+ * four jacks in order without ever saying what contains what.
+ *
+ * The bracket is derived, not authored. A segment that starts at a `send`
+ * opens one; the segment whose `to` is the matching `return` on the same
+ * device closes it. Everything between is inside. Nesting depth carries the
+ * whole story and there is no per-mode drawing to maintain.
+ */
+
 /** A device the signal passes through, and the jacks it uses on the way. */
 interface FlowNode {
+  kind: 'node';
   device: string;
   /** What the jacks are CALLED on this rig - "FX SEND", "POWER AMP IN". */
   jacks: string[];
@@ -60,15 +78,30 @@ interface FlowNode {
   types: string[];
   /** The placed pedal this node is, when it is a pedal. Null for guitar/amp. */
   placedId: string | null;
+  /** The two ends of the whole path, and the only marks that get the accent. */
+  terminal: boolean;
 }
 
 /** A run of pedals between two devices. */
 interface FlowRun {
+  kind: 'run';
   names: string[];
   ids: string[];
 }
 
-type FlowStep = { node: FlowNode } | { run: FlowRun };
+/** A send/return that leaves the path and rejoins it. */
+interface FlowLoop {
+  kind: 'loop';
+  device: string;
+  placedId: string | null;
+  openJack: string;
+  openTypes: string[];
+  closeJack: string;
+  closeTypes: string[];
+  body: FlowItem[];
+}
+
+type FlowItem = FlowNode | FlowRun | FlowLoop;
 
 const MODE_LABEL: Record<SignalTopology['mode'], string> = {
   standard: 'standard',
@@ -76,28 +109,35 @@ const MODE_LABEL: Record<SignalTopology['mode'], string> = {
   '4cm': '4-cable',
 };
 
-/**
- * Turn the engine's segments into a single walkable path.
- *
- * Segments meet at a device - the front chain ends at the amp input and the
- * amp loop starts at the amp send, which is one amp, entered and left. Drawn
- * as two separate nodes that reads as two amps; merged, it reads as what it
- * is, and the merged jack pair IN -> SEND is the whole point of the 4-cable
- * method.
- */
+const isSendAnchor = (a: Anchor) => (a.kind === 'pedal' ? a.jack === 'send' : a.type === 'amp_send');
+const isReturnAnchor = (a: Anchor) =>
+  a.kind === 'pedal' ? a.jack === 'return' : a.type === 'amp_return';
+/** Two anchors are the same DEVICE when they differ only by which jack. */
+const deviceKeyOf = (a: Anchor) =>
+  a.kind === 'pedal' ? a.pedalId : a.type === 'guitar' ? 'guitar' : 'amp';
+
+interface Described {
+  device: string;
+  jacks: string[];
+  types: string[];
+  placedId: string | null;
+}
+
 function buildFlow(
   topology: SignalTopology,
   amp: Amp | null,
   placedPedals: PlacedPedal[],
   pedalsById: Record<string, Pedal>,
   displayNames: Map<string, PedalDisplayName>
-): FlowStep[] {
+): FlowItem[] {
+  const segs = topology.segments;
+
   const nameOf = (placed: PlacedPedal): string => {
     const pedal = pedalsById[placed.pedalId] || placed.pedal;
     return displayNameFor(displayNames, placed.id, pedal?.name ?? 'Pedal');
   };
 
-  const describe = (anchor: Anchor): FlowNode => {
+  const describe = (anchor: Anchor): Described => {
     if (anchor.kind === 'external') {
       switch (anchor.type) {
         case 'guitar':
@@ -129,96 +169,249 @@ function buildFlow(
     };
   };
 
-  const steps: FlowStep[] = [];
-  for (const segment of topology.segments) {
-    const from = describe(segment.from);
-    const previous = steps[steps.length - 1];
-    // Same device as the node we just left: keep one node, add the jack.
-    if (previous && 'node' in previous && previous.node.device === from.device) {
-      previous.node.placedId = previous.node.placedId ?? from.placedId;
-      for (const jack of from.jacks) {
-        if (!previous.node.jacks.includes(jack)) previous.node.jacks.push(jack);
+  /*
+   * WHICH SENDS ACTUALLY OPEN A BRACKET.
+   *
+   * Not every send is a detour. Under the 4-cable method the amp's send does
+   * not go back to the amp - it goes on to the gate's return, which is the X
+   * that makes the method work. So a send opens a bracket only when a later
+   * segment returns to the SAME device, and only when that return lands
+   * before the currently-open bracket closes. Brackets nest; they never
+   * overlap. Get that wrong and 4CM opens an amp bracket that never closes.
+   */
+  const opens = new Map<number, number>();
+  const closes = new Map<number, number>();
+  const openStack: number[] = [];
+  const matchingClose = (i: number): number => {
+    const key = deviceKeyOf(segs[i].from);
+    for (let j = i; j < segs.length; j++) {
+      if (isReturnAnchor(segs[j].to) && deviceKeyOf(segs[j].to) === key) return j;
+    }
+    return -1;
+  };
+  for (let i = 0; i < segs.length; i++) {
+    if (isSendAnchor(segs[i].from)) {
+      const close = matchingClose(i);
+      const innermost = openStack.length
+        ? opens.get(openStack[openStack.length - 1]) ?? Infinity
+        : Infinity;
+      if (close >= 0 && close < innermost) {
+        opens.set(i, close);
+        closes.set(close, i);
+        openStack.push(i);
       }
-      for (const type of from.types) {
-        if (!previous.node.types.includes(type)) previous.node.types.push(type);
+    }
+    if (closes.has(i)) openStack.pop();
+  }
+
+  const root: FlowItem[] = [];
+  const frames: { list: FlowItem[]; loop: FlowLoop | null }[] = [{ list: root, loop: null }];
+  const current = () => frames[frames.length - 1].list;
+
+  /**
+   * One device, one node - however many of its jacks the path touches.
+   *
+   * Walks back past its OWN detour, which is what lets a hub read
+   * `NS-2  IN -> OUT` with the send/return bracket sitting between the two
+   * halves of that sentence. Anything else on the rail stops the search.
+   */
+  const pushNode = (anchor: Anchor) => {
+    const d = describe(anchor);
+    const list = current();
+    for (let k = list.length - 1; k >= 0; k--) {
+      const item = list[k];
+      if (item.kind === 'loop' && item.device === d.device) continue;
+      if (item.kind === 'node' && item.device === d.device) {
+        for (const jack of d.jacks) if (!item.jacks.includes(jack)) item.jacks.push(jack);
+        for (const type of d.types) if (!item.types.includes(type)) item.types.push(type);
+        return;
+      }
+      break;
+    }
+    list.push({ kind: 'node', ...d, terminal: false });
+  };
+
+  for (let i = 0; i < segs.length; i++) {
+    const seg = segs[i];
+
+    if (opens.has(i)) {
+      const d = describe(seg.from);
+      const loop: FlowLoop = {
+        kind: 'loop',
+        device: d.device,
+        placedId: d.placedId,
+        openJack: d.jacks[0] ?? '',
+        openTypes: d.types,
+        closeJack: '',
+        closeTypes: [],
+        body: [],
+      };
+      current().push(loop);
+      frames.push({ list: loop.body, loop });
+    } else {
+      pushNode(seg.from);
+    }
+
+    // An empty segment draws nothing: it is a single cable between two
+    // devices, and the rail between them already says so.
+    if (seg.pedals.length > 0) {
+      current().push({
+        kind: 'run',
+        names: seg.pedals.map(nameOf),
+        ids: seg.pedals.map((p) => p.id),
+      });
+    }
+
+    if (closes.has(i)) {
+      const d = describe(seg.to);
+      const frame = frames.pop();
+      if (frame?.loop) {
+        frame.loop.closeJack = d.jacks[0] ?? '';
+        frame.loop.closeTypes = d.types;
       }
     } else {
-      steps.push({ node: from });
+      pushNode(seg.to);
     }
-    steps.push({
-      run: { names: segment.pedals.map(nameOf), ids: segment.pedals.map((p) => p.id) },
-    });
-    steps.push({ node: describe(segment.to) });
   }
-  return steps;
+
+  const railNodes = root.filter((i): i is FlowNode => i.kind === 'node');
+  if (railNodes.length > 0) {
+    railNodes[0].terminal = true;
+    railNodes[railNodes.length - 1].terminal = true;
+  }
+  return root;
+}
+
+/** Depth 0 sits on the rail; anything deeper is inside a bracket. */
+const rowPad = (depth: number) => (depth === 0 ? 'pl-8 pr-3' : 'pl-3 pr-3');
+
+function Flow({ items }: { items: FlowItem[] }) {
+  return (
+    <div className="relative" data-signal-flow>
+      <span aria-hidden className="absolute bottom-2 left-4 top-2 w-px bg-border" />
+      <FlowItems items={items} depth={0} />
+    </div>
+  );
+}
+
+function FlowItems({ items, depth }: { items: FlowItem[]; depth: number }) {
+  return (
+    <>
+      {items.map((item, i) =>
+        item.kind === 'run' ? (
+          <RunRow key={i} run={item} depth={depth} />
+        ) : item.kind === 'node' ? (
+          <NodeRow key={i} node={item} depth={depth} />
+        ) : (
+          <LoopRow key={i} loop={item} depth={depth} />
+        )
+      )}
+    </>
+  );
 }
 
 /**
- * The flow, on the spine the Chain and Cables panels use for the same idea.
+ * A device on the path.
  *
- * The endpoints are green, everything between them is not: a coloured node at
- * every device would spend the app's one accent on a diagram. Green here means
- * "this is where the signal starts and where it ends up".
+ * Handles, not wording: `verify-signal-flow` reads the device, its jacks and
+ * its endpoint types off these attributes. Matching on rendered text would
+ * bet on copy, which is the bet verify-modulation-switch lost.
  */
-function Flow({ steps }: { steps: FlowStep[] }) {
-  const lastNode = steps.reduce((last, step, i) => ('node' in step ? i : last), -1);
-
+function NodeRow({ node, depth }: { node: FlowNode; depth: number }) {
   return (
-    <div className="relative" data-signal-flow>
-      <span aria-hidden className="absolute bottom-2 left-[13px] top-2 w-px bg-border" />
-      {steps.map((step, i) =>
-        'node' in step ? (
-          <div
-            key={i}
-            /* Handles, not wording. `verify-signal-flow` reads the device and
-               jacks off these; matching on the rendered text would bet on
-               copy, which is the bet verify-modulation-switch lost. */
-            data-flow-node={step.node.device}
-            data-flow-node-id={step.node.placedId ?? ''}
-            /* Pipe-separated: an amp jack is labelled "FX SEND", so a space
-               is part of a value here, not a separator. */
-            data-flow-jacks={step.node.jacks.join('|')}
-            data-flow-endpoints={step.node.types.join('|')}
-            className="relative flex items-baseline gap-2 py-1 pl-8 pr-3"
-          >
-            <span
-              aria-hidden
-              /* The same node the Chain panel puts on its spine, at the same
-                 offset. Two spines in one editor drawn with different marks
-                 would read as two different diagrams of one signal path. */
-              className={`absolute left-[11px] top-[7px] size-2.5 rounded-full ring-2 ring-background ${
-                i === 0 || i === lastNode ? 'bg-primary' : 'bg-muted-foreground'
-              }`}
-            />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium">{step.node.device}</span>
-            {step.node.jacks.length > 0 && (
-              <span className="shrink-0 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                {step.node.jacks.join(' → ')}
-              </span>
-            )}
-          </div>
-        ) : (
-          <div
-            key={i}
-            data-flow-run={step.run.ids.length}
-            data-flow-pedal-ids={step.run.ids.join('|')}
-            className="flex items-baseline gap-2 py-0.5 pl-8 pr-3"
-          >
-            {step.run.names.length === 0 ? (
-              <span className="text-[11px] text-muted-foreground">straight through</span>
-            ) : (
-              <>
-                <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-                  {step.run.names.join(', ')}
-                </span>
-                <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
-                  {step.run.names.length}
-                </span>
-              </>
-            )}
-          </div>
-        )
+    <div
+      data-flow-node={node.device}
+      data-flow-node-id={node.placedId ?? ''}
+      data-flow-jacks={node.jacks.join('|')}
+      data-flow-endpoints={node.types.join('|')}
+      className={`relative flex items-baseline gap-2 py-1 ${rowPad(depth)}`}
+    >
+      {depth === 0 ? (
+        // The same node the Chain panel puts on its spine, at the same offset.
+        // Green only at the two ends: an accent on every device would spend
+        // the app's one signal colour on a diagram.
+        <span
+          aria-hidden
+          className={`absolute left-[11px] top-[7px] size-2.5 rounded-full ring-2 ring-background ${
+            node.terminal ? 'bg-primary' : 'bg-muted-foreground'
+          }`}
+        />
+      ) : (
+        // Inside a bracket the mark sits ON the branch line, square, so a
+        // device inside a loop never reads as a stop on the main path.
+        <span
+          aria-hidden
+          className="absolute left-[-2.5px] top-[8px] size-[5px] bg-muted-foreground"
+        />
       )}
+      <span className="min-w-0 flex-1 truncate text-xs font-medium">{node.device}</span>
+      {node.jacks.length > 0 && (
+        <span className="shrink-0 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+          {node.jacks.join(' → ')}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function RunRow({ run, depth }: { run: FlowRun; depth: number }) {
+  return (
+    <div
+      data-flow-run={run.ids.length}
+      data-flow-pedal-ids={run.ids.join('|')}
+      className={`flex items-baseline gap-2 py-0.5 ${rowPad(depth)}`}
+    >
+      <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+        {run.names.join(', ')}
+      </span>
+      <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+        {run.ids.length}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The detour itself: one rule down the side of everything the loop contains,
+ * with a tick where the path leaves the rail and another where it rejoins.
+ *
+ * The device is NOT repeated on these two rows - the bracket belongs to the
+ * node above it, which already carries the name. What they carry is the jack,
+ * which is the half that changes.
+ */
+function LoopRow({ loop, depth }: { loop: FlowLoop; depth: number }) {
+  return (
+    <div
+      data-flow-loop={loop.device}
+      className={`relative border-l border-border ${depth === 0 ? 'ml-8 mr-3' : 'ml-3'}`}
+    >
+      {depth === 0 && (
+        <>
+          <span aria-hidden className="absolute -left-4 top-[11px] h-px w-4 bg-border" />
+          <span aria-hidden className="absolute -left-4 bottom-[11px] h-px w-4 bg-border" />
+        </>
+      )}
+      <JackRow loop={loop} edge="open" />
+      <FlowItems items={loop.body} depth={depth + 1} />
+      <JackRow loop={loop} edge="close" />
+    </div>
+  );
+}
+
+function JackRow({ loop, edge }: { loop: FlowLoop; edge: 'open' | 'close' }) {
+  const open = edge === 'open';
+  return (
+    <div
+      data-flow-node={loop.device}
+      data-flow-node-id={loop.placedId ?? ''}
+      data-flow-jacks={open ? loop.openJack : loop.closeJack}
+      data-flow-endpoints={(open ? loop.openTypes : loop.closeTypes).join('|')}
+      data-flow-loop-edge={edge}
+      className="flex items-baseline py-1 pl-3 pr-3"
+    >
+      <span className="truncate font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+        {open ? loop.openJack : loop.closeJack}
+      </span>
     </div>
   );
 }
@@ -417,7 +610,7 @@ export function RoutingOptionsPanel({ availableAmps }: RoutingOptionsPanelProps)
         {/* The panel's OUTPUT: what the settings below currently add up to,
             read out of the same topology the cables are generated from. */}
         <Section label="Signal flow">
-          <Flow steps={flow} />
+          <Flow items={flow} />
         </Section>
 
         <Section label="Options" flush>
