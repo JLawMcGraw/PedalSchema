@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import type { PedalCategory } from '@/types';
 import { getCategoryColor, getCategoryShortLabel } from '@/lib/constants/pedal-categories';
 import { formatCurrentDraw, formatDimensions, formatVoltage } from '@/lib/format-pedal';
+import Image from 'next/image';
 
 interface PedalCardProps {
   pedal: {
@@ -27,14 +28,18 @@ export function PedalCard({ pedal, onClick, selected }: PedalCardProps) {
       className={`hover:border-primary/50 transition-colors ${onClick ? 'cursor-pointer' : ''} ${selected ? 'border-primary ring-2 ring-primary/20' : ''}`}
       onClick={onClick}
     >
+      {/* `fill` + `object-contain`, because a gear photo has no fixed aspect
+          ratio and the box does. `sizes` is what decides which derivative gets
+          generated - without it Next assumes 100vw and builds a 1920px one for
+          a 144px box. */}
       {pedal.image_url && (
-        <div className="flex items-center justify-center h-36 mx-4 mt-4 rounded-md bg-muted/40 overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+        <div className="relative flex items-center justify-center h-36 mx-4 mt-4 rounded-md bg-muted/40 overflow-hidden">
+          <Image
             src={pedal.image_url}
             alt={`${pedal.manufacturer} ${pedal.name}`}
-            className="max-h-full max-w-full object-contain"
-            loading="lazy"
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 45vw, 260px"
+            className="object-contain"
           />
         </div>
       )}

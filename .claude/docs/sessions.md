@@ -4,6 +4,129 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-21 (sixth) - the wrong half was fixed, and the bill said so
+
+### Summary
+
+Supabase escalated: **40.78 GB of cached egress against 5.5 GB**, grace period
+cut to **three days, 2026-08-24**.
+
+The previous session had already "fixed the egress" - the catalogue cache,
+167 KB of pedal rows per editor load - and **that was the wrong half.**
+Cached egress is the CDN in front of **STORAGE**, not Postgres. 67 rows of
+JSON cannot make 40 GB.
+
+Measured against the live bucket:
+
+    85 objects, 77.56 MB      largest a 7.42 MB PNG of an amp
+    /pedals       25,967 KB from the storage host, 40 requests
+    /editor/<id>  12,132 KB from the storage host, 21 requests
+
+Raw `<img src={row.image_url}>` at every call site - **no `next/image`
+anywhere in the app** - so every browser pulled a 2.75 MB PNG and painted it
+into a box 144px tall. `cf-cache-status: HIT` on those responses is exactly
+why it billed as CACHED egress. There was even an
+`eslint-disable-next-line @next/next/no-img-element` above each one; the rule
+had been saying this the whole time.
+
+After: **zero bytes from the bucket, on every page.**
+
+**498 tests, 38 gates** (from 37), lint 0, build clean.
+
+### What Was Accomplished
+
+- [x] **`next.config.ts`** - `images.remotePatterns` pinned to this project's
+      storage host and public object path; `minimumCacheTTL` 30 days
+- [x] **Four `<img>` call sites -> `next/image`** (pedal card, amps, boards,
+      pedal detail)
+- [x] **`lib/gear-image.ts`** - the editor canvas is an SVG `<image href>`,
+      where `next/image` cannot go, so it asks the same optimiser by hand
+- [x] **`verify-image-egress`** - gate 38
+- [x] **`verify-pedal-images`** updated: the canvas href must now be the
+      optimiser URL *wrapping* our bucket
+
+### Key Changes
+| File | Change |
+|---|---|
+| `next.config.ts` | remotePatterns + 30-day minimumCacheTTL |
+| `lib/gear-image.ts` | NEW - optimiser URL for non-`next/image` contexts |
+| `components/pedals/pedal-card.tsx` | `<img>` -> `<Image fill sizes>` |
+| `(dashboard)/amps|boards|pedals/[id]/page.tsx` | same |
+| `canvas/pedal-renderer.tsx` | `href={gearImageUrl(url, 384)}` |
+| `scripts/verify-image-egress.js` | NEW - gate 38 |
+
+### Technical Decisions
+
+1. **Optimise, do not re-encode the bucket.** Downsizing 85 originals would
+   also work and would cut storage, but it is destructive and irreversible,
+   and it is the owner's data. Routing through the optimiser is reversible,
+   ships today, and the originals stay available for any future need.
+2. **`remotePatterns` is pinned to the host AND the public object path.** It
+   is the only thing stopping the image optimiser being used as an open
+   proxy; a bare hostname would have been half a job.
+3. **The threshold in gate 38 is 40 KB, not 0.** Zero is what the app measures
+   and what it should be, but a gate that fails on one stray byte fails on
+   things that are not this defect. The smallest real regression it can see is
+   a single 60 KB derivative, so 40 KB sits under that with room.
+4. **Gate 38 also asserts the images are THERE.** A page rendering no images
+   at all would sail through an egress budget, which would be the worst
+   possible way to pass it. So: 64 elements, all decoded, all through the
+   optimiser, widest 260px.
+
+### Architecture Notes
+
+**`q` IS REQUIRED ON A HAND-BUILT OPTIMISER URL, AND NOTHING THREW.** The
+first version of `gearImageUrl` left it off, reasoning that 75 is the default.
+It is the default for the `<Image>` COMPONENT, which always emits a `q` of its
+own; the endpoint answers `400 "q" parameter (quality) is required`. The
+consequence was silent: the canvas `<image>` fired `onError`, `showImage` went
+false, and **22 pedal photos stopped rendering with no error anywhere.**
+`verify-pedal-images` caught it - `"rendered": 0` of 22 - and a screenshot
+would not have, because a pedal with no photo is a legitimate state that looks
+completely fine. The comment in that file now says the opposite of what it
+originally claimed, on purpose.
+
+**A LAZY IMAGE HIDES FROM A PROBE THAT DOES NOT SCROLL.** The first
+measurement said the fix took `/pedals` from 25.97 MB to 0 - but it had never
+scrolled, so most of the 64 images had not been requested in either state.
+The real comparison needed a full scroll on both sides, and it also means the
+25.97 MB "before" figure was an UNDERCOUNT of what the old page eventually
+pulled. Gate 38 scrolls for this reason.
+
+**PROVED IN PRODUCTION, NOT IN DEV.** Dev's optimiser cache is in memory, so
+`.next/cache/images` stays empty and proves nothing. Against `next start`:
+
+    cache before   0 files
+    load 1        64 files, 1624 KB
+    load 2        64 files, 1624 KB     <- no new origin fetches
+    load 3        64 files, 1624 KB
+
+Largest derivative 61 KB WebP against a 2,755 KB PNG - 45x - served with
+`max-age=2592000`, so browsers stop re-asking as well.
+
+**THE VERIFICATION SUITE WAS ITSELF A CONTRIBUTOR.** `verify-all.sh --all`
+opens the editor repeatedly; at 12.13 MB per open that is roughly 450 MB a
+run, and this project ran it four times in one day on top of dozens of single
+gates and screenshots. That is GB, from the thing built to check the work.
+It is now ~0. **Anything that opens a page in a loop is a bandwidth consumer,
+and nobody had counted it.**
+
+### Next Tasks
+
+- [ ] **Watch the dashboard.** Fair Use applies **2026-08-24**. Egress falling
+      is the only confirmation that counts; if the 40.78 GB already accrued
+      does not reset with the billing period, the Pro upgrade may still be
+      needed to clear the window
+- [ ] **The bucket is still 77.56 MB of originals** - a 7.42 MB PNG for an amp
+      thumbnail. Re-encoding to ~800px WebP would cut it by an order of
+      magnitude and make every optimiser cache-miss cheap. Destructive, so the
+      owner's call
+- [ ] **Objects still carry `max-age=3600`** from upload. Only the optimiser
+      sees it now, but a year would be correct - the filenames are UUIDs
+- [ ] **`rounded-full` on Badge**, **raw `text-red-500` in the auth blocks**
+
+---
+
 ## Session: 2026-08-21 (fifth) - a chain has a shape, and the panel was hiding it
 
 ### Summary

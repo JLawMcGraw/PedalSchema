@@ -75,9 +75,25 @@ async function main() {
           name: pd.name,
           expectedCenter: [boxCx, boxCy],
           found: !!img,
-          hrefOnOurStorage: img ? img.getAttribute('href').includes(location.hostname === 'localhost'
-            ? 'supabase.co/storage/v1/object/public/pedal-images'
-            : 'pedal-images') : false,
+          /*
+           * THROUGH THE OPTIMISER, AND STILL OURS.
+           *
+           * The href used to be the storage URL itself. It is now
+           * `/_next/image?url=<encoded storage URL>&w=...`, which is the
+           * whole point of 2026-08-21: an editor load was pulling 12.13 MB of
+           * full-resolution PNG straight out of the bucket. So this asserts
+           * BOTH halves - that the canvas goes through the optimiser, and
+           * that what the optimiser is being pointed at is still our bucket
+           * and not somebody else's host.
+           */
+          hrefOnOurStorage: img
+            ? (() => {
+                const href = img.getAttribute('href') || '';
+                if (!href.startsWith('/_next/image?')) return false;
+                const inner = new URLSearchParams(href.slice(href.indexOf('?'))).get('url') || '';
+                return inner.includes('/storage/v1/object/public/pedal-images');
+              })()
+            : false,
         });
       }
       return {

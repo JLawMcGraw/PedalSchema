@@ -7,6 +7,7 @@ import { getJackColour } from '@/lib/constants/jack-appearance';
 import { formatJackType } from '@/lib/format-pedal';
 import { rotateSide, rotatedFootprint } from '@/lib/engine/geometry/rotation';
 import { jacksToRender } from '@/lib/engine/cables/endpoints';
+import { gearImageUrl } from '@/lib/gear-image';
 
 interface PedalRendererProps {
   placedPedal: PlacedPedal;
@@ -103,7 +104,9 @@ export function PedalRenderer({
           </defs>
           <g clipPath={`url(#pedal-clip-${placedPedal.id})`}>
             <image
-              href={pedal.imageUrl!}
+              /* 384px covers the pedal at any zoom the editor allows; the
+                 original behind this is up to 2.75 MB. See lib/gear-image. */
+              href={gearImageUrl(pedal.imageUrl!, 384)}
               x={centerX - imgWidth / 2}
               y={centerY - imgHeight / 2}
               width={imgWidth}

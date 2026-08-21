@@ -69,6 +69,12 @@ READ_ONLY=(
   # placed pedal is accounted for exactly once. In memory only; it restores
   # the switches it flips and never saves.
   "verify-signal-flow"
+  # Cached egress is the CDN in front of STORAGE, and on 2026-08-21 it was
+  # 40.78 GB against a 5.5 GB allowance because raw <img> tags were shipping
+  # full-resolution originals - 25.97 MB for one /pedals load. The regression
+  # is invisible: add one <img src={row.image_url}> and every page still looks
+  # right, every test still passes, and the only symptom is an email.
+  "verify-image-egress"
 )
 
 # These WRITE. Each restores what it touched, but they are opt-in so a routine

@@ -16,6 +16,7 @@ import {
   formatChainLocation,
 } from '@/lib/format-pedal';
 import type { JackSide, JackType, PowerPolarity, ChainLocation, PedalCategory } from '@/types';
+import Image from 'next/image';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -138,11 +139,16 @@ export default async function PedalDetailPage({ params }: PageProps) {
         {/* Photo */}
         <div className="rounded-xl border bg-muted/30 flex items-center justify-center min-h-56 p-6 overflow-hidden">
           {pedal.image_url ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
+            /* The one place a gear photo is the subject rather than a
+               thumbnail, so it gets a real derivative - still a long way from
+               the 2.75 MB original. */
+            <Image
               src={pedal.image_url}
               alt={`${pedal.manufacturer} ${pedal.name} pedal, viewed from above`}
-              className="max-h-72 max-w-full object-contain"
+              width={640}
+              height={480}
+              sizes="(max-width: 768px) 100vw, 640px"
+              className="max-h-72 w-auto object-contain"
             />
           ) : (
             <p className="text-sm text-muted-foreground text-center">

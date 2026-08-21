@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import Image from 'next/image';
 
 export default async function AmpsPage() {
   const supabase = await createClient();
@@ -35,13 +36,13 @@ export default async function AmpsPage() {
           {amps.map((amp) => (
             <Card key={amp.id} className="hover:border-primary/50 transition-colors cursor-pointer">
               {amp.image_url && (
-                <div className="flex items-center justify-center h-36 mx-4 mt-4 rounded-md bg-muted/40 overflow-hidden">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                <div className="relative flex items-center justify-center h-36 mx-4 mt-4 rounded-md bg-muted/40 overflow-hidden">
+                  <Image
                     src={amp.image_url}
                     alt={`${amp.manufacturer} ${amp.name}`}
-                    className="max-h-full max-w-full object-contain"
-                    loading="lazy"
+                    fill
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 45vw, 260px"
+                    className="object-contain"
                   />
                 </div>
               )}
