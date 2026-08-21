@@ -117,12 +117,12 @@ and nobody had counted it.**
       is the only confirmation that counts; if the 40.78 GB already accrued
       does not reset with the billing period, the Pro upgrade may still be
       needed to clear the window
-- [ ] **The bucket is still 77.56 MB of originals** - a 7.42 MB PNG for an amp
-      thumbnail. Re-encoding to ~800px WebP would cut it by an order of
-      magnitude and make every optimiser cache-miss cheap. Destructive, so the
-      owner's call
-- [ ] **Objects still carry `max-age=3600`** from upload. Only the optimiser
-      sees it now, but a year would be correct - the filenames are UUIDs
+- [x] **The bucket** - re-encoded by the owner on 2026-08-21: **77.56 MB ->
+      19.57 MB**, largest object 7.42 MB -> 1.03 MB, all 85 still PNG with
+      alpha, `max-age` 3600 -> 31536000. Rollback in
+      `.backups/pedal-images-2026-08-21` (gitignored, verified byte-exact).
+      Gates green after: verify-pedal-images, verify-gear-images,
+      verify-image-egress
 - [ ] **`rounded-full` on Badge**, **raw `text-red-500` in the auth blocks**
 
 ---
