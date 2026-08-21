@@ -4,6 +4,121 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-21 (second) - the diagram was a drawing, and it disagreed with the wiring
+
+### Summary
+
+The Routing panel - the one editor panel its four siblings had all been
+rebuilt without. The listed faults were chrome: a double-padded amp selector,
+a Signal-flow block drawn with inline `ArrowRight` icons instead of the spine
+the Chain and Cables panels use, and a Pedal-loops section still on bordered
+cards with Badge and Checkbox.
+
+**The chrome was the small half. THE SIGNAL FLOW BLOCK WAS FICTION** - four
+hardcoded lines naming a Tuner, a Looper and an NS-2 whether or not any of
+them were on the board, identical for a nine-pedal rig and a twenty-two pedal
+one. It could not disagree with the wiring because it was never derived from
+anything. It now walks `deriveSignalTopology`, the same function the cable
+list, the routing cost and the placer already share.
+
+**And the first thing the honest diagram did was expose an engine bug.** With
+an NS-2 style pedal loop active, turning the amp's effects loop ON moves
+pedals into the `effects_loop` location - the Chain panel duly shows them
+under Send/Return - and **the cables never touch the amp's send or return
+jacks**. Measured on J$ Home:
+
+    loop off   location=[]                    endpoints={guitar, amp_input}
+    loop on    location=[Aqua-Puss, Flint]    endpoints={guitar, amp_input}
+
+The old drawing claimed `Send -> Loop -> Return` in that state. The new one
+draws what is wired, which is how the disagreement became visible at all.
+
+**495 tests** (unchanged - this panel's proof is a browser gate, not a unit
+test), **37 gates** (from 36), lint 0, build clean, `verify-all.sh --all`
+37/37.
+
+### What Was Accomplished
+
+- [x] **Routing panel rebuilt** - the last panel on the old chrome
+- [x] **Signal flow derived**, not drawn - from `deriveSignalTopology`
+- [x] **`verify-signal-flow`** - gate 37, in all three topology modes
+- [x] **`PanelHeader` / `Section` extracted** to `panel-chrome.tsx` - Power had
+      them, Cables had half of them, Routing was about to grow a third copy
+- [x] Raw `text-orange-500` gone - the last raw colour in the editor panels
+
+### Key Changes
+| File | Change |
+|---|---|
+| `panels/routing-options-panel.tsx` | rebuilt - flow from topology, hairline sections |
+| `panels/panel-chrome.ts` -> `.tsx` | `PanelHeader` and `Section` now live here |
+| `panels/power-panel.tsx` | uses the shared chrome; local copies deleted |
+| `panels/cable-list-panel.tsx` | uses the shared `PanelHeader` |
+| `scripts/verify-signal-flow.js` | NEW - gate 37 |
+| `scripts/verify-all.sh` | gate 37 registered (read-only) |
+| `scripts/verify-power-panel.js` | count assertion case-insensitive |
+
+### Technical Decisions
+
+1. **The diagram is derived in the PANEL, not added to the derived store.**
+   `deriveSignalTopology` sorts and partitions and does no pathfinding, so a
+   `useMemo` on the same inputs is cheap; widening `DerivedBoardState` for one
+   panel would have meant threading a topology through `calculateCables` to
+   avoid deriving it twice anyway. What matters is that it is the SAME
+   function - a fifth consumer, not a fifth re-derivation.
+2. **Consecutive segments that meet at one device are drawn as ONE node.**
+   The front chain ends at the amp input and the amp loop starts at the amp
+   send; that is one amp, entered and left. Two nodes there reads as two amps.
+   Merged, it reads as `Blues Deluxe   IN -> PREAMP OUT`, which IS the
+   4-cable method.
+3. **The gate compares PLACED-PEDAL IDS, not names.** Names cannot tell two
+   CS-3s apart, and they cannot tell a hub legitimately drawn twice (in at
+   INPUT, out at SEND, back at RETURN) from a pedal wrongly counted twice.
+   The first version of the check failed on exactly that and was right to.
+4. **The node carries its own endpoint TYPE.** The gate first mapped the jack
+   LABEL to a type - `includes('RET')` meant a return - and a Blues Deluxe,
+   whose return is labelled POWER AMP IN, scored as a second send. The gate
+   failed while the panel was correct. `data-flow-endpoints` carries
+   `amp_return` and nothing has to read the words. **That is the selector-sweep
+   lesson again, one layer in: not just "do not select by copy" but "do not
+   INFER MEANING from copy".**
+5. **The amp selector stays a shadcn Select.** A native `<select>` would match
+   the Power panel's supply picker, but `verify-surfaces` opens this control
+   to measure a floating surface's shadow, and its own comment says it is
+   "the only non-boolean control in the routing panel". Swapping it to match a
+   sibling would have broken a gate to gain nothing a reader can see.
+
+### Architecture Notes
+
+**A DIAGRAM THAT CANNOT BE WRONG IS NOT TELLING YOU ANYTHING.** The old block
+had no inputs, so it had no failure mode - and no information. The rebuilt one
+can now disagree with the cables, which is precisely why it is worth gating:
+`verify-signal-flow` asserts the two against each other in standard,
+pedal-loop and 4-cable modes, and that every placed pedal is accounted for
+exactly once as a run member or a hub node. Read from `data-flow-*` handles
+and the twin; never from rendered wording.
+
+**THE SPINE IS NOW A FAMILY OF THREE.** Chain, Cables and Routing all draw
+"these things are one signal path, in order" with the same 1px rule and the
+same node at the same offset. The node was briefly a square here - defensible
+under §5 - and that was the wrong call: two spines in one editor drawn with
+different marks read as two different diagrams.
+
+### Next Tasks
+
+- [ ] **The amp FX loop is ignored while a pedal loop is active** - the
+      measurement above. `deriveSignalTopology`'s pedal-loop branch returns
+      before it looks at `effectsLoopEnabled`, so `after-hub` always ends at
+      `amp_input`. The Chain panel says those pedals are in the loop; the
+      cables say they are in front. One of the two has to give
+- [ ] **`rounded-full` on Badge** - a pill, against §5, in four files outside
+      the editor panels (amps, pedal detail, toolbar, pedal-card)
+- [ ] **Raw `text-red-500` in the three auth/new-board error blocks** - the
+      last raw colours in the app; `--destructive` exists for this
+- [ ] **Check the real Supabase numbers** - still open from the last session.
+      Fair Use applies **2026-09-20**
+
+---
+
 ## Session: 2026-08-21 - 167 KB per page load, for data that never changed
 
 ### Summary

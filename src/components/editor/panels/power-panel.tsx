@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { PANEL_TITLE } from '@/components/editor/panels/panel-chrome';
+import { PanelHeader, Section } from '@/components/editor/panels/panel-chrome';
 import { useShallow } from 'zustand/react/shallow';
 import { useConfigurationStore } from '@/store/configuration-store';
 import { useDerivedConfiguration } from '@/store/derived';
@@ -292,44 +292,9 @@ export function PowerPanel() {
 
 function Header({ count }: { count: number }) {
   return (
-    <div className="flex shrink-0 items-baseline justify-between gap-2 border-b px-3 py-2">
-      <h3 className={PANEL_TITLE}>Power</h3>
-      {count > 0 && (
-        <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-          {count} pedal{count === 1 ? '' : 's'}
-        </span>
-      )}
-    </div>
-  );
-}
-
-/**
- * One hairline section.
- *
- * This panel was SEVEN bordered cards, each with its own filled header bar -
- * the pattern the Routing panel was cured of in the same redesign that left
- * this one alone. Card chrome is for elevation that communicates hierarchy;
- * seven stacked cards communicate none, they just draw fourteen more lines
- * than the content needs.
- */
-function Section({
-  label,
-  count,
-  children,
-}: {
-  label: string;
-  count?: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="border-b">
-      <div className="flex items-baseline justify-between gap-2 px-3 pb-1 pt-2">
-        <h4 className={PANEL_TITLE}>{label}</h4>
-        {count !== undefined && (
-          <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{count}</span>
-        )}
-      </div>
-      <div className="px-3 pb-2">{children}</div>
-    </section>
+    <PanelHeader
+      title="Power"
+      meta={count > 0 ? `${count} pedal${count === 1 ? '' : 's'}` : undefined}
+    />
   );
 }

@@ -57,7 +57,11 @@ const { loadEnv, login, openEditor } = require('./lib/twin');
 
     check(text.includes(`${expected.known}`),
       `states the known total (${expected.known}mA)`);
-    check(new RegExp(`${expected.count} pedals?`).test(text),
+    // Case-insensitive: the header meta is rendered through the §3.2 micro
+    // register (uppercase monospace), and Chromium's innerText reflects
+    // text-transform. The assertion is about the COUNT being reported, not
+    // about which case the stylesheet renders it in.
+    check(new RegExp(`${expected.count} pedals?`, 'i').test(text),
       `states the pedal count (${expected.count})`);
 
     if (expected.unknown > 0) {

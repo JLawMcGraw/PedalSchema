@@ -63,6 +63,12 @@ READ_ONLY=(
   # sets partition the table - a row that is neither would vanish from the
   # library silently. This gate proves the partition against the database.
   "verify-catalogue-cache"
+  # The Routing panel's Signal flow is now derived from deriveSignalTopology
+  # rather than drawn. This proves the diagram and the cables describe the
+  # same rig - in standard, pedal-loop and 4-cable modes - and that every
+  # placed pedal is accounted for exactly once. In memory only; it restores
+  # the switches it flips and never saves.
+  "verify-signal-flow"
 )
 
 # These WRITE. Each restores what it touched, but they are opt-in so a routine

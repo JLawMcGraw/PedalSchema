@@ -1,6 +1,6 @@
 'use client';
 
-import { PANEL_TITLE } from '@/components/editor/panels/panel-chrome';
+import { PANEL_TITLE, PanelHeader } from '@/components/editor/panels/panel-chrome';
 import { useShallow } from 'zustand/react/shallow';
 import { useMemo } from 'react';
 import { useConfigurationStore } from '@/store/configuration-store';
@@ -130,12 +130,10 @@ export function CableListPanel() {
 
 function Header({ count }: { count: number }) {
   return (
-    <div className="flex shrink-0 items-baseline justify-between gap-2 border-b px-3 py-2">
-      <h3 className={PANEL_TITLE}>Cables &amp; wiring</h3>
-      <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-        {count} connection{count !== 1 ? 's' : ''}
-      </span>
-    </div>
+    <PanelHeader
+      title="Cables & wiring"
+      meta={`${count} connection${count !== 1 ? 's' : ''}`}
+    />
   );
 }
 
