@@ -67,6 +67,33 @@ interface ConfigurationState {
   history: { past: HistorySnapshot[]; future: HistorySnapshot[] };
 
   /**
+   * How deep the history stack was the last time this board was SAVED.
+   *
+   * The control rule reads "UNSAVED - 3 EDITS", and `history.past.length`
+   * alone cannot say that: it counts edits since the board was LOADED and
+   * `markClean` does not reset it. Save at five edits, make one more, and a
+   * bare stack depth reports six unsaved edits when only one is.
+   *
+   * Compared as a DISTANCE, not a subtraction, because undoing back past the
+   * save point is also unsaved work - two edits behind the last save is two
+   * edits' worth of difference from what is on the server, in the direction
+   * nobody thinks to check.
+   */
+  savedHistoryDepth: number;
+
+  /**
+   * Epoch ms of the last successful save in THIS session, or null.
+   *
+   * The header reads "SAVED 12:04" off it. Null is a real value and is not the
+   * same as "never saved" - a board loaded from the server has been saved,
+   * just not by this tab, and the header says so rather than inventing a time
+   * it cannot know. `configurations.updated_at` is not read back here: it is
+   * the server's clock, and a readout that mixes two clocks is worse than one
+   * that admits a gap.
+   */
+  lastSavedAt: number | null;
+
+  /**
    * What the last optimizeLayout() traded off, for display next to the
    * Optimize button. Null when nothing has been optimized this session or
    * the summary was dismissed. Deliberately NOT in HistorySnapshot: it
@@ -229,6 +256,8 @@ export const useConfigurationStore = create<ConfigurationState>()(
         pedalConfigs: [],
       },
       history: { past: [], future: [] },
+      savedHistoryDepth: 0,
+      lastSavedAt: null,
       lastOptimization: null,
       isDirty: false,
       isSaving: false,
@@ -262,6 +291,8 @@ export const useConfigurationStore = create<ConfigurationState>()(
             use4CableMethod: config.use4CableMethod || false,
           };
           state.history = { past: [], future: [] };
+          state.savedHistoryDepth = 0;
+          state.lastSavedAt = null;
           state.isDirty = false;
         });
         // Normalize chain order for the loaded configuration
@@ -830,7 +861,17 @@ export const useConfigurationStore = create<ConfigurationState>()(
       markClean: () => {
         // A save that worked also clears the last failure - otherwise the
         // banner outlives the problem it describes.
-        set({ isDirty: false, saveError: null });
+        //
+        // It also plants the save point the edit counter measures from. Read
+        // through get() at call time rather than from a closure: this runs
+        // after an await in the save handler, and the stack has usually moved
+        // since the request went out.
+        set({
+          isDirty: false,
+          saveError: null,
+          savedHistoryDepth: get().history.past.length,
+          lastSavedAt: Date.now(),
+        });
       },
 
       setSaving: (saving) => {

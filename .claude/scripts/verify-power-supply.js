@@ -115,7 +115,7 @@ const check = (ok, label, detail) => {
     // The panel is the tab's own region - a match anywhere else on the page
     // would not prove the Power tab rendered it.
     await page.click('[data-panel-tab="power"]');
-    const panelText = (await page.locator('[role="tabpanel"]:not([hidden])').innerText())
+    const panelText = (await page.locator('[data-panel-body]').innerText())
       .replace(/\s+/g, ' ');
     console.log(`\npanel text: "${panelText}"`);
     check(/Output 1/.test(panelText), 'the panel renders per-output rows');

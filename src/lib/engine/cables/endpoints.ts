@@ -19,6 +19,23 @@ import { rotateSide, rotatedFootprint } from '../geometry/rotation';
 /** Horizontal distance of external endpoints from the board edge, in inches */
 export const EXTERNAL_OFFSET_INCHES = 1.5;
 
+/**
+ * Where the guitar sits vertically, as a fraction of board depth.
+ *
+ * The handoff draws it "outside the right edge, BELOW the board" - low and to
+ * the right, where a player's lead actually arrives - against the mid-height
+ * it used to sit at. 0.8 rather than 1.0 or beyond: it is the same fraction
+ * `amp_input` already uses with the loop on, so the router is being asked for
+ * an approach it demonstrably handles rather than a new one below the board's
+ * own footprint.
+ *
+ * The other half of that handoff item - "the amp sits at the far left and the
+ * guitar at the far right" - was ALREADY TRUE here and is deliberately not
+ * touched: amp endpoints are at -EXTERNAL_OFFSET_INCHES and the guitar at
+ * width + EXTERNAL_OFFSET_INCHES, which is the arrangement asked for.
+ */
+export const GUITAR_Y_FRACTION = 0.8;
+
 /** Amp jack vertical positions as fractions of board depth */
 export const AMP_RETURN_Y_FRACTION = 0.2;
 export const AMP_SEND_Y_FRACTION = 0.5;
@@ -37,7 +54,10 @@ export function getExternalEndpointInches(
 ): Point {
   switch (type) {
     case 'guitar':
-      return { x: board.widthInches + EXTERNAL_OFFSET_INCHES, y: board.depthInches / 2 };
+      return {
+        x: board.widthInches + EXTERNAL_OFFSET_INCHES,
+        y: board.depthInches * GUITAR_Y_FRACTION,
+      };
     case 'amp_return':
       return { x: -EXTERNAL_OFFSET_INCHES, y: board.depthInches * AMP_RETURN_Y_FRACTION };
     case 'amp_send':

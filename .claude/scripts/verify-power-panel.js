@@ -51,7 +51,7 @@ const { loadEnv, login, openEditor } = require('./lib/twin');
 
     // The panel is the tab's own region, so a number elsewhere on the page
     // cannot satisfy these assertions by accident.
-    const panel = page.locator('[role="tabpanel"]:not([hidden])');
+    const panel = page.locator('[data-panel-body]');
     const text = (await panel.innerText()).replace(/\s+/g, ' ').trim();
     console.log(`panel text: "${text.slice(0, 220)}"\n`);
 
@@ -104,7 +104,7 @@ const { loadEnv, login, openEditor } = require('./lib/twin');
 
       await page.click('[data-panel-tab="power"]');
       await page.waitForTimeout(300);
-      const t2 = (await page.locator('[role="tabpanel"]:not([hidden])').innerText())
+      const t2 = (await page.locator('[data-panel-body]').innerText())
         .replace(/\s+/g, ' ').trim();
       console.log(`panel text: "${t2.slice(0, 240)}"\n`);
 

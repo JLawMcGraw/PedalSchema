@@ -7,7 +7,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { useConfigurationStore } from '@/store/configuration-store';
 import { useDerivedConfiguration } from '@/store/derived';
 import { useEditorStore } from '@/store/editor-store';
-import { getCategoryColor, getCategoryLabel } from '@/lib/constants/pedal-categories';
+import { getCategoryColor, getCategoryShortLabel } from '@/lib/constants/pedal-categories';
 import { Lock, CaretUp, CaretDown, X } from '@phosphor-icons/react';
 import type { PlacedPedal } from '@/types';
 
@@ -30,15 +30,27 @@ import type { PlacedPedal } from '@/types';
  *   - and the WARNINGS RENDERED LAST, below every pedal. A warning that needs
  *     1150px of scrolling is a warning nobody reads.
  *
- * So: issues first, then a continuous spine with the endpoints as nodes on it,
+ * So: issues first, then the endpoints as filled rows bracketing the list,
  * rows at half the height, and the row controls revealed on hover.
  */
 
-/** Rows are ~28px now, against ~52px before, which is what makes 22 fit. */
+/**
+ * One pedal in the chain. 26px tall, against ~28px before and ~52px before that.
+ *
+ * The spine and its nodes are gone. They were what made a flat list read as a
+ * chain, and they are no longer carrying that: the two endpoint rows now
+ * bracket the list with a filled ground of their own, which says "the signal
+ * enters here and leaves there" in two rows rather than in a rule threaded
+ * behind twenty-two.
+ *
+ * The position number is zero-padded so the column does not shift at ten -
+ * `9` and `10` right-aligned still change the ink's left edge, and this column
+ * is read as a ruler.
+ */
 function ChainRow({
   placed,
   displayName,
-  category,
+  shortLabel,
   categoryColour,
   isSelected,
   onSelect,
@@ -49,7 +61,7 @@ function ChainRow({
 }: {
   placed: PlacedPedal;
   displayName: string;
-  category: string;
+  shortLabel: string;
   categoryColour: string;
   isSelected: boolean;
   onSelect: () => void;
@@ -61,28 +73,23 @@ function ChainRow({
   return (
     <div
       onClick={onSelect}
-      className={`group relative flex items-center gap-2 py-1 pl-8 pr-3 cursor-pointer transition-colors ${
+      className={`group relative flex cursor-pointer items-center gap-2 border-b border-border/35 px-3 py-1 transition-colors ${
         isSelected ? 'bg-primary/15' : 'hover:bg-muted/60'
       }`}
     >
-      {/* The node on the spine. Filled when selected, so the chain shows where
-          you are without a second highlight. */}
       <span
-        aria-hidden
-        className={`absolute left-[13px] size-1.5 rounded-full ring-2 ring-background transition-colors ${
-          isSelected ? 'bg-primary' : 'bg-border group-hover:bg-muted-foreground'
+        className={`w-[18px] shrink-0 text-right font-mono text-[11px] tabular-nums ${
+          isSelected ? 'text-primary' : 'text-muted-foreground'
         }`}
-      />
-
-      <span className="w-4 shrink-0 text-right font-mono text-[10px] text-muted-foreground">
-        {placed.chainPosition}
+      >
+        {String(placed.chainPosition).padStart(2, '0')}
       </span>
 
-      {/* The category, as a 2px rule rather than a filled chip. It reads as an
+      {/* The category, as a 3px rule rather than a filled chip. It reads as an
           index mark against the name instead of competing with it. */}
       <span
         aria-hidden
-        className="h-3.5 w-0.5 shrink-0 rounded-full"
+        className="h-3.5 w-[3px] shrink-0 rounded-full"
         style={{ backgroundColor: categoryColour }}
       />
 
@@ -102,9 +109,11 @@ function ChainRow({
       )}
 
       {/* The category replaces the manufacturer: it says why this pedal sits
-          here. It fades rather than unmounting, so the row width never moves. */}
-      <span className="shrink-0 text-[10px] text-muted-foreground transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">
-        {category}
+          here. Short form, because at 300px the panel cannot spend 60px on
+          "Overdrive" and the reader already knows the vocabulary. It fades
+          rather than unmounting, so the row width never moves. */}
+      <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground transition-opacity group-hover:opacity-0 group-focus-within:opacity-0">
+        {shortLabel}
       </span>
 
       {/*
@@ -153,44 +162,27 @@ function ChainRow({
   );
 }
 
-/** An endpoint of the chain: the guitar, the amp, or a loop jack. */
+/**
+ * An endpoint of the chain: the guitar, the amp, or a loop jack.
+ *
+ * Given a ground one step between `--background` and `--card` so the two ends
+ * of the list are legible as ends without a rule or an icon. Expressed as
+ * `bg-card/60` rather than a new token - the design calls for
+ * oklch(0.185 0.008 250), which is what --card at 60% over --background
+ * resolves to, and the token set is deliberately closed.
+ */
 function ChainEnd({ label, tone = 'signal' }: { label: string; tone?: 'signal' | 'loop' }) {
   return (
-    <div className="relative flex items-center gap-2 py-1.5 pl-8">
+    <div className="flex items-center gap-2 bg-card/60 px-3 py-[7px]">
       <span
         aria-hidden
-        className={`absolute left-[11px] size-2.5 rounded-full ring-2 ring-background ${
+        className={`size-2 shrink-0 rounded-full ${
           tone === 'signal' ? 'bg-primary' : 'bg-muted-foreground'
         }`}
       />
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
         {label}
       </span>
-    </div>
-  );
-}
-
-/**
- * The spine: one continuous rule behind the nodes, so it reads as a chain.
- *
- * DECLARED AT MODULE SCOPE, and it has to be. This lived inside
- * SignalChainPanel's body, which gave it a fresh function identity on every
- * render - so React saw a different component TYPE at that position each time
- * and rebuilt the subtree instead of reconciling it. Measured in a browser
- * before the change: a `useEffect(..., [])` inside it fired 12 times during
- * load and 8 more across two selections, and a chain row captured before a
- * re-render came back `isConnected === false`. Every render was destroying and
- * rebuilding both spines and all 22 rows.
- *
- * It closes over nothing, which is what made the fix a move rather than a
- * rewrite - and is also why the defect survived: there was no visible symptom
- * pointing at it.
- */
-function Spine({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="relative">
-      <span aria-hidden className="absolute bottom-3 left-4 top-3 w-px bg-border" />
-      {children}
     </div>
   );
 }
@@ -210,9 +202,10 @@ export function SignalChainPanel() {
       setChainPositionLocked: s.setChainPositionLocked,
     }))
   );
-  const { warnings, suggestions } = useDerivedConfiguration((d) => ({
+  const { warnings, suggestions, cables } = useDerivedConfiguration((d) => ({
     warnings: d.warnings,
     suggestions: d.suggestions,
+    cables: d.cables,
   }));
   const { selectedPedalId, selectPedal } = useEditorStore(
     useShallow((s) => ({ selectedPedalId: s.selectedPedalId, selectPedal: s.selectPedal }))
@@ -250,7 +243,7 @@ export function SignalChainPanel() {
         key={placed.id}
         placed={placed}
         displayName={displayNameFor(displayNames, placed.id, pedal.name)}
-        category={getCategoryLabel(pedal.category)}
+        shortLabel={getCategoryShortLabel(pedal.category)}
         categoryColour={getCategoryColor(pedal.category)}
         isSelected={selectedPedalId === placed.id}
         onSelect={() => selectPedal(placed.id)}
@@ -276,10 +269,15 @@ export function SignalChainPanel() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
-      <div className="flex shrink-0 items-baseline justify-between gap-2 border-b px-3 py-2">
-        <h3 className={PANEL_TITLE}>Signal chain</h3>
-        <span className="font-mono text-[10px] text-muted-foreground">
-          {sortedPedals.length} pedal{sortedPedals.length !== 1 ? 's' : ''}
+      {/* The count pair, not a sentence. "15 pedals" spent the whole right
+          half of the header restating the word in the title; the cable count
+          beside it is the fact the header was missing. */}
+      <div className="flex shrink-0 items-baseline justify-between gap-2 border-b px-3 py-[9px]">
+        <h3 className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          Signal chain
+        </h3>
+        <span className="font-mono text-[10px] uppercase tabular-nums tracking-[0.14em] text-muted-foreground">
+          {sortedPedals.length} · {cables.length} cables
         </span>
       </div>
 
@@ -318,33 +316,31 @@ export function SignalChainPanel() {
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-2">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         {sortedPedals.length === 0 ? (
           <p className="px-3 py-6 text-center text-xs text-muted-foreground">
             Add pedals from the library
           </p>
         ) : (
           <>
-            <Spine>
-              <ChainEnd label="Guitar" />
-              {frontOfAmpPedals.length > 0 ? (
-                frontOfAmpPedals.map(renderRow)
-              ) : (
-                <p className="py-2 pl-8 text-xs text-muted-foreground">No pedals</p>
-              )}
-              <ChainEnd label={effectsLoopEnabled ? 'Amp input' : 'Amp'} />
-            </Spine>
+            <ChainEnd label="Guitar in" />
+            {frontOfAmpPedals.length > 0 ? (
+              frontOfAmpPedals.map(renderRow)
+            ) : (
+              <p className="px-3 py-2 text-xs text-muted-foreground">No pedals</p>
+            )}
+            <ChainEnd label={effectsLoopEnabled ? 'Amp input' : 'Amp'} />
 
             {effectsLoopEnabled && (
-              <Spine>
+              <>
                 <ChainEnd label={amp?.sendJackLabel || 'Send'} tone="loop" />
                 {effectsLoopPedals.length > 0 ? (
                   effectsLoopPedals.map(renderRow)
                 ) : (
-                  <p className="py-2 pl-8 text-xs text-muted-foreground">No pedals in the loop</p>
+                  <p className="px-3 py-2 text-xs text-muted-foreground">No pedals in the loop</p>
                 )}
                 <ChainEnd label={amp?.returnJackLabel || 'Return'} tone="loop" />
-              </Spine>
+              </>
             )}
           </>
         )}

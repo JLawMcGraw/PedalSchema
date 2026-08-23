@@ -6,13 +6,8 @@ import { useConfigurationStore } from '@/store/configuration-store';
 import { useEditorStore } from '@/store/editor-store';
 import { EditorCanvas } from '@/components/editor/canvas/editor-canvas';
 import { EditorToolbar } from '@/components/editor/toolbar/editor-toolbar';
-import { PedalLibraryPanel } from '@/components/editor/panels/pedal-library-panel';
-import { SignalChainPanel } from '@/components/editor/panels/signal-chain-panel';
-import { PropertiesPanel } from '@/components/editor/panels/properties-panel';
-import { CableListPanel } from '@/components/editor/panels/cable-list-panel';
-import { RoutingOptionsPanel } from '@/components/editor/panels/routing-options-panel';
-import { PowerPanel } from '@/components/editor/panels/power-panel';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { BoardRosterPanel } from '@/components/editor/panels/board-roster-panel';
+import { RightPanel } from '@/components/editor/panels/right-panel';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
@@ -41,25 +36,6 @@ interface EditorClientProps {
   powerSupply?: PowerSupply | null;
 }
 
-/**
- * The panel tabs.
- *
- * Navigation is micro-typography in this system - monospace, uppercase,
- * tracked - per `.agents/skills/industrial-brutalist-ui` §3.2, which puts all
- * metadata, navigation and unit IDs in that register. Five tabs previously sat
- * in ordinary sentence-case sans at the same weight as body copy, so the panel
- * switcher read like content rather than instrumentation.
- */
-const TAB_CLASS =
-  // px-2 and tracking-wider, NOT px-2.5/widest: measured, those made the five
-  // tabs 306px wide in a 287px strip and wrapped "Props" onto a second row.
-  // The skill's range for this register is 0.05em-0.1em, so this is still in
-  // spec - it is the loose end of it that did not fit.
-  'h-auto flex-none rounded-none border-b-2 border-transparent px-2 py-2 ' +
-  'font-mono text-[10px] uppercase tracking-wider text-muted-foreground ' +
-  'transition-colors hover:text-foreground ' +
-  'data-[state=active]:border-primary data-[state=active]:text-foreground';
-
 export function EditorClient({
   configId,
   configName,
@@ -82,19 +58,19 @@ export function EditorClient({
   const initConfiguration = useConfigurationStore((s) => s.initConfiguration);
   const isDirty = useConfigurationStore((s) => s.isDirty);
   const { selectedPedalId } = useEditorStore();
-  const [activeTab, setActiveTab] = useState('chain');
   const [leftPanelOpen, setLeftPanelOpen] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
 
-  // Auto-switch to properties tab when a pedal is selected
+  /*
+   * On mobile (< lg) the rails are Sheets, so selecting a pedal has to OPEN
+   * the sheet or the properties it just switched to are behind a closed
+   * drawer. Which drawer opens is no longer decided here - RightPanel owns
+   * that now, and does it for both the desktop rail and this sheet, because
+   * they are the same component mounted twice.
+   */
   useEffect(() => {
-    if (selectedPedalId) {
-      setActiveTab('properties');
-      // On mobile (< lg breakpoint), open the right panel sheet when a pedal is selected
-      // lg breakpoint is 1024px
-      if (window.innerWidth < 1024) {
-        setRightPanelOpen(true);
-      }
+    if (selectedPedalId && window.innerWidth < 1024) {
+      setRightPanelOpen(true);
     }
   }, [selectedPedalId]);
 
@@ -287,101 +263,22 @@ export function EditorClient({
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isDirty]);
 
-  // Right panel tabs content - shared between desktop and mobile
-  const rightPanelContent = (
-    <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full w-full flex flex-col gap-0">
-      {/*
-        WRAPS rather than scrolls. Five tabs need 316px; the panel is 256px at
-        lg and 288px at xl, so the last one - Props - sat off the end at every
-        viewport width. `overflow-x-auto` made it technically reachable, but a
-        scrollbar nobody can see on a tab strip is the same as a missing tab,
-        which is how it was reported.
-
-        Wrapping needs two of TabsTrigger's own defaults overridden, and both
-        are load-bearing:
-          h-auto     - the default is h-[calc(100%-1px)], a height defined
-                       against the LIST's height. That is circular once the
-                       list's height depends on how many rows the tabs wrap
-                       onto, and the tabs render taller than their container.
-          flex-none  - the default flex-1 stretches tabs to fill their row, so
-                       a lone tab on row two spanned the full 287px.
-        With both, tabs size to their labels and wrap like text.
-      */}
-      {/*
-        Every trigger carries `data-panel-tab`, keyed on its VALUE rather than
-        its label, so verification scripts have a stable handle - the same
-        reason as [data-pedal-canvas] and [data-cable-legend].
-
-        Nine selectors across six gates used to find these by their text, and
-        the text is not the contract: `Props` renders as "PROPS" only because
-        of a CSS uppercase transform, so `:text-is("Routing")` passes today and
-        would break the day someone types the label in capitals, with the
-        screen looking identical either way. Two gates were already broken this
-        session by exactly that class of bet.
-      */}
-      <TabsList className="w-full justify-start rounded-none border-b bg-transparent p-0 h-auto shrink-0 flex-wrap">
-        <TabsTrigger
-          value="chain"
-          data-panel-tab="chain"
-          className={TAB_CLASS}
-        >
-          Chain
-        </TabsTrigger>
-        <TabsTrigger
-          value="cables"
-          data-panel-tab="cables"
-          className={TAB_CLASS}
-        >
-          Cables
-        </TabsTrigger>
-        <TabsTrigger
-          value="routing"
-          data-panel-tab="routing"
-          className={TAB_CLASS}
-        >
-          Routing
-        </TabsTrigger>
-        <TabsTrigger
-          value="power"
-          data-panel-tab="power"
-          className={TAB_CLASS}
-        >
-          Power
-        </TabsTrigger>
-        <TabsTrigger
-          value="properties"
-          data-panel-tab="properties"
-          className={TAB_CLASS}
-        >
-          Props
-        </TabsTrigger>
-      </TabsList>
-      <TabsContent value="chain" className="flex-1 mt-0 min-h-0 w-full max-w-full overflow-hidden">
-        <SignalChainPanel />
-      </TabsContent>
-      <TabsContent value="cables" className="flex-1 mt-0 min-h-0 w-full max-w-full overflow-hidden">
-        <CableListPanel />
-      </TabsContent>
-      <TabsContent value="routing" className="flex-1 mt-0 min-h-0 w-full max-w-full overflow-hidden">
-        <RoutingOptionsPanel availableAmps={availableAmps} />
-      </TabsContent>
-      <TabsContent value="power" className="flex-1 mt-0 min-h-0 w-full max-w-full overflow-hidden">
-        <PowerPanel />
-      </TabsContent>
-      <TabsContent value="properties" className="flex-1 mt-0 min-h-0 w-full max-w-full overflow-hidden">
-        <PropertiesPanel />
-      </TabsContent>
-    </Tabs>
-  );
-
+  /*
+   * THREE BANDS: app header, the toolbar block, then the body.
+   *
+   * 2.75rem is the app header's h-11 and the two numbers MUST agree - see the
+   * note on header.tsx. Getting this wrong does not look wrong: the shell ends
+   * up a few pixels taller than the viewport, the document scrolls, and the
+   * only symptom is the bottom of the right panel being cut off.
+   */
   return (
-    <div className="flex flex-col h-[calc(100dvh-3.5rem)]">
+    <div className="flex flex-col h-[calc(100dvh-2.75rem)]">
       <EditorToolbar onSave={handleSave} />
 
       <div className="flex flex-1 overflow-hidden min-h-0 max-w-[2200px] mx-auto w-full">
-        {/* Left panel - Pedal Library (desktop only) */}
-        <div className="hidden lg:block w-56 xl:w-64 border-r shrink-0 overflow-hidden">
-          <PedalLibraryPanel pedals={availablePedals} />
+        {/* Left rail - what is on the board, in chain order (desktop only) */}
+        <div className="hidden lg:block w-[264px] border-r shrink-0 overflow-hidden">
+          <BoardRosterPanel pedals={availablePedals} />
         </div>
 
         {/* Center - Canvas */}
@@ -411,9 +308,9 @@ export function EditorClient({
           </div>
         </div>
 
-        {/* Right panel - Properties & Chain (desktop only) */}
-        <div className="hidden lg:flex w-64 xl:w-72 border-l shrink-0 flex-col overflow-hidden">
-          {rightPanelContent}
+        {/* Right panel - chain, then drawers (desktop only) */}
+        <div className="hidden lg:flex w-[300px] border-l shrink-0 flex-col overflow-hidden">
+          <RightPanel availableAmps={availableAmps} />
         </div>
       </div>
 
@@ -425,7 +322,7 @@ export function EditorClient({
             <SheetDescription>Search and select pedals to add to your board</SheetDescription>
           </VisuallyHidden.Root>
           <div className="flex-1 min-h-0 overflow-hidden">
-            <PedalLibraryPanel pedals={availablePedals} />
+            <BoardRosterPanel pedals={availablePedals} />
           </div>
         </SheetContent>
       </Sheet>
@@ -438,7 +335,7 @@ export function EditorClient({
             <SheetDescription>View signal chain, cables, routing, and properties</SheetDescription>
           </VisuallyHidden.Root>
           <div className="flex-1 min-h-0 overflow-hidden pt-12">
-            {rightPanelContent}
+            <RightPanel availableAmps={availableAmps} />
           </div>
         </SheetContent>
       </Sheet>

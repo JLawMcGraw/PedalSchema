@@ -30,6 +30,7 @@ import { detectCollisions } from '@/lib/engine/collision';
 import { signalChainEngine } from '@/lib/engine/signal-chain';
 import { calculateCables } from '@/lib/engine/cables';
 import { routeAllCables, type RoutedCable } from '@/lib/engine/cables/route-cables';
+import { detectCableCrossings } from '@/lib/engine/pathfinding';
 import { derivePowerSummary, derivePowerPlan, describePowerPlan, type PowerSummary, type SupplyPlan } from '@/lib/engine/power';
 import { useConfigurationStore } from './configuration-store';
 
@@ -41,6 +42,21 @@ export interface DerivedBoardState {
   cables: Cable[];
   /** Routed cable paths in pixels (same order as cables) */
   routedCables: RoutedCable[];
+  /**
+   * How many places the drawn cables cross one another.
+   *
+   * A fifth reading of `routedCables`, taken with the SAME
+   * `detectCableCrossings` the lane-vs-cascade guard in `route-cables` uses to
+   * pick between the two routers. Counting it here rather than inside the
+   * router keeps one definition of "a crossing" - the HUD and the guard cannot
+   * disagree about a number they both report, which is the P1.5 defect this
+   * repo names.
+   *
+   * Counted over every routed path, valid or not, because the canvas draws the
+   * invalid ones too and a crossing the user can see has to be a crossing the
+   * readout counts.
+   */
+  crossings: number;
   /** Pedal overlap collisions */
   collisions: Collision[];
   /** Signal chain warnings for the current order */
@@ -79,6 +95,7 @@ export interface SourceSlice {
 const EMPTY: DerivedBoardState = {
   cables: [],
   routedCables: [],
+  crossings: 0,
   collisions: [],
   warnings: [],
   suggestions: [],
@@ -150,6 +167,10 @@ export function deriveBoardState(s: SourceSlice): DerivedBoardState {
       fxLoopActive
     );
 
+    const crossings = detectCableCrossings(
+      routedCables.map((r, i) => ({ id: String(i), points: r.path }))
+    ).length;
+
     const context: ChainContext = {
       ampHasEffectsLoop: s.amp?.hasEffectsLoop || false,
       useEffectsLoop: s.useEffectsLoop,
@@ -160,7 +181,7 @@ export function deriveBoardState(s: SourceSlice): DerivedBoardState {
     const { warnings, suggestions } = signalChainEngine.analyze(s.placedPedals, s.pedalsById, context);
 
     result = {
-      cables, routedCables, collisions, warnings, suggestions,
+      cables, routedCables, crossings, collisions, warnings, suggestions,
       power: derivePowerSummary(s.placedPedals, s.pedalsById),
       powerPlan: s.powerSupply
         ? derivePowerPlan(s.placedPedals, s.pedalsById, s.powerSupply)

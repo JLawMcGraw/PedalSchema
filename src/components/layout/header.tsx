@@ -15,11 +15,25 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { List } from '@phosphor-icons/react';
+import { RailsMark } from './rails-mark';
+import { HeaderMeta } from './header-meta';
 import type { User } from '@supabase/supabase-js';
 
 interface HeaderProps {
   user: User | null;
 }
+
+/**
+ * The nav register.
+ *
+ * `.agents/skills/industrial-brutalist-ui` §3.2 puts metadata, navigation and
+ * unit IDs in monospace, uppercase and generously tracked at a fixed small
+ * size. The header was the last surface still in sentence-case sans at body
+ * weight, so signing in changed the app's identity: an instrument panel below,
+ * a web app header above it.
+ */
+const NAV_ITEM =
+  'font-mono text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors duration-200';
 
 export function Header({ user }: HeaderProps) {
   const router = useRouter();
@@ -53,20 +67,28 @@ export function Header({ user }: HeaderProps) {
     { href: '/amps', label: 'Amps' },
   ];
 
-  // h-14 goes on the HEADER, not just the inner row. The border-b used to land
-  // outside the measured height, making this 57px while the editor shell
-  // subtracts 3.5rem (56px) - so the shell was a pixel taller than the
-  // viewport, the document scrolled, and the bottom of the right panel was cut
-  // off. Tailwind's preflight sets box-sizing: border-box, so with the height
-  // here the border is part of the 56.
+  // h-11 goes on the HEADER, not just the inner row. The border-b used to land
+  // outside the measured height, making this a pixel taller than it measured
+  // while the editor shell subtracts the nominal height - so the shell was a
+  // pixel taller than the viewport, the document scrolled, and the bottom of
+  // the right panel was cut off. Tailwind's preflight sets box-sizing:
+  // border-box, so with the height here the border is part of the 44.
+  //
+  // ANY CHANGE TO THIS HEIGHT MUST BE MIRRORED in the editor shell's
+  // h-[calc(100dvh-2.75rem)] (editor-client.tsx). They are the same number
+  // written twice and there is no way to make the CSS derive one from the
+  // other.
+  //
+  // Full-opacity border, not border-border/40: the editor's HUD box sits
+  // directly beneath it and needs a definite edge to sit against.
   return (
-    <header className="sticky top-0 z-50 h-14 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-full items-center px-4">
+    <header className="sticky top-0 z-50 h-11 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="flex h-full items-center gap-4 px-4">
         {/* Mobile menu button */}
         {user && (
           <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="sm" className="mr-2 md:hidden px-2">
+              <Button variant="ghost" size="sm" className="-ml-2 md:hidden px-2">
                 <List className="h-5 w-5" />
                 <span className="sr-only">Toggle menu</span>
               </Button>
@@ -93,25 +115,28 @@ export function Header({ user }: HeaderProps) {
           </Sheet>
         )}
 
-        {/* Logo */}
-        <div className="mr-4 flex shrink-0">
-          <Link href={user ? '/dashboard' : '/'} className="flex items-center space-x-2">
-            <span className="font-bold text-lg">PedalSchema</span>
+        {/* Wordmark. A unit ID, not a logotype. */}
+        <div className="flex shrink-0">
+          <Link href={user ? '/dashboard' : '/'} className="flex items-center gap-2">
+            <RailsMark />
+            <span className="font-mono text-xs font-semibold uppercase tracking-[0.2em]">
+              PedalSchema
+            </span>
           </Link>
         </div>
 
         {/* Desktop nav */}
         {user && (
-          <nav className="hidden md:flex items-center gap-6 text-sm">
+          <nav className="hidden items-center gap-[18px] md:flex">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
                 aria-current={isCurrent(link.href) ? 'page' : undefined}
-                className={`relative py-4 transition-colors duration-200 ${
+                className={`relative flex h-11 items-center ${NAV_ITEM} ${
                   isCurrent(link.href)
                     ? 'text-primary'
-                    : 'text-foreground/60 hover:text-foreground/90'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {link.label}
@@ -129,13 +154,15 @@ export function Header({ user }: HeaderProps) {
         )}
 
         {/* Right side */}
-        <div className="flex flex-1 items-center justify-end space-x-2">
+        <div className="flex flex-1 items-center justify-end gap-3">
+          {/* Renders only inside the editor - see header-meta. */}
+          <HeaderMeta />
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback>{userInitials}</AvatarFallback>
+                <Button variant="ghost" className="relative size-[26px] rounded-full p-0">
+                  <Avatar className="size-[26px]">
+                    <AvatarFallback className="bg-secondary text-[11px]">{userInitials}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
@@ -156,14 +183,15 @@ export function Header({ user }: HeaderProps) {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <div className="flex items-center gap-2">
-              <Link href="/login">
-                <Button variant="ghost" size="sm">
-                  Sign in
-                </Button>
+            <div className="flex items-center gap-3">
+              <Link href="/login" className={`${NAV_ITEM} text-muted-foreground hover:text-foreground`}>
+                Log in
               </Link>
-              <Link href="/signup">
-                <Button size="sm">Get started</Button>
+              <Link
+                href="/signup"
+                className="bg-primary px-3 py-[5px] font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-primary-foreground"
+              >
+                Sign up
               </Link>
             </div>
           )}

@@ -84,3 +84,91 @@ export function Section({
     </section>
   );
 }
+
+/**
+ * A collapsed drawer at the foot of the right panel.
+ *
+ * WHAT THIS REPLACES. The right panel was a five-tab strip, and five tabs
+ * needed 316px in a panel that is 300px - so the last one, Props, sat off the
+ * end at every viewport width. That was patched twice (a scroll nobody could
+ * see, then a wrap that needed two of TabsTrigger's own defaults overridden)
+ * and the real fault was upstream of the strip: four of the five tabs are
+ * REFERENCE, opened to answer one question and closed again, while the fifth -
+ * the chain - is what the panel is for and was being hidden by the other four.
+ *
+ * So the chain is always mounted and the other four become drawers. Each shows
+ * one measured fact while shut, which is the whole reason a tab strip was
+ * costing something: `CABLES 16 · 142.0IN` answers the question most visits to
+ * that tab were asking, without opening it.
+ *
+ * `data-panel-tab` MOVES HERE, keeping the same four values. Six gates select
+ * on those handles and the strip they used to sit on no longer exists. Keyed
+ * on the VALUE rather than the label for the original reason: `Props` renders
+ * as "PROPS" only because of a CSS uppercase transform, so a text selector
+ * passes today and breaks the day someone types the label in capitals, with
+ * the screen looking identical either way.
+ */
+export function Drawer({
+  id,
+  label,
+  fact,
+  factMuted = false,
+  open,
+  onToggle,
+  children,
+}: {
+  id: string;
+  label: string;
+  fact: React.ReactNode;
+  factMuted?: boolean;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`flex shrink-0 flex-col border-t ${open ? 'min-h-0 flex-1' : ''}`}>
+      <button
+        type="button"
+        data-panel-tab={id}
+        /* `data-state` alongside aria-expanded because six gates were written
+           against the Radix tab's state attribute and it is a real contract,
+           not a Radix artifact - shadcn stamps it on every stateful control in
+           this repo. Keeping it means the drawer swap is a change of shape and
+           not a rewrite of every script that opens a panel. */
+        data-state={open ? 'active' : 'inactive'}
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex shrink-0 items-baseline gap-2 px-3 py-[9px] text-left transition-colors duration-200 hover:bg-muted/60"
+      >
+        {/* A glyph, not an icon: at 10px in a mono row a chevron is four grey
+            pixels, and +/- is the same two states in the register the rest of
+            the row is already set in. */}
+        <span aria-hidden className="w-2 shrink-0 font-mono text-[10px] text-muted-foreground">
+          {open ? '−' : '+'}
+        </span>
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          {label}
+        </span>
+        <span
+          className={`ml-auto truncate font-mono text-[11px] uppercase tabular-nums text-muted-foreground ${
+            factMuted ? 'opacity-60' : ''
+          }`}
+        >
+          {fact}
+        </span>
+      </button>
+      {/* Mounted only while open. These four panels each subscribe to derived
+          board state, and keeping four of them mounted to render nothing is
+          four subscriptions recomputing on every board edit. */}
+      {open && (
+        /* `data-panel-body` replaces the `[role="tabpanel"]` three gates read
+           the open panel's text out of. A role would be a lie here - there is
+           no tablist for it to belong to - so the handle is a data attribute,
+           which is what the rest of this codebase uses for exactly this. */
+        <div data-panel-body={id} className="min-h-0 flex-1 overflow-y-auto border-t">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}

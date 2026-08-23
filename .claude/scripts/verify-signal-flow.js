@@ -136,7 +136,7 @@ const readLoops = (page) =>
 
 const modeReadout = (page) =>
   page.evaluate(() => {
-    const tabpanel = document.querySelector('[role="tabpanel"]:not([hidden])');
+    const tabpanel = document.querySelector('[data-panel-body]');
     return tabpanel?.querySelector('[data-panel-meta]')?.textContent?.trim() ?? null;
   });
 
@@ -494,12 +494,12 @@ const modeReadout = (page) =>
     // while Power's sat at 12px - two panels one tab apart, indented
     // differently. Measured, not eyeballed.
     const routingX = await page.evaluate(() =>
-      [...document.querySelectorAll('[role="tabpanel"]:not([hidden]) [data-section-label]')].map(
+      [...document.querySelectorAll('[data-panel-body] [data-section-label]')].map(
         (el) => Math.round(el.getBoundingClientRect().left)
       )
     );
     const panelX = await page.evaluate(() => {
-      const p = document.querySelector('[role="tabpanel"]:not([hidden])');
+      const p = document.querySelector('[data-panel-body]');
       return p ? Math.round(p.getBoundingClientRect().left) : null;
     });
     const indents = [...new Set(routingX.map((x) => x - panelX))];
