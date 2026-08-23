@@ -4,6 +4,119 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-08-22 — three design handoffs, built
+
+### Summary
+Implemented `design_handoff_editor_main`, `design_handoff_dashboard` and
+`design_handoff_landing` end to end, in that order. Four commits, twelve
+browser gates green, 506 unit tests.
+
+### What Was Accomplished
+- [x] Editor: three-band shell, HUD frame, control rule, chain-order left rail,
+      right panel of chain + four drawers
+- [x] Dashboard: pinned/most-recent board promoted to a hero, compact rows
+      beneath, relative time, FIT verdict, sort control
+- [x] Landing: drafting-sheet page with the self-sorting board as the hero
+- [x] App header to 44px in the mono register, shared by all three
+- [x] Two migrations applied to the hosted database
+- [x] Gates re-homed onto the handles the redesign moved
+- [ ] Anonymous editor CTA - built, gated OFF (see below)
+
+### Key Changes
+| File | Change |
+|------|--------|
+| `store/derived.ts` | `crossings`, counted with the router's own `detectCableCrossings` |
+| `store/configuration-store.ts` | `savedHistoryDepth`, `lastSavedAt` |
+| `components/editor/toolbar/*` | HUD frame + control rule replace the button bar |
+| `components/editor/panels/board-roster-panel.tsx` | new - the rail, in chain order, drag to reorder |
+| `components/editor/panels/right-panel.tsx` | new - chain always mounted, four drawers |
+| `components/editor/panels/panel-chrome.tsx` | `Drawer`, carrying `data-panel-tab` / `data-panel-body` |
+| `components/layout/header.tsx` | 44px, mono nav, rails mark |
+| `app/(dashboard)/dashboard/*` | `board-card.tsx` split into hero / row / shared actions |
+| `lib/relative-time.ts` | new, tested |
+| `app/page.tsx` | the landing page |
+| `components/landing/assembling-board.tsx` | the hero animation, CSS only |
+| `lib/anonymous-editor.ts` | guest sessions + in-place account claim |
+| `lib/engine/cables/endpoints.ts` | guitar moves low-right (`GUITAR_Y_FRACTION`) |
+
+### Technical Decisions
+1. **The handoffs were wrong in three places and the code follows the code.**
+   - `boards.pinned` -> `configurations.pinned`. `boards` is the shared
+     catalogue of physical models; a pin there is one user pinning a product
+     for everyone.
+   - The landing page's six chain stages disagreed with the optimizer, which
+     is the exact failure the handoff warned about. The section is now DERIVED
+     from `CHAIN_STAGES` + `PEDAL_CATEGORIES` and shows the eight the app
+     actually applies.
+   - "Amp far left, guitar far right" was ALREADY true in
+     `getExternalEndpointPx`. Only the guitar's height changed.
+2. **The band is 121px, not the handoff table's 110.** Measured the reference
+   mockup in a browser rather than trusting either number; every sub-value
+   (HUD padding, insets, Save padding) matched exactly, and the total did not.
+   The overshoot was `text-[10px]` inheriting line-height 1.5 where the mockup
+   sets `10px/1`.
+3. **A pin is not an edit** (migration `20260822000002`). The unconditional
+   `updated_at` trigger meant pinning restamped the board, so the hero read
+   "PINNED - EDITED JUST NOW" on a board nobody had opened in a day. Found by
+   the browser check, not by reading the code.
+4. **`REV n` in the header is deliberately not built.** Nothing in the schema
+   counts revisions, so it would be a number invented at render time. `SAVED
+   HH:MM` is real and is what ships.
+5. **`data-state` was kept on the drawer headers** even though they are not
+   Radix tabs - six gates contract on it, and it is a real state attribute
+   rather than a Radix artifact.
+
+### Migrations applied (hosted DB, via the us-east-1 session pooler)
+- `20260822000001_add_pinned` - column + PARTIAL unique index on
+  `(user_id) WHERE pinned`. Reverse: `DROP INDEX
+  idx_configurations_one_pinned; ALTER TABLE configurations DROP COLUMN
+  pinned;`
+- `20260822000002_pin_is_not_an_edit` - `configurations_touch_updated_at()`.
+  Reverse: restore `update_updated_at_column()` on the trigger.
+
+### Data touched during verification
+`J$ Home` had its `description` used as a trigger probe and cleared to `''`
+afterwards, and its `updated_at` was bumped by pin tests. Both are recoverable
+only by the owner; neither affects board content.
+
+### Verification
+`npm run build` clean, `tsc --noEmit` clean, eslint 0 errors in `src/`
+(the remainder are the untracked `design_handoff_*/support.js` bundles),
+506 unit tests / 4 skipped.
+
+Twelve browser gates green: `panel-tabs` (rewritten), `nav-state`, `readouts`,
+`icons`, `signal-flow`, `power-panel`, `power-supply`, `library-density`,
+`crud`, `surfaces`, `modulation-switch`, `sharing`. `verify-crud` confirms
+2 boards before and after.
+
+Geometry checked by EXTRACTION, not by reading screenshots - header 44px,
+rails 264/1036/300 summing to the viewport, band 121px against the reference
+mockup's own measured 121, hero drawing 268px, hero detail pane 430px, row
+thumbnail pane 200px, 20 rects and 16 polylines in the landing hero, no
+horizontal scroll. Drawer exclusivity and the chain surviving an open drawer
+asserted at 1024/1280/1440/1920. Pin/unpin driven as a round trip.
+
+No `console.log`, `debugger`, forced DEBUG flag, or new TODO in any of the 27
+changed source files.
+
+### Next Tasks
+- [ ] **Enable anonymous sign-ins** in Supabase (Authentication -> Sign In /
+      Providers), then set `NEXT_PUBLIC_ANONYMOUS_EDITOR=true`. Until both are
+      on, the landing CTA is `SIGN UP FREE` with no promise line - the
+      handoff's own documented fallback. The auth endpoint currently answers
+      `anonymous_provider_disabled`.
+- [ ] Claim flow UI. `claimAccount()` exists and promotes the anonymous user in
+      place via `updateUser`; nothing calls it yet.
+- [ ] Mobile. Only the desktop widths are drawn in all three handoffs. The
+      landing hero and chain panel stack; the dashboard hero and the editor
+      rails have not been checked below `md`.
+- [ ] `REV` needs a column before it can be shown.
+- [ ] The three `design_handoff_*` directories are untracked and their bundled
+      `support.js` is what produces every remaining eslint error. Delete or
+      ignore them.
+
+---
+
 ## Session: 2026-08-21 (sixth) - the wrong half was fixed, and the bill said so
 
 ### Summary
@@ -5572,96 +5685,3 @@ Brief description of main work done.
 ### Next Tasks
 - [ ] Task for next session
 ```
-
----
-
-## Session: 2026-08-22 — three design handoffs, built
-
-### Summary
-Implemented `design_handoff_editor_main`, `design_handoff_dashboard` and
-`design_handoff_landing` end to end, in that order. Four commits, twelve
-browser gates green, 506 unit tests.
-
-### What Was Accomplished
-- [x] Editor: three-band shell, HUD frame, control rule, chain-order left rail,
-      right panel of chain + four drawers
-- [x] Dashboard: pinned/most-recent board promoted to a hero, compact rows
-      beneath, relative time, FIT verdict, sort control
-- [x] Landing: drafting-sheet page with the self-sorting board as the hero
-- [x] App header to 44px in the mono register, shared by all three
-- [x] Two migrations applied to the hosted database
-- [x] Gates re-homed onto the handles the redesign moved
-- [ ] Anonymous editor CTA - built, gated OFF (see below)
-
-### Key Changes
-| File | Change |
-|------|--------|
-| `store/derived.ts` | `crossings`, counted with the router's own `detectCableCrossings` |
-| `store/configuration-store.ts` | `savedHistoryDepth`, `lastSavedAt` |
-| `components/editor/toolbar/*` | HUD frame + control rule replace the button bar |
-| `components/editor/panels/board-roster-panel.tsx` | new - the rail, in chain order, drag to reorder |
-| `components/editor/panels/right-panel.tsx` | new - chain always mounted, four drawers |
-| `components/editor/panels/panel-chrome.tsx` | `Drawer`, carrying `data-panel-tab` / `data-panel-body` |
-| `components/layout/header.tsx` | 44px, mono nav, rails mark |
-| `app/(dashboard)/dashboard/*` | `board-card.tsx` split into hero / row / shared actions |
-| `lib/relative-time.ts` | new, tested |
-| `app/page.tsx` | the landing page |
-| `components/landing/assembling-board.tsx` | the hero animation, CSS only |
-| `lib/anonymous-editor.ts` | guest sessions + in-place account claim |
-| `lib/engine/cables/endpoints.ts` | guitar moves low-right (`GUITAR_Y_FRACTION`) |
-
-### Technical Decisions
-1. **The handoffs were wrong in three places and the code follows the code.**
-   - `boards.pinned` -> `configurations.pinned`. `boards` is the shared
-     catalogue of physical models; a pin there is one user pinning a product
-     for everyone.
-   - The landing page's six chain stages disagreed with the optimizer, which
-     is the exact failure the handoff warned about. The section is now DERIVED
-     from `CHAIN_STAGES` + `PEDAL_CATEGORIES` and shows the eight the app
-     actually applies.
-   - "Amp far left, guitar far right" was ALREADY true in
-     `getExternalEndpointPx`. Only the guitar's height changed.
-2. **The band is 121px, not the handoff table's 110.** Measured the reference
-   mockup in a browser rather than trusting either number; every sub-value
-   (HUD padding, insets, Save padding) matched exactly, and the total did not.
-   The overshoot was `text-[10px]` inheriting line-height 1.5 where the mockup
-   sets `10px/1`.
-3. **A pin is not an edit** (migration `20260822000002`). The unconditional
-   `updated_at` trigger meant pinning restamped the board, so the hero read
-   "PINNED - EDITED JUST NOW" on a board nobody had opened in a day. Found by
-   the browser check, not by reading the code.
-4. **`REV n` in the header is deliberately not built.** Nothing in the schema
-   counts revisions, so it would be a number invented at render time. `SAVED
-   HH:MM` is real and is what ships.
-5. **`data-state` was kept on the drawer headers** even though they are not
-   Radix tabs - six gates contract on it, and it is a real state attribute
-   rather than a Radix artifact.
-
-### Migrations applied (hosted DB, via the us-east-1 session pooler)
-- `20260822000001_add_pinned` - column + PARTIAL unique index on
-  `(user_id) WHERE pinned`. Reverse: `DROP INDEX
-  idx_configurations_one_pinned; ALTER TABLE configurations DROP COLUMN
-  pinned;`
-- `20260822000002_pin_is_not_an_edit` - `configurations_touch_updated_at()`.
-  Reverse: restore `update_updated_at_column()` on the trigger.
-
-### Data touched during verification
-`J$ Home` had its `description` used as a trigger probe and cleared to `''`
-afterwards, and its `updated_at` was bumped by pin tests. Both are recoverable
-only by the owner; neither affects board content.
-
-### Next Tasks
-- [ ] **Enable anonymous sign-ins** in Supabase (Authentication -> Sign In /
-      Providers), then set `NEXT_PUBLIC_ANONYMOUS_EDITOR=true`. Until both are
-      on, the landing CTA is `SIGN UP FREE` with no promise line - the
-      handoff's own documented fallback. The auth endpoint currently answers
-      `anonymous_provider_disabled`.
-- [ ] Claim flow UI. `claimAccount()` exists and promotes the anonymous user in
-      place via `updateUser`; nothing calls it yet.
-- [ ] Mobile. Only the desktop widths are drawn in all three handoffs. The
-      landing hero and chain panel stack; the dashboard hero and the editor
-      rails have not been checked below `md`.
-- [ ] `REV` needs a column before it can be shown.
-- [ ] The three `design_handoff_*` directories are untracked and their bundled
-      `support.js` is what produces every remaining eslint error. Delete or
-      ignore them.
