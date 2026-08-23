@@ -308,13 +308,20 @@ async function save(page) {
     check(await cardBefore.count() === 1, 'the new board is on the dashboard');
 
     // --- the card survives a name it cannot break -----------------------
-    // A rename can now produce an 80-character name, and CardHeader is a GRID:
-    // its title is a grid item at min-width:auto, so without min-w-0 it grows
-    // to max-content and an unbreakable name runs past the card edge and under
-    // the menu button. Measured, because it is invisible until it happens.
+    // A rename can now produce an 80-character name, and without min-w-0 an
+    // unbreakable one runs past the card edge and under the menu button.
+    // Measured, because it is invisible until it happens.
+    //
+    // Addressed as "the heading that holds the editor link", not as
+    // `[data-slot="card-title"]`. That attribute came from shadcn's CardTitle,
+    // and the dashboard's boards are no longer shadcn Cards - the hero is a
+    // flex panel and the others are compact rows. The heading is the stable
+    // thing; the component that used to wrap it was not.
     const layout = await page.evaluate(() => {
-      const art = document.querySelector('article');
-      const titleEl = art.querySelector('[data-slot="card-title"]');
+      const art = [...document.querySelectorAll('article')].find((a) =>
+        a.querySelector('h2 a[href^="/editor/"], h3 a[href^="/editor/"]')
+      );
+      const titleEl = art.querySelector('h2, h3');
       const link = titleEl.querySelector('a');
       const menu = art.querySelector('button[aria-label^="Actions"]');
       link.textContent = 'Supercalifragilistic'.repeat(4);

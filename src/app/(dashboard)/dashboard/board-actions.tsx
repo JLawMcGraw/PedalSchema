@@ -175,7 +175,7 @@ export function BoardMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={onPin} data-pin-board>
+        <DropdownMenuItem onClick={onPin} data-card-action="pin" data-pin-board>
           {pinned ? (
             <>
               <PushPinSlash className="mr-2 h-4 w-4" />
@@ -188,11 +188,19 @@ export function BoardMenu({
             </>
           )}
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onDuplicate}>
+        {/* `data-card-action` on both, because verify-crud drives the menu by
+            these handles rather than by label text - the same reason
+            `data-panel-tab` exists in the editor. The card component around
+            them changed shape; the contract did not. */}
+        <DropdownMenuItem onClick={onDuplicate} data-card-action="duplicate">
           <Copy className="mr-2 h-4 w-4" />
           Duplicate
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
+        <DropdownMenuItem
+          onClick={onDelete}
+          data-card-action="delete"
+          className="text-destructive focus:text-destructive"
+        >
           <Trash className="mr-2 h-4 w-4" />
           Delete
         </DropdownMenuItem>

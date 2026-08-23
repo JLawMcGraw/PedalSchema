@@ -67,6 +67,23 @@ const state = (page) =>
   try {
     await login(page);
     await openEditor(page);
+
+    /*
+     * THE CATALOGUE IS NO LONGER THE RAIL - it is a mode of it.
+     *
+     * After the board is built the left rail's job stops being "find one pedal
+     * in a 67-item catalogue" and becomes "look at what I have, in chain
+     * order", so the roster took the rail and the catalogue moved behind an
+     * "Add pedal" control. Everything this gate checks - the grouping, the
+     * collapsed default, the panel surviving a click, the chevron - is still
+     * true of the catalogue and still worth checking; it is one click further
+     * in than it used to be.
+     *
+     * Opened by `[data-open-catalogue]` rather than by the words "Add pedal",
+     * for the reason two gates in this repo have already been broken: a label
+     * is a display string and a handle is a contract.
+     */
+    await page.locator('[data-open-catalogue]').click();
     await page.waitForSelector('details', { timeout: 20000 });
 
     // --- 1. grouped and collapsed ---------------------------------------
