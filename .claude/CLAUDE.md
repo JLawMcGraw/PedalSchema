@@ -344,3 +344,24 @@ Before reporting completion, ask yourself:
 5. Would a skeptical developer accept this evidence?
 
 If any answer is uncertain, you have NOT verified. Go back and verify properly or mark as UNVERIFIED.
+
+---
+
+## Agent skills
+
+Paths below are relative to the repo root.
+
+### Issue tracker
+
+Issues live as GitHub issues on `JLawMcGraw/PedalSchema`, driven by the `gh` CLI.
+See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles, each label string equal to its name.
+See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and one `docs/adr/`, both at the repo root.
+See `docs/agents/domain.md`.
