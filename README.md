@@ -16,13 +16,18 @@ A visual pedalboard planning and layout tool for guitarists. Design your pedalbo
   cables *and* pedals
 - **4-Cable Method** - NS-2 style hub pedals gate the drives while time effects run
   post-preamp
-- **Collision Detection** - Prevents pedal overlap and ensures valid layouts
+- **Collision Detection** - Flags overlapping and off-board pedals; Optimize rejects
+  layouts with either problem
 - **Power Budget** - Total current draw per board, split by voltage, with high-draw pedals
   flagged. Pedals whose draw was never recorded are counted separately rather than as
   zero, so an unknown never reads as free
 - **Power Supply Planning** - Assign pedals to a supply's outputs and see which output is
   over its rating
 - **Undo/Redo** - Board edits are reversible, including optimization
+- **Conflict-Safe Saves** - A board save is one database transaction, with revision
+  checks that stop an older browser tab from overwriting newer work
+- **Public Share Links** - Publish a read-only board at `/s/[slug]` without exposing
+  private configurations
 - **Multiple Board Sizes** - Support for various pedalboard dimensions
 - **Responsive Design** - Works on desktop and mobile with collapsible panels
 
@@ -33,7 +38,7 @@ polylines. Two routers, and **both of them run**:
 
 1. **Lane router** (`engine/lanes`) — a Manhattan corridor model that assigns cables to
    lanes with coordinated spacing, so parallel runs stay individually traceable.
-2. **Strategy cascade** (`engine/cables/routing-strategies`) for anything the corridor
+2. **Strategy cascade** (`engine/cables/routing-strategies.ts`) for anything the corridor
    model can't serve — ten rungs, cheapest sufficient first: facing jacks → direct →
    L-path → channel between rows → above → below → safe lane → A\* → **around the
    outside of the board**, then an explicitly invalid path the renderer draws red.
@@ -41,8 +46,7 @@ polylines. Two routers, and **both of them run**:
 The whole board is then routed a second time with the corridor model switched off, and
 whichever result has **fewer cable crossings** is the one drawn. The corridor model is
 better nearly everywhere and occasionally worse on a dense board, so "the lane router
-never draws a worse board than the cascade" is enforced rather than hoped for. It costs
-about 1.23x on a real-board optimize.
+never draws a worse board than the cascade" is enforced rather than hoped for.
 
 **Every cable turns at right angles.** A patch cable leaves a jack square-on, so a
 diagonal line is a picture of a cable that cannot exist — the corridor model guarantees
@@ -76,9 +80,25 @@ The amp panel visualization shows three jacks (RTN, SND, IN) when effects loop i
 
 ## Getting Started
 
+Prerequisites:
+
+- Node.js 20.9 or newer (required by the installed Next.js version)
+- A Supabase project
+
+Create the database before starting the app. Apply every SQL file in
+`supabase/migrations/` in filename order to a new Supabase project. The migrations
+create the schema, RLS policies, seed catalogue, image bucket, power-supply tables, and
+the revision-aware `save_configuration` function. This repository is not pre-linked to
+a Supabase project, so use either the Supabase SQL editor or link it with the Supabase
+CLI first.
+
 ```bash
 # Install dependencies
 npm install
+
+# Configure the app
+cp .env.local.example .env.local
+# Fill in NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 # Run the development server
 npm run dev
@@ -86,47 +106,60 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser.
 
+For email confirmations, allow `http://localhost:3000/auth/callback` in the Supabase
+Authentication redirect URLs. `SUPABASE_SERVICE_ROLE_KEY`, `VERIFY_EMAIL`, and
+`VERIFY_PASSWORD` are only needed by scraper and browser-verification tooling; the app
+must never receive the service-role key.
+
+Guest editing is off by default. To enable it, turn on anonymous sign-ins in Supabase
+Authentication and set `NEXT_PUBLIC_ANONYMOUS_EDITOR=true`. Both settings are required;
+otherwise the landing page directs visitors to sign up.
+
 ## Tech Stack
 
 - **Next.js 16** - React framework with App Router
-- **React 19** - Latest React with concurrent features
+- **React 19** - UI runtime
 - **TypeScript** - Type-safe development
 - **Tailwind CSS v4** - Utility-first styling
 - **Supabase** - Authentication and database
 - **Zustand** - Lightweight state management
-- **SVG Rendering** - Canvas-based pedalboard visualization
+- **SVG Rendering** - SVG-based pedalboard, pedal, jack, and cable visualization
 
 ## Project Structure
 
 ```
-src/
-├── app/                    # Next.js app router pages
-├── components/
-│   ├── editor/
-│   │   ├── canvas/         # Pedalboard canvas components
-│   │   │   ├── board-renderer.tsx
-│   │   │   ├── pedal-renderer.tsx
-│   │   │   ├── cable-renderer.tsx  # draws finished polylines; does no routing
-│   │   │   └── editor-canvas.tsx   # Main canvas with amp visualization
-│   │   ├── panels/         # Side panels (library, properties, routing)
-│   │   └── toolbar/        # Editor toolbar with responsive overflow
-│   ├── layout/             # Header, navigation
-│   └── ui/                 # Reusable UI components
-├── lib/
-│   ├── engine/
-│   │   ├── geometry/       # Shared clearance constants + intersection math
-│   │   ├── topology/       # Signal topology (who connects to whom)
-│   │   ├── signal-chain/   # Ordering rules, warnings, suggestions
-│   │   ├── cables/         # Cable generation, routing strategies, validation
-│   │   ├── lanes/          # Manhattan corridor router
-│   │   ├── pathfinding/    # A* grid search (one rung of the cascade)
-│   │   ├── obstacles/      # Obstacle set construction
-│   │   ├── collision/      # Collision detection & rail snapping
-│   │   ├── power/          # Current draw totals and supply-output planning
-│   │   └── layout/         # Placement search + routing-aware cost function
-│   └── images/             # Background knockout for pedal photos
-├── store/                  # Zustand state management (source state + derived)
-└── types/                  # TypeScript type definitions
+.
+├── src/
+│   ├── app/                    # Next.js App Router pages
+│   ├── components/
+│   │   ├── editor/
+│   │   │   ├── canvas/         # Pedalboard SVG components
+│   │   │   │   ├── board-renderer.tsx
+│   │   │   │   ├── pedal-renderer.tsx
+│   │   │   │   ├── cable-renderer.tsx  # Draws finished polylines; does no routing
+│   │   │   │   └── editor-canvas.tsx   # Main SVG with amp visualization
+│   │   │   ├── panels/         # Side panels (library, properties, routing)
+│   │   │   └── toolbar/        # Editor toolbar with responsive overflow
+│   │   ├── layout/             # Header and navigation
+│   │   └── ui/                 # Reusable UI components
+│   ├── lib/
+│   │   ├── engine/
+│   │   │   ├── geometry/       # Shared clearance constants and intersection math
+│   │   │   ├── topology/       # Signal topology (who connects to whom)
+│   │   │   ├── signal-chain/   # Ordering rules, warnings, and suggestions
+│   │   │   ├── cables/         # Cable generation, routing strategies, and validation
+│   │   │   ├── lanes/          # Manhattan corridor router
+│   │   │   ├── pathfinding/    # A* grid search (one rung of the cascade)
+│   │   │   ├── obstacles/      # Obstacle-set construction
+│   │   │   ├── collision/      # Collision detection and rail snapping
+│   │   │   ├── power/          # Current totals and supply-output planning
+│   │   │   └── layout/         # Placement search and routing-aware cost function
+│   │   └── images/             # Background knockout for pedal photos
+│   ├── store/                  # Zustand source and derived state
+│   └── types/                  # TypeScript domain types
+├── supabase/migrations/        # Ordered schema, policies, seed data, and RPCs
+├── scraper/                    # Catalogue import and image-mirroring tools
+└── .claude/scripts/            # Playwright and regression verification gates
 ```
 
 ## Development
@@ -136,7 +169,13 @@ src/
 npm test
 
 # Type check
-npx tsc --noEmit
+npm run typecheck
+
+# Lint source and scripts
+npm run lint
+
+# Find unused files, exports, and dependencies
+npm run check:dead-code
 
 # Build for production
 npm run build
@@ -144,6 +183,9 @@ npm run build
 # Take verification screenshot
 node .claude/scripts/screenshot.js http://localhost:3000/editor/new --auth
 ```
+
+The production build uses `next/font/google`, so its first run needs access to Google
+Fonts unless the Geist font response is already cached.
 
 ### Verification scripts
 
@@ -154,8 +196,18 @@ via the shared helpers in `.claude/scripts/lib/twin.js`.
 ```bash
 node .claude/scripts/verify-twin-parity.js     # twin agrees with what the canvas drew
 node .claude/scripts/verify-photo-knockout.js  # photo pipeline, in real Chromium
-node .claude/scripts/extract-positions.js      # positions + optimizer rationale
+node .claude/scripts/verify-chain-direction.js # positions + optimizer rationale
+
+# Run every read-only browser gate (development server must already be running)
+bash .claude/scripts/verify-all.sh
+
+# Also run gates that write temporary data and restore it afterward
+bash .claude/scripts/verify-all.sh --all
 ```
+
+Install Chromium once with `npx playwright install chromium` if Playwright has not
+already downloaded it. Authenticated gates read `VERIFY_EMAIL` and `VERIFY_PASSWORD`
+from `.env.local`; database-level gates also require `SUPABASE_SERVICE_ROLE_KEY`.
 
 ## Image Rights
 
