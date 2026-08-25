@@ -85,7 +85,7 @@ export const COST_DIMENSIONS = [
   { key: 'rowAlignment', label: 'pedals off their row', unit: 'score' },
 ] as const;
 
-export type CostDimensionKey = (typeof COST_DIMENSIONS)[number]['key'];
+type CostDimensionKey = (typeof COST_DIMENSIONS)[number]['key'];
 
 export interface CostDimension {
   key: CostDimensionKey;
@@ -410,7 +410,7 @@ function calculateRowAlignmentPenalty(
 // EXPLAINING A SCORE
 // ============================================================================
 
-export interface CostChange {
+interface CostChange {
   key: CostDimensionKey;
   label: string;
   /** Score delta (negative = the new layout is better on this dimension) */

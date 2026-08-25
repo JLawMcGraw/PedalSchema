@@ -216,7 +216,7 @@ export function useDerivedConfiguration<T>(selector: (d: DerivedBoardState) => T
  * Screen positions are deliberately absent: they belong to the DOM, and
  * .claude/scripts/lib/twin.js derives them from [data-pedal-canvas].
  */
-export interface PedalSchemaSnapshot {
+interface PedalSchemaSnapshot {
   scale: number;
   board: Board | null;
   pedals: Array<{

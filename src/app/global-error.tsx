@@ -52,6 +52,7 @@ export default function GlobalError({
           Nothing was saved or lost. Reloading usually clears it.
         </p>
         <button
+          type="button"
           onClick={reset}
           style={{
             marginTop: '1rem',

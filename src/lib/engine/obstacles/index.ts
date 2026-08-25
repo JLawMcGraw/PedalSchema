@@ -11,22 +11,16 @@
  */
 
 import type { PlacedPedal, Pedal, Board } from '@/types';
-import type { Box, Point } from '../geometry';
+import type { Box } from '../geometry';
 import { rotatedFootprint } from '../geometry/rotation';
-
-// Re-export types for convenience
-export type { Box, Point };
 
 // Default scale: 40 pixels per inch
 const DEFAULT_SCALE = 40;
 
-// Single source of truth for the cable clearance margin lives in ../geometry
-export { OBSTACLE_MARGIN } from '../geometry';
-
 /**
  * Board bounds in pixels
  */
-export interface BoardBounds {
+interface BoardBounds {
   minX: number;
   maxX: number;
   minY: number;

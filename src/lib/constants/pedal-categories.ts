@@ -34,7 +34,7 @@ import type { PedalCategory } from '@/types';
  */
 export type PedalFamily = 'shaping' | 'gain' | 'modulation' | 'time' | 'utility';
 
-export const PEDAL_FAMILIES: {
+const PEDAL_FAMILIES: {
   value: PedalFamily;
   label: string;
   /** What this family does to the signal. Used as the legend gloss. */
@@ -149,7 +149,7 @@ export const PEDAL_CATEGORIES: {
 ];
 
 /** Short forms, for the places that have no room for the full label. */
-export const CATEGORY_SHORT_LABELS: Record<PedalCategory, string> = {
+const CATEGORY_SHORT_LABELS: Record<PedalCategory, string> = {
   tuner: 'Tuner',
   filter: 'Filter',
   compressor: 'Comp',
@@ -172,7 +172,7 @@ export const CATEGORY_SHORT_LABELS: Record<PedalCategory, string> = {
 
 const UNKNOWN_FAMILY: PedalFamily = 'utility';
 
-export function getCategoryFamily(category: PedalCategory): PedalFamily {
+function getCategoryFamily(category: PedalCategory): PedalFamily {
   return PEDAL_CATEGORIES.find((c) => c.value === category)?.family ?? UNKNOWN_FAMILY;
 }
 
@@ -180,10 +180,6 @@ export function getFamilyColor(family: PedalFamily): string {
   // Non-null: PEDAL_FAMILIES covers the union, and getCategoryFamily is the
   // only other way in.
   return PEDAL_FAMILIES.find((f) => f.value === family)!.color;
-}
-
-export function getFamilyLabel(family: PedalFamily): string {
-  return PEDAL_FAMILIES.find((f) => f.value === family)!.label;
 }
 
 /**
@@ -212,10 +208,6 @@ const UNKNOWN_STAGE: ChainStage = 'utility';
 /** Which stage of the chain a category is read out under. */
 export function getCategoryStage(category: PedalCategory): ChainStage {
   return PEDAL_CATEGORIES.find((c) => c.value === category)?.stage ?? UNKNOWN_STAGE;
-}
-
-export function getStageLabel(stage: ChainStage): string {
-  return CHAIN_STAGES.find((s) => s.value === stage)?.label ?? stage;
 }
 
 export function getStageShortLabel(stage: ChainStage): string {

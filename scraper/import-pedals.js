@@ -193,4 +193,7 @@ async function importPedals(jsonFile) {
 
 // Run
 const jsonFile = process.argv[2] || path.join(__dirname, '../boss_pedals.json');
-importPedals(jsonFile).catch(console.error);
+importPedals(jsonFile).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

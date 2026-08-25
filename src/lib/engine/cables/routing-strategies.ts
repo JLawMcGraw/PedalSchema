@@ -40,10 +40,6 @@ import type { ObstacleSet } from '../obstacles';
 import { getBoxForPedal } from '../obstacles';
 import { validateCablePath, type ValidationResult } from './validation';
 
-// Re-export types
-export type { Point, Box, BoardBounds };
-
-
 /**
  * How far outside the board intermediate points may go, in pixels.
  * A jack on a pedal flush against the board edge points its stub slightly

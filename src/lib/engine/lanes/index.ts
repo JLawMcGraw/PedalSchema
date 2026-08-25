@@ -125,7 +125,7 @@ export type LaneOutcome =
   | 'validation-failed';
 
 /** A corridor that was asked to seat more cables than it can hold. */
-export interface CorridorPressure {
+interface CorridorPressure {
   corridorId: number;
   /** Lanes the corridor can seat at MIN_LANE_SPACING. */
   capacity: number;
@@ -135,7 +135,7 @@ export interface CorridorPressure {
   evicted: number;
 }
 
-export interface LaneDiagnostics {
+interface LaneDiagnostics {
   /** One per request, in request order. */
   outcomes: LaneOutcome[];
   /** Over-capacity corridors only. Empty means the cliff never fired. */

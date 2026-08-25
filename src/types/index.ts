@@ -38,7 +38,7 @@ export type JackType =
 
 export type PowerPolarity = 'center_negative' | 'center_positive';
 
-export type LoopType = 'series' | 'parallel' | 'switchable' | 'none';
+type LoopType = 'series' | 'parallel' | 'switchable' | 'none';
 
 export type ChainLocation =
   | 'front_of_amp'
@@ -66,7 +66,7 @@ export interface Board {
   rails: BoardRail[];
 }
 
-export interface BoardRail {
+interface BoardRail {
   id: string;
   boardId: string;
   positionFromBackInches: number;
@@ -185,27 +185,6 @@ export interface PowerSupply {
   outputs: PowerOutput[];
 }
 
-export interface Configuration {
-  id: string;
-  userId: string;
-  name: string;
-  description: string | null;
-  boardId: string;
-  ampId: string | null;
-  useEffectsLoop: boolean;
-  use4CableMethod: boolean;
-  /** When true, modulation pedals go in effects loop for cleaner sound */
-  modulationInLoop: boolean;
-  createdAt: string;
-  updatedAt: string;
-  isPublic: boolean;
-  shareSlug: string | null;
-  board?: Board;
-  amp?: Amp;
-  placedPedals?: PlacedPedal[];
-  cables?: Cable[];
-}
-
 export interface PlacedPedal {
   id: string;
   configurationId: string;
@@ -216,7 +195,7 @@ export interface PlacedPedal {
   chainPosition: number;
   location: ChainLocation;
   /** When true, user manually set location - signal chain rules won't override it */
-  locationOverride?: boolean;
+  locationOverride: boolean;
   /** When true, user manually pinned this pedal's chain position - rules won't reorder it */
   chainPositionLocked?: boolean;
   /**
@@ -332,7 +311,7 @@ export interface ChainRule {
 // Routing Configuration Types
 // ============================================
 
-export type RoutingMode = 'standard' | 'loop' | '4cable';
+type RoutingMode = 'standard' | 'loop' | '4cable';
 
 export interface PedalRoutingConfig {
   pedalId: string;
@@ -355,13 +334,6 @@ export interface RoutingConfig {
   allowRotation?: boolean;
   // Per-pedal routing configurations
   pedalConfigs: PedalRoutingConfig[];
-}
-
-export interface WiringOption {
-  id: string;
-  name: string;
-  description: string;
-  isSelected: boolean;
 }
 
 // ============================================

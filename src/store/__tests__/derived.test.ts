@@ -70,6 +70,7 @@ function makePlaced(id: string, pedalId: string, x: number, y: number, chainPosi
     rotationDegrees: 0,
     chainPosition,
     location: 'front_of_amp',
+    locationOverride: false,
     isActive: true,
     useLoop: false,
     createdAt: NOW,

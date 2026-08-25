@@ -24,7 +24,7 @@ import { findJack } from '../cables/endpoints';
 // Types
 // ---------------------------------------------------------------------------
 
-export type ExternalAnchorType = 'guitar' | 'amp_input' | 'amp_send' | 'amp_return';
+type ExternalAnchorType = 'guitar' | 'amp_input' | 'amp_send' | 'amp_return';
 
 export type Anchor =
   | { kind: 'external'; type: ExternalAnchorType }
@@ -39,7 +39,7 @@ export interface Segment {
   to: Anchor;
 }
 
-export type TopologyMode = 'standard' | 'pedal-loop' | '4cm';
+type TopologyMode = 'standard' | 'pedal-loop' | '4cm';
 
 export interface SignalTopology {
   mode: TopologyMode;
@@ -54,8 +54,8 @@ export interface SignalTopology {
   effectsLoopEnabled: boolean;
 }
 
-export const ext = (type: ExternalAnchorType): Anchor => ({ kind: 'external', type });
-export const pedalAnchor = (pedalId: string, jack: 'input' | 'output' | 'send' | 'return'): Anchor =>
+const ext = (type: ExternalAnchorType): Anchor => ({ kind: 'external', type });
+const pedalAnchor = (pedalId: string, jack: 'input' | 'output' | 'send' | 'return'): Anchor =>
   ({ kind: 'pedal', pedalId, jack });
 
 // ---------------------------------------------------------------------------
@@ -63,16 +63,16 @@ export const pedalAnchor = (pedalId: string, jack: 'input' | 'output' | 'send' |
 // ---------------------------------------------------------------------------
 
 /** Categories that stay between guitar and the hub input */
-export const FOUR_CM_BEFORE_HUB = ['tuner', 'filter', 'wah', 'pitch'];
+const FOUR_CM_BEFORE_HUB = ['tuner', 'filter', 'wah', 'pitch'];
 /** Categories that run in the hub's own loop (into the amp preamp) */
-export const FOUR_CM_IN_HUB_LOOP = ['overdrive', 'distortion', 'fuzz', 'boost'];
+const FOUR_CM_IN_HUB_LOOP = ['overdrive', 'distortion', 'fuzz', 'boost'];
 /** Categories that run in the amp's effects loop */
-export const FOUR_CM_IN_AMP_LOOP = ['modulation', 'tremolo', 'delay', 'reverb'];
+const FOUR_CM_IN_AMP_LOOP = ['modulation', 'tremolo', 'delay', 'reverb'];
 /** Categories after everything (loopers, master volume) */
-export const FOUR_CM_AFTER_HUB = ['looper', 'volume'];
+const FOUR_CM_AFTER_HUB = ['looper', 'volume'];
 
 /** Drive categories auto-routed through an NS-2 style pedal loop */
-export const PEDAL_LOOP_CATEGORIES = ['overdrive', 'distortion', 'fuzz', 'boost'];
+const PEDAL_LOOP_CATEGORIES = ['overdrive', 'distortion', 'fuzz', 'boost'];
 
 // ---------------------------------------------------------------------------
 // Derivation
@@ -335,4 +335,3 @@ export function ampClusters(topology: SignalTopology): Segment[] {
       return topology.segments.filter((s) => s.id === 'amp-loop');
   }
 }
-

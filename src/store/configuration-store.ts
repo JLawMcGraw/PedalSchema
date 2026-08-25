@@ -22,6 +22,7 @@ interface HistorySnapshot {
   placedPedals: PlacedPedal[];
   pedalsById: Record<string, Pedal>;
   routingConfig: RoutingConfig;
+  powerSupply: PowerSupply | null;
 }
 
 const HISTORY_LIMIT = 50;
@@ -39,6 +40,10 @@ interface ConfigurationState {
    */
   isPublic: boolean;
   shareSlug: string | null;
+  /** Server-side optimistic concurrency token returned by the save RPC. */
+  serverRevision: number;
+  /** Monotonic token for every local change that belongs in a save. */
+  mutationVersion: number;
 
   // References
   board: Board | null;
@@ -71,7 +76,8 @@ interface ConfigurationState {
    *
    * The control rule reads "UNSAVED - 3 EDITS", and `history.past.length`
    * alone cannot say that: it counts edits since the board was LOADED and
-   * `markClean` does not reset it. Save at five edits, make one more, and a
+   * marking a save successful does not reset it. Save at five edits, make one
+   * more, and a
    * bare stack depth reports six unsaved edits when only one is.
    *
    * Compared as a DISTANCE, not a subtraction, because undoing back past the
@@ -114,6 +120,8 @@ interface ConfigurationState {
    * wild that printed as `{}`.
    */
   saveError: string | null;
+  /** A stale-tab conflict blocks further saves until the server copy is reloaded. */
+  saveConflict: string | null;
 
   // Actions
   initConfiguration: (config: {
@@ -122,6 +130,7 @@ interface ConfigurationState {
     description?: string;
     isPublic?: boolean;
     shareSlug?: string | null;
+    revision?: number;
     board: Board;
     amp?: Amp | null;
     useEffectsLoop?: boolean;
@@ -135,11 +144,12 @@ interface ConfigurationState {
      * have their own columns - so whatever this carries for them is ignored.
      */
     routingConfig?: Partial<RoutingConfig>;
+    powerSupplies?: PowerSupply[];
+    powerSupply?: PowerSupply | null;
   }) => void;
 
   setBoard: (board: Board) => void;
   setAmp: (amp: Amp | null) => void;
-  setPowerSupplies: (supplies: PowerSupply[]) => void;
   /** Choose the supply this board is planned against. null clears it. */
   setPowerSupply: (supply: PowerSupply | null) => void;
   /** Plug a pedal into an output. null unassigns it. */
@@ -183,9 +193,10 @@ interface ConfigurationState {
   undo: () => void;
   redo: () => void;
 
-  markClean: () => void;
+  markSaved: (savedMutationVersion: number, serverRevision: number) => void;
   setSaving: (saving: boolean) => void;
   setSaveError: (message: string | null) => void;
+  setSaveConflict: (message: string | null) => void;
 }
 
 function generateId(): string {
@@ -195,6 +206,7 @@ function generateId(): string {
 export const useConfigurationStore = create<ConfigurationState>()(
   subscribeWithSelector(
     immer((set, get) => {
+      let optimizeGeneration = 0;
       const takeSnapshot = (): HistorySnapshot => {
         const s = get();
         return {
@@ -206,6 +218,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           placedPedals: s.placedPedals,
           pedalsById: s.pedalsById,
           routingConfig: s.routingConfig,
+          powerSupply: s.powerSupply,
         };
       };
 
@@ -233,6 +246,12 @@ export const useConfigurationStore = create<ConfigurationState>()(
         state.placedPedals = snapshot.placedPedals;
         state.pedalsById = snapshot.pedalsById;
         state.routingConfig = snapshot.routingConfig;
+        state.powerSupply = snapshot.powerSupply;
+      };
+
+      const markDirty = (state: { isDirty: boolean; mutationVersion: number }) => {
+        state.isDirty = true;
+        state.mutationVersion += 1;
       };
 
       return {
@@ -241,6 +260,8 @@ export const useConfigurationStore = create<ConfigurationState>()(
       description: '',
       isPublic: false,
       shareSlug: null,
+      serverRevision: 1,
+      mutationVersion: 0,
       board: null,
       amp: null,
       useEffectsLoop: false,
@@ -263,14 +284,20 @@ export const useConfigurationStore = create<ConfigurationState>()(
       isSaving: false,
       isOptimizing: false,
       saveError: null,
+      saveConflict: null,
 
       initConfiguration: (config) => {
+        optimizeGeneration += 1;
         set((state) => {
           state.id = config.id || null;
           state.name = config.name;
           state.description = config.description || '';
           state.isPublic = config.isPublic ?? false;
           state.shareSlug = config.shareSlug ?? null;
+          state.serverRevision = config.revision ?? 1;
+          // Never reset this token: an optimizer from the previous board must
+          // become stale even when a new board starts with no local edits.
+          state.mutationVersion += 1;
           state.board = config.board;
           state.amp = config.amp || null;
           state.useEffectsLoop = config.useEffectsLoop || false;
@@ -278,6 +305,8 @@ export const useConfigurationStore = create<ConfigurationState>()(
           state.modulationInLoop = config.modulationInLoop || false;
           state.placedPedals = config.placedPedals || [];
           state.pedalsById = config.pedalsById || {};
+          state.powerSupplies = config.powerSupplies ?? [];
+          state.powerSupply = config.powerSupply ?? null;
           // Stored pedal-loop wiring. The two flags that have their own
           // columns are re-applied from those, never from this JSON, so the
           // column and the blob cannot drift into disagreeing.
@@ -294,6 +323,10 @@ export const useConfigurationStore = create<ConfigurationState>()(
           state.savedHistoryDepth = 0;
           state.lastSavedAt = null;
           state.isDirty = false;
+          state.isSaving = false;
+          state.isOptimizing = false;
+          state.saveError = null;
+          state.saveConflict = null;
         });
         // Normalize chain order for the loaded configuration
         get().normalizeChain();
@@ -303,11 +336,9 @@ export const useConfigurationStore = create<ConfigurationState>()(
         recordHistory();
         set((state) => {
           state.board = board;
-          state.isDirty = true;
+          markDirty(state);
         });
       },
-
-      setPowerSupplies: (supplies) => set({ powerSupplies: supplies }),
 
       /**
        * Choosing a different supply does NOT clear existing assignments.
@@ -319,7 +350,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
         recordHistory();
         set((state) => {
           state.powerSupply = supply;
-          state.isDirty = true;
+          markDirty(state);
         });
       },
 
@@ -329,7 +360,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
           if (!pedal) return;
           pedal.powerOutputId = outputId;
-          state.isDirty = true;
+          markDirty(state);
         });
       },
 
@@ -337,7 +368,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
         recordHistory();
         set((state) => {
           state.amp = amp;
-          state.isDirty = true;
+          markDirty(state);
           // If amp doesn't have effects loop, disable loop options
           if (!amp?.hasEffectsLoop) {
             state.useEffectsLoop = false;
@@ -350,14 +381,14 @@ export const useConfigurationStore = create<ConfigurationState>()(
       setName: (name) => {
         set((state) => {
           state.name = name;
-          state.isDirty = true;
+          markDirty(state);
         });
       },
 
       setDescription: (description) => {
         set((state) => {
           state.description = description;
-          state.isDirty = true;
+          markDirty(state);
         });
       },
 
@@ -373,7 +404,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
         recordHistory();
         set((state) => {
           state.useEffectsLoop = use;
-          state.isDirty = true;
+          markDirty(state);
           if (!use) {
             state.use4CableMethod = false;
           }
@@ -385,7 +416,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
         recordHistory();
         set((state) => {
           state.use4CableMethod = use;
-          state.isDirty = true;
+          markDirty(state);
           if (use) {
             state.useEffectsLoop = true;
           }
@@ -397,7 +428,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
         recordHistory();
         set((state) => {
           state.routingConfig.allowRotation = allow;
-          state.isDirty = true;
+          markDirty(state);
         });
         // No normalizeChain: this changes what Optimize may do, not the signal
         // chain. Nothing moves until the next Optimize.
@@ -407,7 +438,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
         recordHistory();
         set((state) => {
           state.modulationInLoop = inLoop;
-          state.isDirty = true;
+          markDirty(state);
           // Modulation in loop requires effects loop to be enabled
           if (inLoop) {
             state.useEffectsLoop = true;
@@ -429,6 +460,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
             rotationDegrees: 0,
             chainPosition: state.placedPedals.length + 1,
             location: pedal.preferredLocation || 'front_of_amp',
+            locationOverride: false,
             // Big pedals arrive protected from Optimize turning them. A guess
             // at what you would want, offered as a default you can override
             // per pedal - not a rule, which is what the old width veto was.
@@ -441,7 +473,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
 
           state.placedPedals.push(newPlacedPedal);
           state.pedalsById[pedal.id] = pedal;
-          state.isDirty = true;
+          markDirty(state);
         });
 
         get().normalizeChain();
@@ -467,7 +499,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
               pedal.xInches = position.x;
               pedal.yInches = position.y;
             }
-            state.isDirty = true;
+            markDirty(state);
           }
         });
 
@@ -479,7 +511,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           const index = state.placedPedals.findIndex((p) => p.id === placedPedalId);
           if (index !== -1) {
             state.placedPedals.splice(index, 1);
-            state.isDirty = true;
+            markDirty(state);
           }
         });
 
@@ -526,7 +558,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
               Math.min(placed.yInches, state.board.depthInches - depthInches)
             );
           }
-          state.isDirty = true;
+          markDirty(state);
         });
       },
 
@@ -557,7 +589,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
             // Pin the pedal so signal chain rules won't reorder it on the
             // next recalculation (persisted as chain_position_locked)
             pedal.chainPositionLocked = true;
-            state.isDirty = true;
+            markDirty(state);
           }
         });
 
@@ -569,7 +601,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
           if (pedal) {
             pedal.chainPositionLocked = locked;
-            state.isDirty = true;
+            markDirty(state);
           }
         });
 
@@ -601,7 +633,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
              * lost, just reversible.
              */
             if (locked) pedal.rotationDegrees = 0;
-            state.isDirty = true;
+            markDirty(state);
           }
         });
         // Unlocking changes nothing on its own - it only means the NEXT
@@ -616,7 +648,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
             pedal.location = location;
             // Mark as manually overridden so signal chain rules don't auto-assign
             pedal.locationOverride = true;
-            state.isDirty = true;
+            markDirty(state);
           }
         });
 
@@ -629,7 +661,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           const pedal = state.placedPedals.find((p) => p.id === placedPedalId);
           if (pedal) {
             pedal.useLoop = useLoop;
-            state.isDirty = true;
+            markDirty(state);
           }
         });
       },
@@ -677,7 +709,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           } else {
             state.routingConfig.pedalConfigs.push(newConfig);
           }
-          state.isDirty = true;
+          markDirty(state);
         });
       },
 
@@ -711,27 +743,23 @@ export const useConfigurationStore = create<ConfigurationState>()(
             config.mode = 'standard';
           }
 
-          state.isDirty = true;
+          markDirty(state);
         });
       },
 
       optimizeLayout: async () => {
-        const { board, placedPedals, pedalsById, routingConfig, useEffectsLoop, use4CableMethod, isOptimizing } = get();
+        const {
+          board, placedPedals, pedalsById, routingConfig,
+          useEffectsLoop, use4CableMethod, isOptimizing, mutationVersion,
+        } = get();
 
         if (!board || placedPedals.length === 0) return;
         // A second click while one run is in flight would race two results onto
         // the same board, and the loser would still push an undo entry.
         if (isOptimizing) return;
 
-        // Undo must capture the board as it was BEFORE the run, and must be
-        // recorded on this thread while that is still what the board looks like.
-        recordHistory();
+        const runId = ++optimizeGeneration;
         set({ isOptimizing: true });
-
-        // What the board looked like when the run started. If any of it changes
-        // while the worker is busy, the answer describes a board that no longer
-        // exists and applying it would move the wrong pedals.
-        const requestedFor = placedPedals.map((p) => p.id).join(',');
 
         let result;
         try {
@@ -743,13 +771,13 @@ export const useConfigurationStore = create<ConfigurationState>()(
           });
         } catch (error) {
           console.error('[optimizeLayout] failed:', error);
-          set({ isOptimizing: false });
+          if (runId === optimizeGeneration) set({ isOptimizing: false });
           return;
         }
+        if (runId !== optimizeGeneration) return;
         set({ isOptimizing: false });
 
-        const current = get().placedPedals;
-        if (current.map((p) => p.id).join(',') !== requestedFor) {
+        if (get().mutationVersion !== mutationVersion) {
           console.warn('[optimizeLayout] board changed while optimizing - result discarded');
           return;
         }
@@ -782,6 +810,9 @@ export const useConfigurationStore = create<ConfigurationState>()(
         };
 
         const chainOrderValid = validateChainOrder(result.chainOrder, placedPedals);
+
+        // Only a result that will actually be applied earns an undo entry.
+        recordHistory();
 
         // Apply the new positions and chain order
         set((state) => {
@@ -825,7 +856,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
                 )
               : null;
 
-          state.isDirty = true;
+          markDirty(state);
         });
 
       },
@@ -841,7 +872,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           state.history.past.pop();
           state.history.future.push(current);
           applySnapshot(state, previous);
-          state.isDirty = true;
+          markDirty(state);
         });
       },
 
@@ -854,23 +885,21 @@ export const useConfigurationStore = create<ConfigurationState>()(
           state.history.future.pop();
           state.history.past.push(current);
           applySnapshot(state, next);
-          state.isDirty = true;
+          markDirty(state);
         });
       },
 
-      markClean: () => {
-        // A save that worked also clears the last failure - otherwise the
-        // banner outlives the problem it describes.
-        //
-        // It also plants the save point the edit counter measures from. Read
-        // through get() at call time rather than from a closure: this runs
-        // after an await in the save handler, and the stack has usually moved
-        // since the request went out.
-        set({
-          isDirty: false,
-          saveError: null,
-          savedHistoryDepth: get().history.past.length,
-          lastSavedAt: Date.now(),
+      markSaved: (savedMutationVersion, serverRevision) => {
+        set((state) => {
+          state.serverRevision = serverRevision;
+          state.saveError = null;
+          state.lastSavedAt = Date.now();
+          // A newer local edit was not present in the payload that just
+          // committed. Adopt the receipt, but do not call that newer state saved.
+          if (state.mutationVersion === savedMutationVersion) {
+            state.isDirty = false;
+            state.savedHistoryDepth = state.history.past.length;
+          }
         });
       },
 
@@ -880,6 +909,10 @@ export const useConfigurationStore = create<ConfigurationState>()(
 
       setSaveError: (message) => {
         set({ saveError: message });
+      },
+
+      setSaveConflict: (message) => {
+        set({ saveConflict: message });
       },
       };
     })

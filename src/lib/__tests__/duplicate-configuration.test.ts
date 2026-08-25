@@ -67,6 +67,14 @@ describe('withoutColumns', () => {
     expect(copied.user_id).toBe('u');
   });
 
+  it('starts a duplicate at the database default revision', () => {
+    const copied = withoutColumns(
+      { id: 'x', name: 'test', revision: 17 },
+      CONFIG_COLUMNS_NOT_COPIED
+    );
+    expect(copied).not.toHaveProperty('revision');
+  });
+
   it('leaves the original untouched', () => {
     const row = { id: 'x', name: 'test' };
     withoutColumns(row, ['id']);

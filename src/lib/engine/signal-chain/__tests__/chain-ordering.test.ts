@@ -58,6 +58,7 @@ function makePlaced(
     useLoop: false,
     createdAt: NOW,
     ...overrides,
+    locationOverride: overrides.locationOverride ?? false,
   };
 }
 

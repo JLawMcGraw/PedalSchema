@@ -9,6 +9,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useConfigurationStore } from '../configuration-store';
 import { makeBoard, makePedalSet, makeAmp } from '@/lib/engine/__tests__/support/fixtures';
+import type { PowerSupply } from '@/types';
 
 function initStore() {
   const board = makeBoard('wide');
@@ -80,9 +81,9 @@ describe('undo/redo', () => {
     expect(store().useEffectsLoop).toBe(false);
   });
 
-  it('undoes optimizeLayout as a single step', () => {
+  it('undoes optimizeLayout as a single step', async () => {
     const before = store().placedPedals.map((p) => [p.id, p.xInches, p.yInches]);
-    store().optimizeLayout();
+    await store().optimizeLayout();
     store().undo();
     expect(store().placedPedals.map((p) => [p.id, p.xInches, p.yInches])).toEqual(before);
   });
@@ -117,8 +118,40 @@ describe('undo/redo', () => {
   it('marks the configuration dirty after undo', () => {
     const target = store().placedPedals[0];
     store().movePedal(target.id, { x: 5, y: 3 });
-    store().markClean();
+    store().markSaved(store().mutationVersion, store().serverRevision);
     store().undo();
     expect(store().isDirty).toBe(true);
+  });
+
+  it('undoes and redoes the selected power supply', () => {
+    const supply: PowerSupply = {
+      id: 'supply-1', name: 'Test Supply', manufacturer: 'Test',
+      isIsolated: true, isSystem: true, createdBy: null, notes: null, outputs: [],
+    };
+
+    store().setPowerSupply(supply);
+    expect(store().powerSupply?.id).toBe('supply-1');
+    store().undo();
+    expect(store().powerSupply).toBeNull();
+    store().redo();
+    expect(store().powerSupply?.id).toBe('supply-1');
+  });
+
+  it('keeps newer edits dirty when an older save receipt arrives', () => {
+    const savedVersion = store().mutationVersion;
+    store().setName('Edited while saving');
+    store().markSaved(savedVersion, 2);
+
+    expect(store().serverRevision).toBe(2);
+    expect(store().isDirty).toBe(true);
+  });
+
+  it('marks clean only when the save receipt matches the current mutation', () => {
+    store().setName('Saved name');
+    const savedVersion = store().mutationVersion;
+    store().markSaved(savedVersion, 2);
+
+    expect(store().serverRevision).toBe(2);
+    expect(store().isDirty).toBe(false);
   });
 });

@@ -20,7 +20,7 @@ import { SCALE } from './fixtures';
  * on the last - the jack stubs) is the raw "cable drawn through a pedal"
  * failure, independent of margin policy.
  */
-export function pathBodyViolations(
+function pathBodyViolations(
   path: Point[],
   boxes: Box[],
   fromBoxIdx: number,

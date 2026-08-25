@@ -33,7 +33,7 @@ import type { JackType } from '@/types';
  * Re-checked by `.claude/scripts/verify-palette.js`, which reads these values
  * out of this file.
  */
-export type JackGroup = 'in' | 'out' | 'other';
+type JackGroup = 'in' | 'out' | 'other';
 
 const GROUPS: Record<JackType, JackGroup> = {
   input: 'in',
@@ -46,13 +46,13 @@ const GROUPS: Record<JackType, JackGroup> = {
   midi_out: 'other',
 };
 
-export const JACK_COLOURS: Record<JackGroup, string> = {
+const JACK_COLOURS: Record<JackGroup, string> = {
   in: '#2da6fa', //    oklch(0.70 0.16 245)
   out: '#e6ad00', //   oklch(0.78 0.16 85)
   other: '#9fa5ac', // oklch(0.72 0.012 250) = --muted-foreground
 };
 
-export function getJackGroup(jackType: JackType): JackGroup {
+function getJackGroup(jackType: JackType): JackGroup {
   return GROUPS[jackType] ?? 'other';
 }
 

@@ -33,6 +33,7 @@ export function SharedBoardView({ config }: { config: LoadedConfiguration }) {
   if (!seeded.current) {
     useConfigurationStore.getState().initConfiguration({
       id: config.id,
+      revision: config.revision,
       name: config.name,
       description: config.description,
       isPublic: config.isPublic,
@@ -45,6 +46,8 @@ export function SharedBoardView({ config }: { config: LoadedConfiguration }) {
       placedPedals: config.placedPedals,
       pedalsById: config.pedalsById,
       routingConfig: config.routingConfig,
+      powerSupplies: config.powerSupplies,
+      powerSupply: config.powerSupply,
     });
     seeded.current = true;
   }

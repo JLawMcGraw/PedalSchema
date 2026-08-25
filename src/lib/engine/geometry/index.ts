@@ -216,7 +216,7 @@ function onSegment(p1: Point, p2: Point, p: Point): boolean {
 }
 
 /** Check if two line segments intersect */
-export function segmentsIntersect(a1: Point, a2: Point, b1: Point, b2: Point): boolean {
+function segmentsIntersect(a1: Point, a2: Point, b1: Point, b2: Point): boolean {
   const d1 = direction(b1, b2, a1);
   const d2 = direction(b1, b2, a2);
   const d3 = direction(a1, a2, b1);

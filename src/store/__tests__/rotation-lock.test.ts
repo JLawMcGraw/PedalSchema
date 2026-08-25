@@ -88,7 +88,7 @@ describe('rotation lock', () => {
   it('marks the config dirty and is undoable', () => {
     store().addPedal(bigPedal(), { x: 1, y: 1 });
     const id = added('bigsky').id;
-    store().markClean();
+    store().markSaved(store().mutationVersion, store().serverRevision);
 
     store().setRotationLocked(id, false);
     expect(store().isDirty).toBe(true);

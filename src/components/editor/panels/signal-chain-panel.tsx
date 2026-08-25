@@ -97,6 +97,7 @@ function ChainRow({
 
       {onUnlock && (
         <button
+          type="button"
           title="Position pinned - click to let chain rules order this pedal again"
           className="shrink-0 text-muted-foreground hover:text-foreground"
           onClick={(e) => {
@@ -126,6 +127,7 @@ function ChainRow({
       */}
       <span className="absolute right-2 flex shrink-0 items-center gap-0.5 rounded-none bg-background/95 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100">
         <button
+          type="button"
           title="Move earlier in the chain"
           disabled={!onMoveUp}
           className="rounded-none p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-25"
@@ -137,6 +139,7 @@ function ChainRow({
           <CaretUp className="size-3.5" />
         </button>
         <button
+          type="button"
           title="Move later in the chain"
           disabled={!onMoveDown}
           className="rounded-none p-0.5 text-muted-foreground hover:bg-background hover:text-foreground disabled:opacity-25"
@@ -148,6 +151,7 @@ function ChainRow({
           <CaretDown className="size-3.5" />
         </button>
         <button
+          type="button"
           title={`Remove ${displayName}`}
           className="rounded-none p-0.5 text-muted-foreground hover:bg-background hover:text-destructive"
           onClick={(e) => {

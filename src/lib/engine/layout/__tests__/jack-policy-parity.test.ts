@@ -48,7 +48,8 @@ function makePedal(jacks: PedalJack[]): Pedal {
 const placed = (pedal: Pedal): PlacedPedal => ({
   id: 'placed-1', configurationId: 'c1', pedalId: pedal.id,
   xInches: 0, yInches: 0, rotationDegrees: 0, chainPosition: 1,
-  location: 'front_of_amp', isActive: true, useLoop: false, createdAt: NOW, pedal,
+  location: 'front_of_amp', locationOverride: false,
+  isActive: true, useLoop: false, createdAt: NOW, pedal,
 });
 
 describe('the layout engine uses the same jack the router does', () => {

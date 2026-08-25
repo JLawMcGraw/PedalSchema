@@ -17,7 +17,7 @@ import { getCategoryDefaultOrder } from '@/lib/constants/pedal-categories';
  * Signal Chain Engine
  * Calculates optimal pedal ordering based on category defaults and special rules
  */
-export class SignalChainEngine {
+class SignalChainEngine {
   private rules = SIGNAL_CHAIN_RULES;
 
   /**

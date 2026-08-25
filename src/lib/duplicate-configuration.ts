@@ -31,6 +31,7 @@ export const CONFIG_COLUMNS_NOT_COPIED = [
   'id',
   'created_at',
   'updated_at',
+  'revision',
   'share_slug',
   'is_public',
 ] as const;

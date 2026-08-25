@@ -82,8 +82,3 @@ export async function runOptimize(input: Input): Promise<ScoredJointOptimization
     );
   });
 }
-
-/** Stop caring about a run whose result is no longer wanted. */
-export function abandonOptimize(requestId: number): void {
-  pending.delete(requestId);
-}

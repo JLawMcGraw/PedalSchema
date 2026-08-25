@@ -12,11 +12,13 @@ import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 import { Button } from '@/components/ui/button';
 import { PlusCircle, ListBullets } from '@phosphor-icons/react';
-import { describeSaveError, failIf } from '@/lib/save-error';
+import { describeSaveError } from '@/lib/save-error';
+import { saveConfiguration, SaveConflictError } from '@/lib/save-configuration';
 import type { Board, Amp, Pedal, PlacedPedal, RoutingConfig, PowerSupply } from '@/types';
 
 interface EditorClientProps {
   configId: string;
+  revision: number;
   configName: string;
   configDescription: string;
   isPublic: boolean;
@@ -38,6 +40,7 @@ interface EditorClientProps {
 
 export function EditorClient({
   configId,
+  revision,
   configName,
   configDescription,
   isPublic,
@@ -57,9 +60,11 @@ export function EditorClient({
 }: EditorClientProps) {
   const initConfiguration = useConfigurationStore((s) => s.initConfiguration);
   const isDirty = useConfigurationStore((s) => s.isDirty);
-  const { selectedPedalId } = useEditorStore();
+  const saveConflict = useConfigurationStore((s) => s.saveConflict);
+  const selectedPedalId = useEditorStore((s) => s.selectedPedalId);
   const [leftPanelOpen, setLeftPanelOpen] = useState(false);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [conflictDetailsOpen, setConflictDetailsOpen] = useState(true);
 
   /*
    * On mobile (< lg) the rails are Sheets, so selecting a pedal has to OPEN
@@ -78,6 +83,7 @@ export function EditorClient({
   useEffect(() => {
     initConfiguration({
       id: configId,
+      revision,
       name: configName,
       description: configDescription,
       isPublic,
@@ -90,15 +96,9 @@ export function EditorClient({
       placedPedals: initialPlacedPedals,
       pedalsById: initialPedalsById,
       routingConfig: initialRoutingConfig,
+      powerSupplies: initialPowerSupplies ?? [],
+      powerSupply: initialPowerSupply ?? null,
     });
-    // Supplies are catalogue data plus one selection, not board state, so they
-    // are seeded alongside initConfiguration rather than inside it - nothing
-    // here belongs in an undo snapshot.
-    const store = useConfigurationStore.getState();
-    store.setPowerSupplies(initialPowerSupplies ?? []);
-    if (initialPowerSupply !== undefined) {
-      useConfigurationStore.setState({ powerSupply: initialPowerSupply });
-    }
     /*
      * `initialPowerSupplies` and `initialPowerSupply` are DELIBERATELY not
      * dependencies, and adding them is not a safe way to silence this.
@@ -116,6 +116,7 @@ export function EditorClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     configId,
+    revision,
     configName,
     configDescription,
     isPublic,
@@ -131,114 +132,47 @@ export function EditorClient({
     initConfiguration,
   ]);
 
-  // Save handler
-  //
-  // Everything is read from getState() at call time (never from render closures -
-  // a stale closure here previously saved modulation_in_loop's initial value forever).
-  //
-  // ORDER OF WRITES. Prune the rows the user removed FIRST, then upsert what is
-  // left. Both halves of that matter and both were once wrong:
-  //
-  //   * It must not be delete-ALL-then-insert. That had a data-loss window: a
-  //     failure between the two wiped the board.
-  //   * It must not be upsert-then-prune either, which is what replaced it.
-  //     configuration_pedals has UNIQUE(configuration_id, chain_position), and
-  //     the prune is a SEPARATE request, so the upsert commits while the
-  //     removed pedal's row is still holding its old position. If any kept
-  //     pedal has moved into that position - which is routine, since removing a
-  //     pedal renumbers the chain - the upsert fails on a duplicate that is
-  //     entirely real at commit time:
-  //       23505 Key (configuration_id, chain_position)=(..., 3) already exists
-  //     Deferring the constraint does not help; the row genuinely is there.
-  //
-  // Pruning first is safe in a way delete-all was not: it removes ONLY rows the
-  // user has already deleted, so a failure part-way through cannot lose a pedal
-  // they still have. Reordering among the rows that REMAIN is what the deferred
-  // constraint covers (migration 20260801000005) - the two fixes address
-  // different collisions and are both required.
+  useEffect(() => {
+    if (saveConflict) setConflictDetailsOpen(true);
+  }, [saveConflict]);
+
+  // One RPC owns the configuration update, prune, and pedal upsert. The local
+  // mutation token prevents an older successful request from clearing edits
+  // made while that transaction was in flight.
   const handleSave = useCallback(async () => {
     const {
       id, name, description, placedPedals, amp,
       useEffectsLoop, use4CableMethod, modulationInLoop, routingConfig, powerSupply,
-      setSaving, markClean, setSaveError,
+      serverRevision, mutationVersion, saveConflict,
+      setSaving, markSaved, setSaveError, setSaveConflict,
     } = useConfigurationStore.getState();
 
-    if (!id) return;
+    if (!id || saveConflict) return;
 
     setSaving(true);
     setSaveError(null);
 
     try {
-      const supabase = createClient();
-
-      const { error: configError } = await supabase
-        .from('configurations')
-        .update({
-          name,
-          description,
-          amp_id: amp?.id || null,
-          use_effects_loop: useEffectsLoop,
-          use_4_cable_method: use4CableMethod,
-          modulation_in_loop: modulationInLoop,
-          // Pedal-loop wiring (which pedal is the hub, what runs in its
-          // send/return) and the rotation toggle. Everything else in
-          // RoutingConfig has its own column and is NOT duplicated here - the
-          // loader rebuilds those from the columns.
-          routing_config: {
-            useLoopPedals: routingConfig.useLoopPedals,
-            pedalConfigs: routingConfig.pedalConfigs,
-            ...(routingConfig.allowRotation !== undefined
-              ? { allowRotation: routingConfig.allowRotation }
-              : {}),
-          },
-          // Which supply this board is planned against. Null is a real value
-          // here - it means demand-only reporting, not "unchanged".
-          power_supply_id: powerSupply?.id ?? null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', id);
-      failIf('Saving the configuration', configError);
-
-      // Prune rows for pedals the user removed. Must precede the upsert - see
-      // the note on this callback.
-      let pruneQuery = supabase
-        .from('configuration_pedals')
-        .delete()
-        .eq('configuration_id', id);
-      if (placedPedals.length > 0) {
-        const keepIds = placedPedals.map((p) => `"${p.id}"`).join(',');
-        pruneQuery = pruneQuery.not('id', 'in', `(${keepIds})`);
-      }
-      const { error: pruneError } = await pruneQuery;
-      failIf('Removing deleted pedals', pruneError);
-
-      // Then upsert what remains, by stable client id.
-      if (placedPedals.length > 0) {
-        const { error: upsertError } = await supabase
-          .from('configuration_pedals')
-          .upsert(
-            placedPedals.map((p) => ({
-              id: p.id,
-              configuration_id: id,
-              pedal_id: p.pedalId,
-              x_inches: p.xInches,
-              y_inches: p.yInches,
-              rotation_degrees: p.rotationDegrees,
-              chain_position: p.chainPosition,
-              location: p.location,
-              chain_position_locked: p.chainPositionLocked ?? false,
-              rotation_locked: p.rotationLocked ?? false,
-              power_output_id: p.powerOutputId ?? null,
-              is_active: p.isActive,
-              use_loop: p.useLoop,
-            })),
-            { onConflict: 'id' }
-          );
-        failIf('Saving the pedals', upsertError);
-      }
-
-      markClean();
+      const receipt = await saveConfiguration(createClient(), {
+        id,
+        expectedRevision: serverRevision,
+        name,
+        description,
+        ampId: amp?.id ?? null,
+        useEffectsLoop,
+        use4CableMethod,
+        modulationInLoop,
+        routingConfig,
+        powerSupplyId: powerSupply?.id ?? null,
+        placedPedals,
+      });
+      markSaved(mutationVersion, receipt.revision);
     } catch (error) {
+      if (error instanceof SaveConflictError) {
+        setSaveConflict(error.message);
+        setSaveError(null);
+        return;
+      }
       // Config stays dirty so the toolbar keeps showing the unsaved state -
       // and saveError says WHY, in the UI, because a console line nobody has
       // open is not a report.
@@ -274,6 +208,36 @@ export function EditorClient({
   return (
     <div className="flex flex-col h-[calc(100dvh-2.75rem)]">
       <EditorToolbar onSave={handleSave} />
+
+      {saveConflict && (
+        <div className="flex items-center justify-between gap-4 border-b border-destructive/40 bg-destructive/10 px-4 py-2">
+          <p className="text-xs text-destructive">
+            {conflictDetailsOpen ? saveConflict : 'Save conflict — reload is required before saving again.'}
+          </p>
+          <div className="flex shrink-0 items-center gap-3">
+            {conflictDetailsOpen && (
+              <button
+                type="button"
+                className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground"
+                onClick={() => setConflictDetailsOpen(false)}
+              >
+                Keep editing
+              </button>
+            )}
+            <button
+              type="button"
+              className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-destructive hover:underline"
+              onClick={() => {
+                if (window.confirm('Reload the server version? Your unsaved changes in this tab will be lost.')) {
+                  window.location.reload();
+                }
+              }}
+            >
+              Reload server version
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-1 overflow-hidden min-h-0 max-w-[2200px] mx-auto w-full">
         {/* Left rail - what is on the board, in chain order (desktop only) */}

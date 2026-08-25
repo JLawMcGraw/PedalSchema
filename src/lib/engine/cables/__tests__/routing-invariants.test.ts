@@ -98,6 +98,7 @@ function makePlaced(
     rotationDegrees: 0,
     chainPosition,
     location,
+    locationOverride: false,
     isActive: true,
     useLoop: false,
     createdAt: NOW,

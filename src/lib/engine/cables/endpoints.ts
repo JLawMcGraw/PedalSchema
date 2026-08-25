@@ -17,7 +17,7 @@ import type { Point } from '../geometry';
 import { rotateSide, rotatedFootprint } from '../geometry/rotation';
 
 /** Horizontal distance of external endpoints from the board edge, in inches */
-export const EXTERNAL_OFFSET_INCHES = 1.5;
+const EXTERNAL_OFFSET_INCHES = 1.5;
 
 /**
  * Where the guitar sits vertically, as a fraction of board depth.
@@ -34,13 +34,13 @@ export const EXTERNAL_OFFSET_INCHES = 1.5;
  * touched: amp endpoints are at -EXTERNAL_OFFSET_INCHES and the guitar at
  * width + EXTERNAL_OFFSET_INCHES, which is the arrangement asked for.
  */
-export const GUITAR_Y_FRACTION = 0.8;
+const GUITAR_Y_FRACTION = 0.8;
 
 /** Amp jack vertical positions as fractions of board depth */
-export const AMP_RETURN_Y_FRACTION = 0.2;
-export const AMP_SEND_Y_FRACTION = 0.5;
-export const AMP_INPUT_Y_FRACTION_WITH_LOOP = 0.8;
-export const AMP_INPUT_Y_FRACTION_NO_LOOP = 0.5;
+const AMP_RETURN_Y_FRACTION = 0.2;
+const AMP_SEND_Y_FRACTION = 0.5;
+const AMP_INPUT_Y_FRACTION_WITH_LOOP = 0.8;
+const AMP_INPUT_Y_FRACTION_NO_LOOP = 0.5;
 
 export type ExternalEndpointType = 'guitar' | 'amp_input' | 'amp_send' | 'amp_return';
 

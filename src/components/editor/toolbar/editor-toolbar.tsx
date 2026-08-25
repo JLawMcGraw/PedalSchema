@@ -93,12 +93,13 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
     useEditorStore(
     useShallow((s) => ({ zoom: s.zoom, zoomIn: s.zoomIn, zoomOut: s.zoomOut, fitToContent: s.fitToContent, zoomTo100: s.zoomTo100, gridVisible: s.gridVisible, toggleGrid: s.toggleGrid, cablesVisible: s.cablesVisible, toggleCables: s.toggleCables }))
   );
-  const { isDirty, isSaving, isOptimizing, saveError, placedPedals, optimizeLayout, undo, redo, canUndo, canRedo, unsavedEdits } = useConfigurationStore(
+  const { isDirty, isSaving, isOptimizing, saveError, saveConflict, placedPedals, optimizeLayout, undo, redo, canUndo, canRedo, unsavedEdits } = useConfigurationStore(
     useShallow((s) => ({
       isDirty: s.isDirty,
       isSaving: s.isSaving,
       isOptimizing: s.isOptimizing,
       saveError: s.saveError,
+      saveConflict: s.saveConflict,
       placedPedals: s.placedPedals,
       optimizeLayout: s.optimizeLayout,
       undo: s.undo,
@@ -405,7 +406,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
               type="button"
               data-save-board
               onClick={onSave}
-              disabled={isSaving || !isDirty}
+              disabled={isSaving || !isDirty || Boolean(saveConflict)}
               className={cn(
                 'bg-primary px-3 py-[5px] font-mono text-[10px] font-semibold uppercase leading-none tracking-[0.2em] text-primary-foreground',
                 'transition-opacity duration-200',

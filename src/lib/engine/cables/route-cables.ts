@@ -291,7 +291,7 @@ function separateParallelRuns(
  * When true, cables route through the Manhattan corridor graph
  * (src/lib/engine/lanes) with the strategy router as per-cable fallback.
  */
-export const USE_LANE_ROUTER = true;
+const USE_LANE_ROUTER = true;
 
 /**
  * Route a batch of endpoint pairs. THE routing entry point - everything that

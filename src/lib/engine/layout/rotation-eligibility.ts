@@ -80,8 +80,8 @@ import { rotationSteps } from '../geometry/rotation';
  * asserted: the value moved and the verdict did not, because 4.5 sits nowhere
  * near it.
  */
-export const MAX_ROTATABLE_WIDTH_INCHES = 4.5;
-export const MAX_ROTATABLE_DEPTH_INCHES = 6.5;
+const MAX_ROTATABLE_WIDTH_INCHES = 4.5;
+const MAX_ROTATABLE_DEPTH_INCHES = 6.5;
 
 /**
  * A treadle is deep. This is an independent functional test rather than a size

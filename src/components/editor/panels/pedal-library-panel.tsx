@@ -167,6 +167,7 @@ export function PedalLibraryPanel({ pedals }: PedalLibraryPanelProps) {
 
                     return (
                       <button
+                        type="button"
                         key={pedal.id}
                         /* A stable handle for verification scripts. Two gates
                            select a library entry by its pedal's NAME, and the

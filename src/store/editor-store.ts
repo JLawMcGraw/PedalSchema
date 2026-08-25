@@ -74,7 +74,6 @@ interface EditorState {
   fitToContent: () => void;
   /** True 1:1 - 40px per board inch. */
   zoomTo100: () => void;
-  resetZoom: () => void;
   setPan: (pan: Pan) => void;
   panBy: (delta: Pan) => void;
   /** Pan by a pointer/wheel delta in CSS pixels. */
@@ -193,21 +192,6 @@ export const useEditorStore = create<EditorState>()(
         const next = clampZoom(1, s.viewportSize, s.contentBounds);
         const panned = panForZoomAt(s.pan, s.zoom, next, centre);
         return { zoom: next, pan: clampPan(panned, next, s.viewportSize, s.contentBounds) };
-      }),
-
-    /**
-     * Kept as an alias of fitToContent though NOTHING IN src/ CALLS IT any
-     * more - the toolbar now calls fitToContent and zoomTo100 by name. It
-     * survives because "reset the view" is a reasonable thing for a future
-     * caller to want, and because its old meaning ("zoom 1, pan 0") would on a
-     * large board leave you staring at a corner. Delete it if it is still
-     * unused next time someone is in here.
-     */
-    resetZoom: () =>
-      set((s) => {
-        if (s.viewportSize.width <= 0) return { zoom: 1, pan: { x: 0, y: 0 } };
-        const zoom = clampZoom(fitZoom(s.fitBounds, s.viewportSize), s.viewportSize, s.contentBounds);
-        return { zoom, pan: clampPan(fitPan(s.fitBounds, s.viewportSize, zoom), zoom, s.viewportSize, s.contentBounds) };
       }),
 
     setPan: (pan) =>

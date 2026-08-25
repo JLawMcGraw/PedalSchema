@@ -65,21 +65,3 @@ export async function ensureSession(supabase: SupabaseClient): Promise<Anonymous
   }
   return { ok: false, error: error.message || 'Could not start a session. Try again.' };
 }
-
-/**
- * Turn an anonymous visitor into a permanent account, KEEPING their board.
- *
- * `updateUser` on the existing anonymous session, NOT `signUp`. Signing up
- * creates a second user, and the board the visitor just spent twenty minutes
- * on belongs to the first one - it does not move, and nothing in the UI would
- * explain where it went. This promotes the row they already own.
- */
-export async function claimAccount(
-  supabase: SupabaseClient,
-  email: string,
-  password: string
-): Promise<AnonymousResult> {
-  const { error } = await supabase.auth.updateUser({ email, password });
-  if (error) return { ok: false, error: error.message || 'Could not create the account.' };
-  return { ok: true };
-}

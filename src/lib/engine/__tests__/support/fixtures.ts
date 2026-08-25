@@ -8,7 +8,7 @@
 
 import type { Amp, Board, Pedal, PedalJack, PlacedPedal } from '@/types';
 
-export const NOW = '2024-01-01T00:00:00Z';
+const NOW = '2024-01-01T00:00:00Z';
 export const SCALE = 40; // px per inch, matching the editor canvas
 
 // ---------------------------------------------------------------------------
@@ -185,6 +185,7 @@ export function makePedalSet(kind: PedalSetKind): PedalSet {
       rotationDegrees: 0,
       chainPosition: i + 1,
       location: 'front_of_amp',
+      locationOverride: false,
       isActive: true,
       useLoop: false,
       createdAt: NOW,

@@ -216,6 +216,7 @@ export function PowerPanel() {
           <Section label="Draw not recorded" count={power.unknown.length}>
             {power.unknown.map((u) => (
               <button
+                type="button"
                 key={u.placedPedalId}
                 onClick={() => selectPedal(u.placedPedalId)}
                 className="block w-full text-left text-xs hover:text-primary"
@@ -242,6 +243,7 @@ export function PowerPanel() {
             {draws.map((d) => (
               <div key={d.id} className="space-y-0.5">
                 <button
+                  type="button"
                   onClick={() => selectPedal(d.id)}
                   className="flex w-full items-baseline justify-between gap-2 text-xs hover:text-primary"
                 >

@@ -31,7 +31,7 @@ import type { Pedal, Amp, PowerSupply } from '@/types';
 const CATALOGUE_TTL_SECONDS = 3600;
 
 /** Cache tag, so a future admin edit can invalidate without waiting out the TTL. */
-export const CATALOGUE_TAG = 'catalogue';
+const CATALOGUE_TAG = 'catalogue';
 
 /**
  * An anon, cookie-free Supabase client.
@@ -85,7 +85,7 @@ export function transformPedal(p: Record<string, unknown>): Pedal {
 }
 
 /** One amp row. */
-export function transformAmp(a: Record<string, unknown>): Amp {
+function transformAmp(a: Record<string, unknown>): Amp {
   return {
     id: a.id as string,
     name: a.name as string,
@@ -103,7 +103,7 @@ export function transformAmp(a: Record<string, unknown>): Amp {
 }
 
 /** One supply row, outputs sorted. */
-export function transformSupply(r: Record<string, unknown>): PowerSupply {
+function transformSupply(r: Record<string, unknown>): PowerSupply {
   return {
     id: r.id as string,
     name: r.name as string,

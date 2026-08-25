@@ -26,14 +26,14 @@ import type { Pedal, PlacedPedal, PowerOutput, PowerSupply } from '@/types';
  */
 export const TYPICAL_OUTPUT_MA = 100;
 
-export interface PowerDemand {
+interface PowerDemand {
   /** Placed pedal id, so the UI can select the pedal it is talking about. */
   placedPedalId: string;
   name: string;
   currentMa: number;
 }
 
-export interface VoltageGroup {
+interface VoltageGroup {
   voltage: number;
   /** Sum over pedals in this group whose draw is known. */
   knownTotalMa: number;
@@ -125,7 +125,7 @@ export function derivePowerSummary(
 // supply is still broken if six of its pedals are on one 100mA output.
 // ---------------------------------------------------------------------------
 
-export interface AssignedPedal {
+interface AssignedPedal {
   placedPedalId: string;
   name: string;
   /** null = not recorded. NEVER coerce to 0 - see the module header. */
@@ -133,7 +133,7 @@ export interface AssignedPedal {
   voltage: number;
 }
 
-export interface OutputLoad {
+interface OutputLoad {
   output: PowerOutput;
   pedals: AssignedPedal[];
   /** Sum over assigned pedals whose draw is known. A floor when unknownCount > 0. */

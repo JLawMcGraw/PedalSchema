@@ -32,7 +32,7 @@
 export const WORLD_UNITS_PER_INCH = 40;
 
 /** Breathing room drawn around the board, in inches and world px. */
-export const PADDING_INCHES = 2;
+const PADDING_INCHES = 2;
 export const PADDING_PX = PADDING_INCHES * WORLD_UNITS_PER_INCH;
 
 export const MAX_ZOOM = 4;
@@ -42,7 +42,7 @@ export const MAX_ZOOM = 4;
  * largest board (Pedaltrain Classic Pro, 1440x800 world px incl. padding) needs
  * ~0.22 to fit a 320px-wide phone canvas, which a 0.25 floor would forbid.
  */
-export const MIN_ZOOM = 0.1;
+const MIN_ZOOM = 0.1;
 export const ZOOM_STEP = 1.2;
 
 export interface Size { width: number; height: number }

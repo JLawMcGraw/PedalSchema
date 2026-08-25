@@ -19,6 +19,7 @@ export default async function EditorPage({ params }: PageProps) {
   return (
     <EditorClient
       configId={config.id}
+      revision={config.revision}
       configName={config.name}
       configDescription={config.description}
       isPublic={config.isPublic}

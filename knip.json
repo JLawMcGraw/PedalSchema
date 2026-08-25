@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    ".claude/scripts/**/*.js",
+    "scraper/*.js"
+  ],
+  "project": [
+    ".claude/scripts/**/*.js",
+    "scraper/**/*.js",
+    "src/**/*.{css,ts,tsx}"
+  ],
+  "ignoreIssues": {
+    "src/lib/engine/geometry/index.ts": ["duplicates"]
+  }
+}

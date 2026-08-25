@@ -22,7 +22,7 @@ import type { ObstacleSet } from '../obstacles';
 /**
  * Information about a single violation (path intersecting obstacle)
  */
-export interface PathViolation {
+interface PathViolation {
   /** Index of the segment that caused the violation */
   segmentIndex: number;
   /** Index of the obstacle box that was intersected */

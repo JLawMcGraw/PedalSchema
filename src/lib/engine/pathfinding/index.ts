@@ -19,20 +19,12 @@ import {
   lineIntersectsBox,
 } from '../geometry';
 
-// Re-export the shared geometry API so existing importers keep working
-export type { Point, Box, BoardBounds } from '../geometry';
+// Re-export the geometry types and functions used by routing-cost.
+export type { Point, Box } from '../geometry';
 export {
   OBSTACLE_MARGIN,
-  ENDPOINT_TOLERANCE,
-  STANDOFF,
-  GRID_CELL_SIZE,
   dist,
   calculatePathLength,
-  lineIntersectsBox,
-  segmentsIntersect,
-  getSegmentIntersection,
-  isPathClear,
-  findPathViolations,
 } from '../geometry';
 
 import type { BoardBounds } from '../geometry';
@@ -320,7 +312,7 @@ function aStarSearch(
 /**
  * Simplify path by removing only collinear points, validate every removal
  */
-export function simplifyPathValidated(path: Point[], boxes: Box[], excludeSet: Set<number>): Point[] {
+function simplifyPathValidated(path: Point[], boxes: Box[], excludeSet: Set<number>): Point[] {
   if (path.length <= 2) return path;
 
   const result: Point[] = [path[0]];
@@ -550,7 +542,7 @@ export function findPathAStar(
 /**
  * Check if a direct line path is clear (no obstacles)
  */
-export function isDirectPathClear(p1: Point, p2: Point, boxes: Box[], excludeSet: Set<number>): boolean {
+function isDirectPathClear(p1: Point, p2: Point, boxes: Box[], excludeSet: Set<number>): boolean {
   for (let i = 0; i < boxes.length; i++) {
     if (excludeSet.has(i)) continue;
     if (lineIntersectsBox(p1, p2, boxes[i], OBSTACLE_MARGIN)) {
@@ -563,7 +555,7 @@ export function isDirectPathClear(p1: Point, p2: Point, boxes: Box[], excludeSet
 /**
  * Check if a point is inside any non-excluded box (with optional margin)
  */
-export function isPointInAnyBox(p: Point, boxes: Box[], excludeSet: Set<number>, margin: number = 0): boolean {
+function isPointInAnyBox(p: Point, boxes: Box[], excludeSet: Set<number>, margin: number = 0): boolean {
   for (let i = 0; i < boxes.length; i++) {
     if (excludeSet.has(i)) continue;
     const box = boxes[i];

@@ -40,8 +40,8 @@ export function describeSaveError(error: unknown): string {
       const withCode = e.code ? `${text} (${e.code})` : text;
       // "Failed to fetch" is what the browser says; it is not what a person
       // needs to hear when their board would not save. The append is guarded
-      // because this runs TWICE on one failure - once in failIf, once on the
-      // Error that produced - so it has to be idempotent.
+      // because callers may wrap this message and the UI describes that Error
+      // again, so it has to be idempotent.
       const isNetwork = /failed to fetch|networkerror|load failed/i.test(withCode);
       return isNetwork && !withCode.includes(NETWORK_ADVICE)
         ? `${withCode} - ${NETWORK_ADVICE}`
@@ -51,14 +51,4 @@ export function describeSaveError(error: unknown): string {
 
   // Nothing legible: say so plainly rather than showing an empty message
   return 'Unknown error - the request may not have reached the server';
-}
-
-/**
- * Throw a labelled error for a Supabase result, so the report can name the step
- * that failed. Which step matters: "saving the pedals" and "removing deleted
- * pedals" are different problems with different consequences.
- */
-export function failIf(step: string, error: unknown): void {
-  if (!error) return;
-  throw new Error(`${step}: ${describeSaveError(error)}`, { cause: error });
 }

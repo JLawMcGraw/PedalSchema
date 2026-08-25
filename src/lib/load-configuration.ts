@@ -20,6 +20,7 @@ import type { Board, Pedal, Amp, PlacedPedal, RoutingConfig, PowerSupply } from 
 
 export interface LoadedConfiguration {
   id: string;
+  revision: number;
   name: string;
   description: string;
   isPublic: boolean;
@@ -183,6 +184,7 @@ export async function loadConfiguration(
       rotationDegrees: cp.rotation_degrees as number,
       chainPosition: cp.chain_position as number,
       location: cp.location as PlacedPedal['location'],
+      locationOverride: (cp.location_override as boolean) ?? false,
       chainPositionLocked: (cp.chain_position_locked as boolean) ?? false,
       rotationLocked: (cp.rotation_locked as boolean) ?? false,
       powerOutputId: (cp.power_output_id as string | null) ?? null,
@@ -202,6 +204,7 @@ export async function loadConfiguration(
 
   return {
     id: config.id as string,
+    revision: Number(config.revision ?? 1),
     name: config.name as string,
     description: (config.description as string | null) || '',
     isPublic: (config.is_public as boolean) ?? false,

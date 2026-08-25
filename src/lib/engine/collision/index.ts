@@ -10,7 +10,7 @@ export const COLLISION_SPACING = 0.5;
 /**
  * Get the bounding box for a placed pedal, accounting for rotation
  */
-export function getPedalBoundingBox(
+function getPedalBoundingBox(
   placed: PlacedPedal,
   pedal: Pedal
 ): BoundingBox {
@@ -28,7 +28,7 @@ export function getPedalBoundingBox(
  * Check if two bounding boxes overlap (or are within spacing distance)
  * @param spacing - Optional minimum spacing to consider as "too close"
  */
-export function boxesOverlap(a: BoundingBox, b: BoundingBox, spacing: number = 0): boolean {
+function boxesOverlap(a: BoundingBox, b: BoundingBox, spacing: number = 0): boolean {
   return !(
     a.x + a.width + spacing <= b.x ||
     b.x + b.width + spacing <= a.x ||
@@ -42,7 +42,7 @@ export function boxesOverlap(a: BoundingBox, b: BoundingBox, spacing: number = 0
  * floating-point dust.  The default (0) gives exact bounds; `detectCollisions`
  * passes `OFF_BOARD_TOLERANCE` so both checks share one implementation.
  */
-export function isWithinBounds(box: BoundingBox, board: Board, tolerance = 0): boolean {
+function isWithinBounds(box: BoundingBox, board: Board, tolerance = 0): boolean {
   return (
     box.x >= -tolerance &&
     box.y >= -tolerance &&
@@ -54,7 +54,7 @@ export function isWithinBounds(box: BoundingBox, board: Board, tolerance = 0): b
 /**
  * Calculate the overlap area between two boxes (for severity)
  */
-export function getOverlapArea(a: BoundingBox, b: BoundingBox): number {
+function getOverlapArea(a: BoundingBox, b: BoundingBox): number {
   const xOverlap = Math.max(
     0,
     Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)

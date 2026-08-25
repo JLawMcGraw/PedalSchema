@@ -39,7 +39,6 @@ interface CableConnection {
 // truth shared with the renderer and optimizer). Re-exported for existing
 // importers.
 import { getJackPosition, findJack, getExternalEndpointInches } from './endpoints';
-export { getJackPosition, findJack } from './endpoints';
 
 /**
  * Calculate the distance between two points
@@ -53,7 +52,7 @@ function calculateDistance(p1: JackPosition, p2: JackPosition): number {
 /**
  * Round up to the nearest standard cable length
  */
-export function roundToStandardLength(lengthInches: number): number {
+function roundToStandardLength(lengthInches: number): number {
   for (const standard of STANDARD_CABLE_LENGTHS) {
     if (lengthInches <= standard) {
       return standard;

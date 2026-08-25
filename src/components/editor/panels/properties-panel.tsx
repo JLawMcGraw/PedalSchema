@@ -197,6 +197,7 @@ export function PropertiesPanel() {
               loudest thing in the panel, which is the wrong emphasis for the
               one action you cannot undo by looking at it. */}
           <button
+            type="button"
             className="shrink-0 px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-destructive"
             onClick={() => removePedal(selectedPlaced.id)}
           >
