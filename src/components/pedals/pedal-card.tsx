@@ -25,15 +25,15 @@ interface PedalCardProps {
 export function PedalCard({ pedal, onClick, selected }: PedalCardProps) {
   return (
     <Card
-      className={`hover:border-primary/50 transition-colors ${onClick ? 'cursor-pointer' : ''} ${selected ? 'border-primary ring-2 ring-primary/20' : ''}`}
+      className={`min-h-[132px] flex-row gap-0 overflow-hidden py-0 transition-colors hover:border-primary/50 sm:flex-col ${onClick ? 'cursor-pointer' : ''} ${selected ? 'border-primary ring-2 ring-primary/20' : ''}`}
       onClick={onClick}
     >
       {/* `fill` + `object-contain`, because a gear photo has no fixed aspect
           ratio and the box does. `sizes` is what decides which derivative gets
           generated - without it Next assumes 100vw and builds a 1920px one for
           a 144px box. */}
-      {pedal.image_url && (
-        <div className="relative flex items-center justify-center h-36 mx-4 mt-4 rounded-md bg-muted/40 overflow-hidden">
+      <div className="relative flex w-28 shrink-0 items-center justify-center border-r border-border bg-muted/40 sm:h-40 sm:w-auto sm:border-b sm:border-r-0">
+        {pedal.image_url ? (
           <Image
             src={pedal.image_url}
             alt={`${pedal.manufacturer} ${pedal.name}`}
@@ -41,9 +41,19 @@ export function PedalCard({ pedal, onClick, selected }: PedalCardProps) {
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 45vw, 260px"
             className="object-contain"
           />
-        </div>
-      )}
-      <CardHeader className="pb-2">
+        ) : (
+          <div className="flex size-16 items-center justify-center border border-border bg-background/50">
+            <span
+              aria-hidden
+              className="size-8"
+              style={{ backgroundColor: getCategoryColor(pedal.category) }}
+            />
+            <span className="sr-only">No photo on file</span>
+          </div>
+        )}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col">
+      <CardHeader className="px-4 pb-2 pt-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <CardTitle className="text-base truncate">{pedal.name}</CardTitle>
@@ -62,14 +72,15 @@ export function PedalCard({ pedal, onClick, selected }: PedalCardProps) {
           </Badge>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="text-sm text-muted-foreground space-y-1">
+      <CardContent className="mt-auto px-4 pb-4">
+        <div className="space-y-1 text-xs text-muted-foreground sm:text-sm">
           <p>{formatDimensions(pedal.width_inches, pedal.depth_inches, pedal.height_inches)}</p>
           <p>
             {formatVoltage(pedal.voltage)} / {formatCurrentDraw(pedal.current_ma)}
           </p>
         </div>
       </CardContent>
+      </div>
     </Card>
   );
 }

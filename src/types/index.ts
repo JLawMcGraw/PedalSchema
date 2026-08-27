@@ -82,6 +82,26 @@ export interface PedalJack {
   label: string | null;
 }
 
+type PedalImageProcessingStatus =
+  | 'not-provided'
+  | 'unreviewed'
+  | 'approved'
+  | 'fallback'
+  | 'failed';
+
+interface PedalImageProcessing {
+  status: PedalImageProcessingStatus;
+  result: string | null;
+  version: number;
+  sourceWidth: number | null;
+  sourceHeight: number | null;
+  outputWidth: number | null;
+  outputHeight: number | null;
+  footprintRatio: number | null;
+  rotationQuarterTurns: 0 | 1 | 2 | 3;
+  perspectiveTop: number;
+}
+
 export interface Pedal {
   id: string;
   name: string;
@@ -116,6 +136,8 @@ export interface Pedal {
   createdAt: string;
   updatedAt: string;
   imageUrl: string | null;
+  /** Optional for in-memory fixtures created before image processing metadata existed. */
+  imageProcessing?: PedalImageProcessing;
   notes: string | null;
   jacks: PedalJack[];
 }

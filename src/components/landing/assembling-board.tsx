@@ -1,116 +1,173 @@
 import { getFamilyColor, type PedalFamily } from '@/lib/constants/pedal-categories';
+import { gearImageUrl } from '@/lib/gear-image';
 
 /**
- * The hero: a board that sorts itself.
+ * The hero: a 32x16in board that sorts itself at one real scale.
  *
- * This is the one thing a static page cannot say - that the app takes a pile
- * of pedals and produces an order. A 32x16in board, 15 pedals, drawn to scale.
- * They start scattered under a red UNSORTED tag, slide into signal order,
- * cables draw through them, and the jack labels name the ends. 12s loop.
- *
- * HOW IT WORKS, because it is not obvious from the markup:
- *
- * - Every pedal is drawn at its SORTED position. Its scattered start is a
- *   per-element `--dx` / `--dy` offset, and one shared `@keyframes psSort`
- *   interpolates translate(var(--dx),var(--dy)) -> translate(0,0). Fifteen
- *   elements, one animation.
- * - The scatter PRESERVES EACH ROW'S TOTAL WIDTH, so nothing hangs off the
- *   board while unsorted. That is what makes the motion read as reordering
- *   rather than as pedals materialising out of the margin.
- * - CSS px INSIDE AN SVG RESOLVE TO USER UNITS, not screen px. Every offset
- *   here is authored in board inches, and reading them as pixels is the
- *   mistake that makes the whole thing twitch by a millimetre instead of
- *   crossing the board.
- * - Cables are polylines with stroke-dasharray:60, drawn by animating
- *   stroke-dashoffset from 6.7s, 0.08s apart, after the sort has settled.
- *
- * No client JS: it is CSS animation over static SVG, so it renders on the
- * server and costs the landing page no hydration.
+ * Catalogue width and depth drive every pedal's SVG box, packing position,
+ * animation offset, and cable endpoint. The fallback dimensions below exist
+ * only for a failed catalogue read and use the same physical measurements;
+ * they are not art-directed slot sizes.
  */
 
-/** width in inches, family - the 15 pedals of the reference board. */
-const P: Record<string, [number, PedalFamily]> = {
-  t0: [5.5, 'shaping'], t1: [2.9, 'gain'], t2: [2.9, 'gain'], t3: [2.6, 'gain'],
-  t4: [2.9, 'shaping'], t5: [2.9, 'shaping'], t6: [2.9, 'shaping'], t7: [2.9, 'utility'],
-  b0: [2.9, 'utility'], b1: [2.9, 'modulation'], b2: [2.9, 'modulation'], b3: [2.9, 'time'],
-  b4: [6.8, 'time'], b5: [6.8, 'time'], b6: [2.9, 'time'],
+interface LandingPedal {
+  imageUrl: string;
+  widthInches: number;
+  depthInches: number;
+}
+
+interface PedalSpec {
+  key: string;
+  family: PedalFamily;
+  fallbackWidth: number;
+  fallbackDepth: number;
+}
+
+interface ResolvedPedal extends PedalSpec {
+  width: number;
+  depth: number;
+  imageUrl?: string;
+}
+
+/** Recorded catalogue dimensions, used only if the live catalogue read fails. */
+const P: Record<string, PedalSpec> = {
+  t0: { key: 'BOSS PW-3', family: 'shaping', fallbackWidth: 3.15, fallbackDepth: 7.56 },
+  t1: { key: 'BOSS BD-2W', family: 'gain', fallbackWidth: 2.87, fallbackDepth: 5.08 },
+  t2: { key: 'BOSS DS-1', family: 'gain', fallbackWidth: 2.9, fallbackDepth: 5.1 },
+  t3: { key: 'BOSS SD-1', family: 'gain', fallbackWidth: 2.9, fallbackDepth: 5.1 },
+  t4: { key: 'BOSS GE-7', family: 'shaping', fallbackWidth: 2.87, fallbackDepth: 5.08 },
+  t5: { key: 'BOSS CE-2W', family: 'shaping', fallbackWidth: 2.87, fallbackDepth: 5.08 },
+  t6: { key: 'BOSS PH-3', family: 'shaping', fallbackWidth: 2.87, fallbackDepth: 5.08 },
+  t7: { key: 'BOSS TU-3', family: 'utility', fallbackWidth: 2.9, fallbackDepth: 5.1 },
+  b0: { key: 'BOSS NS-2', family: 'utility', fallbackWidth: 2.9, fallbackDepth: 5.1 },
+  b1: { key: 'BOSS BF-3', family: 'modulation', fallbackWidth: 2.87, fallbackDepth: 5.08 },
+  b2: { key: 'BOSS CH-1', family: 'modulation', fallbackWidth: 2.87, fallbackDepth: 5.08 },
+  b3: { key: 'BOSS DD-7', family: 'time', fallbackWidth: 2.9, fallbackDepth: 5.1 },
+  b4: { key: 'Strymon Timeline', family: 'time', fallbackWidth: 6.75, fallbackDepth: 5.1 },
+  b5: { key: 'Strymon BigSky', family: 'time', fallbackWidth: 6.75, fallbackDepth: 5.1 },
+  b6: { key: 'BOSS RV-6', family: 'time', fallbackWidth: 2.9, fallbackDepth: 5.1 },
 };
 
+export const LANDING_PEDAL_KEYS = Object.values(P).map((pedal) => pedal.key);
+
+const TOP_IDS = ['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7'];
+const BOTTOM_IDS = ['b0', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6'];
 const TOP_Y = 0.7;
-const BOT_Y = 9.4;
+const BOTTOM_Y = 9.4;
 const DUR = 12;
 const STEP = 0.13;
 const CABLE_AT = 6.7;
 const CABLE_STEP = 0.08;
+const ORDER = ['t7', 't6', 't5', 't4', 't3', 't2', 't1', 't0', 'b6', 'b5', 'b4', 'b3', 'b2', 'b1', 'b0'];
 
 type Spot = { x: number; y: number };
 
-function pack(ids: string[], startX: number, y: number, gap: number): Record<string, Spot> {
+function resolvePedals(catalogue: Record<string, LandingPedal>): Record<string, ResolvedPedal> {
+  return Object.fromEntries(
+    Object.entries(P).map(([id, spec]) => {
+      const row = catalogue[spec.key];
+      const valid = row?.widthInches > 0 && row?.depthInches > 0;
+      return [
+        id,
+        {
+          ...spec,
+          width: valid ? row.widthInches : spec.fallbackWidth,
+          depth: valid ? row.depthInches : spec.fallbackDepth,
+          imageUrl: row?.imageUrl,
+        },
+      ];
+    })
+  );
+}
+
+function pack(
+  ids: string[],
+  startX: number,
+  y: number,
+  gap: number,
+  pedals: Record<string, ResolvedPedal>
+): Record<string, Spot> {
   let x = startX;
   const out: Record<string, Spot> = {};
   for (const id of ids) {
     out[id] = { x, y };
-    x += P[id][0] + gap;
+    x += pedals[id].width + gap;
   }
   return out;
 }
 
-/** Where each pedal belongs: gain and shaping up front, time and modulation after. */
-const sorted = {
-  ...pack(['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7'], 0.6, TOP_Y, 0.75),
-  ...pack(['b0', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6'], 0.6, BOT_Y, 0.45),
-};
+function linkPedals(
+  leftId: string,
+  rightId: string,
+  spots: Record<string, Spot>,
+  pedals: Record<string, ResolvedPedal>
+): string {
+  const left = spots[leftId];
+  const right = spots[rightId];
+  const leftY = left.y + pedals[leftId].depth / 2;
+  const rightY = right.y + pedals[rightId].depth / 2;
+  const leftEdge = right.x;
+  const rightEdge = left.x + pedals[leftId].width;
+  const middle = (leftEdge + rightEdge) / 2;
+  return `${leftEdge.toFixed(2)},${rightY.toFixed(2)} ${middle.toFixed(2)},${rightY.toFixed(2)} ${middle.toFixed(2)},${leftY.toFixed(2)} ${rightEdge.toFixed(2)},${leftY.toFixed(2)}`;
+}
 
-/** Where they start: same board, no order at all, row widths preserved. */
-const shuffled = {
-  ...pack(['t7', 't1', 't0', 'b1', 't3', 'b3', 't5', 't2'], 0.6, TOP_Y, 0.75),
-  ...pack(['t4', 'b5', 'b0', 'b6', 'b2', 't6', 'b4'], 0.6, BOT_Y, 0.45),
-};
+function cablePoints(
+  spots: Record<string, Spot>,
+  pedals: Record<string, ResolvedPedal>
+): string[] {
+  const segments: string[] = [];
+  const topLast = TOP_IDS.at(-1)!;
+  const bottomLast = BOTTOM_IDS.at(-1)!;
+  const topLastY = spots[topLast].y + pedals[topLast].depth / 2;
+  const bottomLastY = spots[bottomLast].y + pedals[bottomLast].depth / 2;
+  const topLastRight = spots[topLast].x + pedals[topLast].width;
+  const bottomLastRight = spots[bottomLast].x + pedals[bottomLast].width;
 
-const order = ['t7', 't6', 't5', 't4', 't3', 't2', 't1', 't0', 'b6', 'b5', 'b4', 'b3', 'b2', 'b1', 'b0'];
+  segments.push(`34.2,${topLastY.toFixed(2)} ${topLastRight.toFixed(2)},${topLastY.toFixed(2)}`);
+  for (let i = TOP_IDS.length - 1; i > 0; i--) {
+    segments.push(linkPedals(TOP_IDS[i - 1], TOP_IDS[i], spots, pedals));
+  }
 
-/*
- * The signal runs right to left along the top row, drops between the rows,
- * then right to left along the bottom - guitar in at the far right, amp at
- * the far left, which is the arrangement the editor's canvas now uses too.
- */
-function cablePoints(): string[] {
-  const top = ['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7'].map((id) => ({
-    ...sorted[id],
-    w: P[id][0],
-  }));
-  const bot = ['b0', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6'].map((id) => ({
-    ...sorted[id],
-    w: P[id][0],
-  }));
-  const midT = 3.25;
-  const midB = 11.95;
-  const seg: string[] = [];
-  const link = (a: { x: number; w: number }, b: { x: number }, y: number) =>
-    `${(a.x + a.w).toFixed(2)},${y} ${b.x.toFixed(2)},${y}`;
+  const topFirst = TOP_IDS[0];
+  const topFirstY = spots[topFirst].y + pedals[topFirst].depth / 2;
+  segments.push(
+    `${spots[topFirst].x.toFixed(2)},${topFirstY.toFixed(2)} -1.6,${topFirstY.toFixed(2)} -1.6,7.85 33,7.85 33,${bottomLastY.toFixed(2)} ${bottomLastRight.toFixed(2)},${bottomLastY.toFixed(2)}`
+  );
+  for (let i = BOTTOM_IDS.length - 1; i > 0; i--) {
+    segments.push(linkPedals(BOTTOM_IDS[i - 1], BOTTOM_IDS[i], spots, pedals));
+  }
 
-  seg.push(`34.2,${midT} ${(top[7].x + top[7].w).toFixed(2)},${midT}`);
-  for (let i = top.length - 1; i > 0; i--) seg.push(link(top[i - 1], top[i], midT));
-  seg.push(`0.6,${midT} -1.6,${midT} -1.6,7.85 33,7.85 33,${midB} ${(bot[6].x + bot[6].w).toFixed(2)},${midB}`);
-  for (let i = bot.length - 1; i > 0; i--) seg.push(link(bot[i - 1], bot[i], midB));
-  seg.push(`0.6,${midB} -2.8,${midB} -2.8,14.4`);
-  return seg;
+  const bottomFirst = BOTTOM_IDS[0];
+  const bottomFirstY = spots[bottomFirst].y + pedals[bottomFirst].depth / 2;
+  segments.push(
+    `${spots[bottomFirst].x.toFixed(2)},${bottomFirstY.toFixed(2)} -2.8,${bottomFirstY.toFixed(2)} -2.8,14.4`
+  );
+  return segments;
 }
 
 const MONO = `0.95px 'Geist Mono', ui-monospace, monospace`;
 
-export function AssemblingBoard({ className }: { className?: string }) {
-  const cables = cablePoints();
+export function AssemblingBoard({
+  className,
+  pedals: catalogue = {},
+}: {
+  className?: string;
+  pedals?: Record<string, LandingPedal>;
+}) {
+  const pedals = resolvePedals(catalogue);
+  const sorted = {
+    ...pack(TOP_IDS, 0.6, TOP_Y, 0.75, pedals),
+    ...pack(BOTTOM_IDS, 0.6, BOTTOM_Y, 0.45, pedals),
+  };
+  const shuffled = {
+    ...pack(['t7', 't1', 't0', 'b1', 't3', 'b3', 't5', 't2'], 0.6, TOP_Y, 0.75, pedals),
+    ...pack(['t4', 'b5', 'b0', 'b6', 'b2', 't6', 'b4'], 0.6, BOTTOM_Y, 0.45, pedals),
+  };
+  const cables = cablePoints(sorted, pedals);
 
   return (
     <div className={className}>
-      {/*
-        Scoped with a plain <style> rather than Tailwind: these are keyframes
-        with a per-element custom property, which utility classes cannot
-        express. `prefers-reduced-motion` holds the SORTED state and skips the
-        scatter entirely - the board still reads correctly, it just does not
-        move.
-      */}
       <style>{`
         @keyframes psSort {
           0%{opacity:0;transform:translate(var(--dx),var(--dy))}
@@ -146,9 +203,8 @@ export function AssemblingBoard({ className }: { className?: string }) {
         preserveAspectRatio="xMidYMid meet"
         className="ps-board block h-full w-full overflow-visible"
         role="img"
-        aria-label="A 32 by 16 inch pedalboard with fifteen pedals sliding from a scattered heap into signal-chain order, with cables drawn between them from the guitar to the amp."
+        aria-label="A 32 by 16 inch pedalboard with fifteen accurately scaled pedals sorting into signal-chain order, with cables drawn from the guitar to the amp."
       >
-        {/* The board and its four rails, to scale. */}
         <rect x="0" y="0" width="32" height="16" fill="oklch(0.29 0.011 250)" />
         {[0, 3.75, 7.5, 11.25].map((y) => (
           <rect key={y} x="0" y={y} width="32" height="0.6" fill="oklch(0.345 0.013 250)" />
@@ -172,30 +228,44 @@ export function AssemblingBoard({ className }: { className?: string }) {
           />
         ))}
 
-        {order.map((id, i) => {
+        {ORDER.map((id, i) => {
           const to = sorted[id];
           const from = shuffled[id];
+          const pedal = pedals[id];
           return (
-            <rect
+            <g
               key={id}
               className="ps-pedal"
-              x={to.x}
-              y={to.y}
-              width={P[id][0]}
-              height="5.1"
-              fill={getFamilyColor(P[id][1])}
+              data-pedal-key={pedal.key}
               style={
                 {
-                  // Authored in BOARD INCHES. Inside an SVG these resolve to
-                  // user units, which is the whole reason the numbers look
-                  // small - see the note at the top of this file.
                   '--dx': `${(from.x - to.x).toFixed(2)}px`,
                   '--dy': `${(from.y - to.y).toFixed(2)}px`,
                   opacity: 0,
                   animation: `psSort ${DUR}s ${(i * STEP).toFixed(2)}s cubic-bezier(.65,0,.25,1) infinite`,
                 } as React.CSSProperties
               }
-            />
+            >
+              {pedal.imageUrl ? (
+                <image
+                  href={gearImageUrl(pedal.imageUrl, 256)}
+                  x={to.x}
+                  y={to.y}
+                  width={pedal.width}
+                  height={pedal.depth}
+                  preserveAspectRatio="xMidYMid meet"
+                />
+              ) : (
+                <rect
+                  x={to.x}
+                  y={to.y}
+                  width={pedal.width}
+                  height={pedal.depth}
+                  fill={getFamilyColor(pedal.family)}
+                  rx="0.18"
+                />
+              )}
+            </g>
           );
         })}
 

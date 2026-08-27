@@ -1,5 +1,6 @@
 import { getCategoryColor } from '@/lib/constants/pedal-categories';
 import { isRotated } from '@/lib/engine/geometry/rotation';
+import { gearImageUrl } from '@/lib/gear-image';
 import type { PedalCategory } from '@/types';
 
 export interface ThumbnailPedal {
@@ -9,6 +10,12 @@ export interface ThumbnailPedal {
   depthInches: number;
   rotation: number;
   category: PedalCategory;
+  imageUrl?: string | null;
+}
+
+/** Keep exact inch math from serializing as noisy SVG decimals such as 4.779999999. */
+function svgNumber(value: number): number {
+  return Number(value.toFixed(4));
 }
 
 /**
@@ -32,9 +39,10 @@ export interface ThumbnailPedal {
  * thumbnail draws into it. A Nano now looks like a Nano beside a Classic Pro.
  * The empty space around a small board is not waste; it is the comparison.
  *
- * Still deliberately NOT the editor canvas: no photos, no cables, no jacks, no
- * labels. A card 250px wide cannot carry any of that legibly, and loading 67
- * pedal images to draw a thumbnail would cost more than the page.
+ * Still deliberately NOT the editor canvas: no cables, jacks, or labels. It
+ * does use the small transformed catalogue cutouts already present on this
+ * board; a board library made of category rectangles does not let two rigs
+ * with similar category mixes look like the pedals the owner recognizes.
  *
  * Pure SVG with no client JS, so it renders on the server with the rest of the
  * card.
@@ -107,15 +115,36 @@ export function BoardThumbnail({
         const turned = isRotated(p.rotation);
         const pw = turned ? p.depthInches : p.widthInches;
         const ph = turned ? p.widthInches : p.depthInches;
+        const x = svgNumber(ox + p.xInches);
+        const y = svgNumber(oy + p.yInches);
+        const cx = svgNumber(x + pw / 2);
+        const cy = svgNumber(y + ph / 2);
+        if (!p.imageUrl) {
+          return (
+            <rect
+              key={i}
+              data-thumbnail-pedal={i}
+              x={x}
+              y={y}
+              width={pw}
+              height={ph}
+              fill={getCategoryColor(p.category)}
+              opacity={0.85}
+            />
+          );
+        }
         return (
-          <rect
+          <image
             key={i}
-            x={ox + p.xInches}
-            y={oy + p.yInches}
-            width={pw}
-            height={ph}
-            fill={getCategoryColor(p.category)}
-            opacity={0.85}
+            data-thumbnail-pedal={i}
+            href={gearImageUrl(p.imageUrl, 128)}
+            x={svgNumber(cx - p.widthInches / 2)}
+            y={svgNumber(cy - p.depthInches / 2)}
+            width={p.widthInches}
+            height={p.depthInches}
+            transform={p.rotation ? `rotate(${p.rotation}, ${cx}, ${cy})` : undefined}
+            preserveAspectRatio="xMidYMid meet"
+            opacity={0.92}
           />
         );
       })}

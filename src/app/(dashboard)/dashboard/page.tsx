@@ -161,7 +161,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
           rotation_degrees,
           power_output_id,
           pedal_id,
-          pedals (id, name, width_inches, depth_inches, category, current_ma, voltage)
+          pedals (id, name, width_inches, depth_inches, category, current_ma, voltage, image_url)
         )
       `)
       /*
@@ -233,6 +233,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         category: PedalCategory;
         current_ma: number | null;
         voltage: number | null;
+        image_url: string | null;
       } | null;
     }>;
     const placed = rows.filter((r) => r.pedals);
@@ -341,6 +342,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         depthInches: Number(r.pedals!.depth_inches),
         rotation: Number(r.rotation_degrees ?? 0),
         category: r.pedals!.category,
+        imageUrl: r.pedals!.image_url,
       })),
     };
   };
@@ -406,12 +408,12 @@ export default async function DashboardPage({ searchParams }: PageProps) {
    */
 
   return (
-    <div className="container mx-auto max-w-[1280px] px-8 pb-8 pt-7">
-      <div className="mb-8 flex items-center justify-between gap-4">
+    <div className="container mx-auto max-w-[1280px] px-4 pb-8 pt-7 sm:px-8">
+      <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         {/* "Design and manage your pedalboard configurations" said nothing the
             heading had not already said. */}
         <h1 className="text-3xl font-bold tracking-tight">My pedalboards</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full items-center gap-2 sm:w-auto">
           {rest.length > 0 && <SortControl value={sort} />}
           <Link href="/editor/new">
             <Button className="h-9">New Board</Button>

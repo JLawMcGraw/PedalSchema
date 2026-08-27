@@ -116,7 +116,10 @@ export function PedalRenderer({
                   ? `rotate(${placedPedal.rotationDegrees}, ${centerX}, ${centerY})`
                   : undefined
               }
-              preserveAspectRatio="none"
+              // Preserve the photographed silhouette. Geometry mismatches now
+              // leave transparent space inside the measured footprint instead
+              // of compressing a wide image into a narrow pedal body.
+              preserveAspectRatio="xMidYMid meet"
               opacity={isDragging ? 0.8 : placedPedal.isActive ? 1 : 0.35}
               onLoad={() => setImageLoaded(true)}
               onError={() => setImageError(true)}

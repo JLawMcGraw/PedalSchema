@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { AuthShell } from '@/components/auth/auth-shell';
 
 function LoginForm() {
   const router = useRouter();
@@ -41,8 +42,11 @@ function LoginForm() {
   };
 
   return (
-    <Card className="w-full max-w-md">
+    <Card className="w-full border-border bg-card/95">
       <CardHeader className="space-y-1">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
+          Account access
+        </p>
         <CardTitle className="text-2xl font-bold">Welcome back</CardTitle>
         <CardDescription>
           Sign in to your PedalSchema account
@@ -51,7 +55,7 @@ function LoginForm() {
       <form onSubmit={handleLogin}>
         <CardContent className="space-y-4">
           {error && (
-            <div className="p-3 text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-md">
+            <div className="border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
               {error}
             </div>
           )}
@@ -97,9 +101,9 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-950 p-4">
+    <AuthShell mode="login">
       <Suspense fallback={
-        <Card className="w-full max-w-md">
+        <Card className="w-full">
           <CardContent className="flex items-center justify-center py-12">
             Loading...
           </CardContent>
@@ -107,6 +111,6 @@ export default function LoginPage() {
       }>
         <LoginForm />
       </Suspense>
-    </div>
+    </AuthShell>
   );
 }

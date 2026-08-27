@@ -2,7 +2,10 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/server';
 import { RailsMark } from '@/components/layout/rails-mark';
-import { AssemblingBoard } from '@/components/landing/assembling-board';
+import {
+  AssemblingBoard,
+  LANDING_PEDAL_KEYS,
+} from '@/components/landing/assembling-board';
 import { OpenEditorCta } from '@/components/landing/open-editor-cta';
 import { GuestLink } from '@/components/landing/guest-link';
 import {
@@ -84,6 +87,24 @@ export default async function HomePage() {
     data: { user },
   } = await supabase.auth.getUser();
   const stages = chainStages();
+  const { data: landingPedals } = await supabase
+    .from('pedals')
+    .select('name,manufacturer,image_url,width_inches,depth_inches')
+    .eq('is_system', true)
+    .not('image_url', 'is', null)
+    .in('name', LANDING_PEDAL_KEYS.map((key) => key.replace(/^[^ ]+ /, '')));
+  const landingPedalsByKey = Object.fromEntries(
+    (landingPedals ?? [])
+      .filter((pedal) => pedal.image_url)
+      .map((pedal) => [
+        `${pedal.manufacturer} ${pedal.name}`,
+        {
+          imageUrl: pedal.image_url as string,
+          widthInches: Number(pedal.width_inches),
+          depthInches: Number(pedal.depth_inches),
+        },
+      ])
+  );
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
@@ -94,7 +115,7 @@ export default async function HomePage() {
         visitor - but the same height and the same register, so the app does
         not change identity the moment you sign in.
       */}
-      <header className="flex h-11 shrink-0 items-center gap-4 border-b border-border px-6">
+      <header className="flex h-11 shrink-0 items-center gap-4 border-b border-border px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2">
           <RailsMark />
           <span className="font-mono text-xs font-semibold uppercase tracking-[0.2em]">
@@ -103,10 +124,10 @@ export default async function HomePage() {
         </Link>
         <nav className="ml-auto flex items-center gap-[18px]">
           {/* Both live behind the (dashboard) auth redirect - see GuestLink. */}
-          <GuestLink href="/boards" className={NAV_LINK}>
+          <GuestLink href="/boards" className={`${NAV_LINK} hidden sm:inline`}>
             Boards
           </GuestLink>
-          <GuestLink href="/pedals" className={NAV_LINK}>
+          <GuestLink href="/pedals" className={`${NAV_LINK} hidden sm:inline`}>
             Pedal database
           </GuestLink>
           <Link href={user ? '/dashboard' : '/login'} className={NAV_LINK}>
@@ -133,7 +154,7 @@ export default async function HomePage() {
             backgroundSize: '48px 48px',
           }}
         >
-          <div className="mx-auto max-w-[1280px] px-8 pb-14 pt-15">
+          <div className="mx-auto max-w-[1280px] px-4 pb-14 pt-12 sm:px-8 sm:pt-15">
             <div className="flex items-baseline justify-between font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
               <span>Sheet 01 — Pedalboard planner</span>
               <span>Scale 1:1 · Inches</span>
@@ -154,7 +175,10 @@ export default async function HomePage() {
 
             {/* THE PRODUCT, WORKING. */}
             <div className="mt-11 px-0 sm:px-10">
-              <AssemblingBoard className="h-[260px] w-full sm:h-[420px]" />
+              <AssemblingBoard
+                className="h-[260px] w-full sm:h-[420px]"
+                pedals={landingPedalsByKey}
+              />
             </div>
 
             {/* The dimension rule: the board's own spec, stated as a drawing
@@ -170,7 +194,7 @@ export default async function HomePage() {
         </section>
 
         {/* DETAIL A - what the optimizer does. */}
-        <section className="mx-auto max-w-[1280px] px-8 py-14">
+        <section className="mx-auto max-w-[1280px] px-4 py-14 sm:px-8">
           <div className="flex flex-col gap-14 lg:flex-row">
             <div className="w-full shrink-0 lg:sticky lg:top-8 lg:h-fit lg:w-[380px]">
               <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
@@ -198,7 +222,7 @@ export default async function HomePage() {
               {stages.map((stage, i) => (
                 <div
                   key={stage.value}
-                  className={`flex items-center gap-3.5 px-[18px] py-3.5 ${
+                  className={`grid grid-cols-[20px_10px_1fr] items-center gap-x-3 gap-y-2 px-4 py-3.5 sm:flex sm:gap-3.5 sm:px-[18px] ${
                     i < stages.length - 1 ? 'border-b border-border/60' : ''
                   }`}
                 >
@@ -210,10 +234,10 @@ export default async function HomePage() {
                     className="size-2.5 shrink-0"
                     style={{ backgroundColor: stage.colour }}
                   />
-                  <span className="w-[128px] shrink-0 font-mono text-xs font-semibold uppercase tracking-[0.13em] sm:w-[172px]">
+                  <span className="min-w-0 font-mono text-xs font-semibold uppercase tracking-[0.13em] sm:w-[172px] sm:shrink-0">
                     {stage.label}
                   </span>
-                  <span className="min-w-0 flex-1 text-sm leading-[1.5] text-muted-foreground">
+                  <span className="col-span-3 min-w-0 text-sm leading-[1.5] text-muted-foreground sm:flex-1">
                     {stage.note}
                   </span>
                 </div>
@@ -223,7 +247,7 @@ export default async function HomePage() {
         </section>
 
         {/* DETAIL B - the editor. */}
-        <section className="mx-auto max-w-[1280px] px-8 py-14">
+        <section className="mx-auto max-w-[1280px] px-4 py-14 sm:px-8">
           <div className="max-w-[720px]">
             <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">
               The editor
@@ -249,7 +273,7 @@ export default async function HomePage() {
               <span key={cls} aria-hidden className={`${cls} size-2.5 border-primary`} />
             ))}
             <Image
-              src="/landing/editor.png"
+              src="/landing/editor-20260826.png"
               alt="The PedalSchema editor: a board with fifteen pedals placed and cables routed, a readout across the top, the chain in the right panel."
               // The file's real intrinsic size. Next/Image uses these for the
               // aspect ratio it reserves before the bytes arrive; a guess here
@@ -287,7 +311,7 @@ export default async function HomePage() {
         </section>
 
         {/* CLOSE */}
-        <section className="mx-auto max-w-[1280px] px-8 py-14">
+        <section className="mx-auto max-w-[1280px] px-4 py-14 sm:px-8">
           <div className="flex flex-col justify-between gap-8 md:flex-row md:items-center">
             <h2 className="max-w-[620px] text-[34px] font-bold leading-[1.12] tracking-[-0.024em]">
               Start with the board you own. Or the one you&rsquo;re thinking about.

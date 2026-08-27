@@ -50,15 +50,18 @@ export default async function PedalsPage({ searchParams }: PageProps) {
 
   return (
     <div className="container py-8">
-      <div className="flex items-center justify-between mb-8">
+      <div className="mb-8 flex items-start justify-between gap-4">
         <div>
+          <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
+            System catalogue
+          </p>
           <h1 className="text-3xl font-bold tracking-tight">Pedal Database</h1>
           <p className="text-muted-foreground">
             Browse and search effects pedals
           </p>
         </div>
         <Link href="/pedals/new">
-          <Button>Add Custom Pedal</Button>
+          <Button className="h-9 shrink-0">Add Custom Pedal</Button>
         </Link>
       </div>
 

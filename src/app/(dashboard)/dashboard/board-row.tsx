@@ -69,11 +69,11 @@ export function BoardRow(props: BoardRowProps) {
 
   return (
     <article
-      className={`group relative flex border border-border bg-card transition-colors duration-200 hover:border-primary/50 ${
+      className={`group relative flex flex-col border border-border bg-card transition-colors duration-200 hover:border-primary/50 sm:flex-row ${
         fit.bad ? 'border-l-2 border-l-destructive' : ''
       }`}
     >
-      <div className="w-[200px] shrink-0 border-r border-border bg-background/40 p-3">
+      <div className="w-full shrink-0 border-b border-border bg-background/40 p-3 sm:w-[200px] sm:border-b-0 sm:border-r">
         <BoardThumbnail
           widthInches={widthInches}
           depthInches={depthInches}
@@ -86,7 +86,7 @@ export function BoardRow(props: BoardRowProps) {
         />
       </div>
 
-      <div className="min-w-0 flex-1 px-4 py-3">
+      <div className="min-w-0 flex-1 px-4 py-3 pr-12 sm:pr-4">
         <div className="flex items-baseline justify-between gap-3">
           {/* Stretched link: the whole row is the target, but the DOM keeps one
               anchor rather than an anchor wrapping a menu button - which is
@@ -133,7 +133,7 @@ export function BoardRow(props: BoardRowProps) {
         )}
       </div>
 
-      <div className="relative z-10 shrink-0 p-2">
+      <div className="absolute right-0 top-0 z-10 shrink-0 p-2 sm:relative">
         <BoardMenu
           name={name}
           pinned={pinned}
@@ -141,7 +141,7 @@ export function BoardRow(props: BoardRowProps) {
           onDuplicate={duplicate}
           onPin={() => setPinned(!pinned)}
           onDelete={() => setConfirming(true)}
-          className="px-2 opacity-0 transition-opacity duration-200 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+          className="px-2 opacity-100 transition-opacity duration-200 md:opacity-0 md:focus-visible:opacity-100 md:group-hover:opacity-100 md:data-[state=open]:opacity-100"
         />
       </div>
     </article>

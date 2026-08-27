@@ -6,7 +6,17 @@
  * in the deployed bundle.
  */
 
-import { prepareSilhouette, type KnockoutStatus, type RgbaImage } from './knockout';
+import {
+  alphaQualityReport,
+  prepareSilhouette,
+  type AlphaQualityReport,
+  type KnockoutStatus,
+  type RgbaImage,
+} from './knockout';
+import {
+  applyPhotoGeometry,
+  type PhotoGeometryCorrection,
+} from './geometry';
 
 /** Longest edge kept for the stored asset. Board rects are ~100px wide; more
  *  detail than this only costs upload time and flood-fill work. */
@@ -17,8 +27,14 @@ export interface PreparedPhoto {
   /** Object URL for previewing the result. Caller owns revocation. */
   previewUrl: string;
   status: KnockoutStatus;
+  /** Decoded source dimensions before the browser downscales it. */
+  sourceWidth: number;
+  sourceHeight: number;
   width: number;
   height: number;
+  quality: AlphaQualityReport;
+  mattePixelsCleared: number;
+  strayPixelsDropped: number;
 }
 
 async function decode(file: File): Promise<ImageBitmap> {
@@ -74,7 +90,13 @@ export async function preparePedalPhoto(file: File): Promise<PreparedPhoto> {
     sourceCtx.drawImage(bitmap, 0, 0, w, h);
 
     const input: RgbaImage = sourceCtx.getImageData(0, 0, w, h);
-    const { image, status } = prepareSilhouette(input);
+    const {
+      image,
+      status,
+      quality,
+      mattePixelsCleared,
+      strayPixelsDropped,
+    } = prepareSilhouette(input);
 
     const out = toCanvas(image.width, image.height);
     const outCtx = out.getContext('2d');
@@ -90,8 +112,50 @@ export async function preparePedalPhoto(file: File): Promise<PreparedPhoto> {
       file: png,
       previewUrl: URL.createObjectURL(png),
       status,
+      sourceWidth: bitmap.width,
+      sourceHeight: bitmap.height,
       width: image.width,
       height: image.height,
+      quality,
+      mattePixelsCleared,
+      strayPixelsDropped,
+    };
+  } finally {
+    bitmap.close?.();
+  }
+}
+
+/**
+ * Re-project an accepted cutout without re-running background detection.
+ * Callers should always pass the first prepared result so slider/button edits
+ * do not accumulate resampling damage.
+ */
+export async function correctPreparedPedalPhoto(
+  prepared: PreparedPhoto,
+  correction: PhotoGeometryCorrection
+): Promise<PreparedPhoto> {
+  const bitmap = await decode(prepared.file);
+  try {
+    const source = toCanvas(bitmap.width, bitmap.height);
+    const sourceCtx = source.getContext('2d', { willReadFrequently: true });
+    if (!sourceCtx) throw new Error('Canvas is unavailable in this browser.');
+    sourceCtx.drawImage(bitmap, 0, 0);
+    const input: RgbaImage = sourceCtx.getImageData(0, 0, bitmap.width, bitmap.height);
+    const image = applyPhotoGeometry(input, correction);
+
+    const out = toCanvas(image.width, image.height);
+    const outCtx = out.getContext('2d');
+    if (!outCtx) throw new Error('Canvas is unavailable in this browser.');
+    outCtx.putImageData(new ImageData(image.data, image.width, image.height), 0, 0);
+    const png = await canvasToPngFile(out, prepared.file.name);
+
+    return {
+      ...prepared,
+      file: png,
+      previewUrl: URL.createObjectURL(png),
+      width: image.width,
+      height: image.height,
+      quality: alphaQualityReport(image),
     };
   } finally {
     bitmap.close?.();

@@ -72,6 +72,19 @@ export function transformPedal(p: Record<string, unknown>): Pedal {
     createdAt: p.created_at as string,
     updatedAt: p.updated_at as string,
     imageUrl: p.image_url as string | null,
+    imageProcessing: {
+      status: (p.image_processing_status ??
+        'not-provided') as NonNullable<Pedal['imageProcessing']>['status'],
+      result: (p.image_processing_result as string | null) ?? null,
+      version: Number(p.image_processing_version ?? 0),
+      sourceWidth: p.image_source_width == null ? null : Number(p.image_source_width),
+      sourceHeight: p.image_source_height == null ? null : Number(p.image_source_height),
+      outputWidth: p.image_output_width == null ? null : Number(p.image_output_width),
+      outputHeight: p.image_output_height == null ? null : Number(p.image_output_height),
+      footprintRatio: p.image_footprint_ratio == null ? null : Number(p.image_footprint_ratio),
+      rotationQuarterTurns: Number(p.image_rotation_quarter_turns ?? 0) as 0 | 1 | 2 | 3,
+      perspectiveTop: Number(p.image_perspective_top ?? 0),
+    },
     notes: p.notes as string | null,
     jacks: ((p.jacks as Record<string, unknown>[]) || []).map((j) => ({
       id: j.id as string,

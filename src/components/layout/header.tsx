@@ -93,18 +93,23 @@ export function Header({ user }: HeaderProps) {
                 <span className="sr-only">Toggle menu</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-64 pt-12">
-              <nav className="flex flex-col gap-4">
+            <SheetContent side="left" className="w-72 border-r border-border bg-card px-0 pt-12">
+              <div className="border-b border-border px-5 pb-4">
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Navigate workspace
+                </p>
+              </div>
+              <nav className="flex flex-col">
                 {navLinks.map((link) => (
                   <Link
                     key={link.href}
                     href={link.href}
                     onClick={() => setMobileMenuOpen(false)}
                     aria-current={isCurrent(link.href) ? 'page' : undefined}
-                    className={`text-lg font-medium transition-colors duration-200 ${
+                    className={`border-b border-border px-5 py-4 ${NAV_ITEM} ${
                       isCurrent(link.href)
                         ? 'text-primary'
-                        : 'text-foreground/60 hover:text-foreground/90'
+                        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                     }`}
                   >
                     {link.label}

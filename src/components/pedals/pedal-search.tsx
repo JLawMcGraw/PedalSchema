@@ -105,9 +105,9 @@ export function PedalSearch({ manufacturers }: PedalSearchProps) {
           Search
         </Button>
       </form>
-      <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
         <Select value={category} onValueChange={handleCategoryChange}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="Category" />
           </SelectTrigger>
           <SelectContent>
@@ -120,7 +120,7 @@ export function PedalSearch({ manufacturers }: PedalSearchProps) {
         </Select>
 
         <Select value={manufacturer} onValueChange={handleManufacturerChange}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="Manufacturer" />
           </SelectTrigger>
           <SelectContent>
@@ -134,7 +134,7 @@ export function PedalSearch({ manufacturers }: PedalSearchProps) {
         </Select>
 
         {hasFilters && (
-          <Button variant="ghost" onClick={handleClear} disabled={isPending}>
+          <Button className="col-span-2 sm:col-span-1" variant="ghost" onClick={handleClear} disabled={isPending}>
             Clear filters
           </Button>
         )}

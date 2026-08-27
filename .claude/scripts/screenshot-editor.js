@@ -14,7 +14,12 @@ if (fs.existsSync(envPath)) {
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({
+    viewport: {
+      width: Number(process.env.VERIFY_WIDTH || 1602),
+      height: Number(process.env.VERIFY_HEIGHT || 902),
+    },
+  });
 
   try {
     // Login
@@ -33,14 +38,17 @@ if (fs.existsSync(envPath)) {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    // Click on the first configuration card
+    // Open the hero configuration through its real primary action. The board
+    // title is plain text, so clicking its text can silently leave us on the
+    // dashboard and replace the marketing editor image with the wrong page.
     console.error('Clicking configuration...');
-    await page.click('text=J$ Home');
+    await page.click('text=Continue editing');
+    await page.waitForURL(url => url.pathname.startsWith('/editor/'), { timeout: 15000 });
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(3000);
 
     // Take screenshot
-    const outputPath = path.join(__dirname, '../screenshots/editor-test.png');
+    const outputPath = process.env.VERIFY_OUTPUT || path.join(__dirname, '../../public/landing/editor-20260826.png');
     await page.screenshot({ path: outputPath });
     console.log(outputPath);
 

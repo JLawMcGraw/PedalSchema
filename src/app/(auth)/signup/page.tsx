@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { AuthShell } from '@/components/auth/auth-shell';
 
 export default function SignupPage() {
 
@@ -55,8 +56,8 @@ export default function SignupPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-950 p-4">
-        <Card className="w-full max-w-md">
+      <AuthShell mode="signup">
+        <Card className="w-full border-border bg-card/95">
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl font-bold">Check your email</CardTitle>
             <CardDescription>
@@ -76,14 +77,17 @@ export default function SignupPage() {
             </Link>
           </CardFooter>
         </Card>
-      </div>
+      </AuthShell>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral-950 p-4">
-      <Card className="w-full max-w-md">
+    <AuthShell mode="signup">
+      <Card className="w-full border-border bg-card/95">
         <CardHeader className="space-y-1">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
+            New workspace
+          </p>
           <CardTitle className="text-2xl font-bold">Create an account</CardTitle>
           <CardDescription>
             Start designing your perfect pedalboard
@@ -92,7 +96,7 @@ export default function SignupPage() {
         <form onSubmit={handleSignup}>
           <CardContent className="space-y-4">
             {error && (
-              <div className="p-3 text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-md">
+              <div className="border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
               </div>
             )}
@@ -144,6 +148,6 @@ export default function SignupPage() {
           </CardFooter>
         </form>
       </Card>
-    </div>
+    </AuthShell>
   );
 }

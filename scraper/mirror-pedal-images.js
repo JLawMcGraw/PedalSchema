@@ -26,6 +26,11 @@
  */
 const { createClient } = require('@supabase/supabase-js');
 const sharp = require('sharp');
+const {
+  knockOutBackground,
+  clearLowAlphaMatte,
+  dropStrayBackground,
+} = require('./image-pipeline-adapter');
 require('dotenv').config({ path: '.env.local' });
 
 const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -161,6 +166,10 @@ const PRODUCT_PAGES = {
  *            across. Opt-in because it fills any concavity in the outline:
  *            applied to the whole catalogue it moves 26 pedals, squaring off
  *            the Holy Grail (right band 14.8 -> 40.5) among others.
+ *   allowRagged
+ *            accept a partial border flood for a source whose stored result
+ *            has already passed the real-photo review corpus. Never general:
+ *            uploads and unknown sources keep the ragged-background reject.
  *
  * Prefer fixing `sources` when a better photo exists: the goal is a clean
  * top-down cut-out, so a correct source beats any amount of post-processing.
@@ -169,6 +178,12 @@ const PEDAL_OVERRIDES = {
   // og:image and the -1 gallery shot are both angled three-quarter views.
   // Needs a genuine head-on source; until one is found, the rect is honest.
   'Electro-Harmonix Big Muff Pi': { mode: 'skip' },
+
+  // The available distributor photo is a three-quarter view. Its processed
+  // silhouette is 1.48x wider than the declared physical footprint, which is
+  // why the old stretch renderer visibly compressed it. Preserve the honest
+  // fallback until a genuinely top-down source is pinned.
+  'Pro Co RAT 2': { mode: 'skip' },
 
   /*
    * These three arrived on the board in pieces, because the fill ate a thin
@@ -209,7 +224,15 @@ const PEDAL_OVERRIDES = {
    */
   'BOSS DD-7': { close: true, edgeTrim: true },
   'BOSS GEB-7': { close: true, bgTol: 18 },
-  'BOSS IR-2': { strict: true },
+  'BOSS IR-2': { strict: true, allowRagged: true },
+
+  // These reviewed source/result pairs predate the browser's ragged-border
+  // guard. Their stored alpha fingerprints are the acceptance evidence; the
+  // exception is deliberately per pedal so a new upload cannot inherit it.
+  'BOSS AW-3': { allowRagged: true },
+  'BOSS MD-200': { allowRagged: true },
+  'BOSS SD-1': { allowRagged: true },
+  'BOSS XS-100': { allowRagged: true },
 
   /*
    * Small Clone is a SIDE-ON photo, so no matting of any kind can help it -
@@ -417,164 +440,9 @@ async function fetchImage(url) {
  * is what made photos look cropped/zoomed on the board.
  * Falls back to the original buffer if trimming fails or eats the image.
  */
-/**
- * Knock out the studio background so the stored PNG is a true pedal
- * silhouette (the canvas draws it straight on the board - any opaque
- * white margin reads as a fake box around the pedal).
- *
- * Flood fill from every border pixel, absorbing pixels whose color stays
- * within BG_TOL per channel of the border's average background color, OR
- * that continue a smooth gradient from an absorbed neighbor (studio
- * backdrops fade 240->110 on the 200-series shots). Gradient-following
- * never enters dark pixels so it can't creep through a drop shadow into a
- * black enclosure. Edge-connected only - white knobs/labels on the pedal
- * face are interior and can't be reached, so they survive. Images that
- * already ship a meaningful alpha silhouette (BOSS/Ibanez/TC PNGs) are
- * left untouched, and a knockout that eats >90% of the frame reverts.
- */
-const BG_TOL = 35;
-const BG_GRAD_TOL = 12;
-const BG_GRAD_MIN_LUM = 90;
-/**
- * How much more COLOURFUL than its own backdrop a pixel may be and still be
- * chained onto. Brightness alone cannot separate a studio backdrop from a
- * pedal - both are light, and a soft edge joins them in steps too small for
- * BG_GRAD_TOL. Colour can: backdrops and shadows are NEUTRAL.
- *
- * Traced 2026-08-03 on the two photos this was written for:
- *   DM-2W   backdrop sat 5, path climbs 20,26,41,45,49,51,61,76,78 -> plate 99
- *   BigSky  backdrop sat 0, path steps 0 -> 70 -> 115 -> 127 -> body 224
- *
- * Relative to the border average, because a backdrop is not always neutral -
- * a pedal on a wooden floor sits on saturation ~80.
- *
- * 48, not a tighter number, because the targets are fixed anywhere in 16..120
- * so the 62-pedal corpus is what picks it. Swept with knockout-regression.js:
- * 16..32 moves 7-11 pedals (DD-7 loses 11.7pp of its bottom band, both MXR
- * silhouettes change size); 40..64 moves 4-6, each a single band by <=5pp;
- * 72..80 collapses BF-3 (left 55.5 -> 21.6). Mid-plateau, and the full
- * reasoning is in src/lib/images/knockout.ts.
- *
- * Kept in step with src/lib/images/knockout.ts, which is the same algorithm
- * for user uploads. See the note at the foot of this file.
- */
-const BG_GRAD_MAX_SAT = 48;
-/** Share of the centre 40% box the fill may touch before it counts as having
- *  eaten the subject. See the guard below for the measured justification. */
-const MAX_CENTRE_KNOCK_SHARE = 0.02;
-
-/**
- * @param {Buffer} buf
- * @param {boolean} useGradient follow smooth backdrop gradients (needed for
- *   studio shots that fade 240->110) or match the border colour strictly.
- *   Gradient-following is what lets a fill walk out of a soft backdrop and
- *   into a pedal's own light areas, so the caller retries without it.
- */
-async function knockOutBackground(buf, useGradient = true, bgTol = BG_TOL) {
-  const { data: px, info } = await sharp(buf)
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  const { width: W, height: H, channels: C } = info;
-
-  const border = [];
-  for (let x = 0; x < W; x++) border.push(x, (H - 1) * W + x);
-  for (let y = 0; y < H; y++) border.push(y * W, y * W + W - 1);
-
-  // Already a silhouette? (a real alpha edge, not just an alpha channel)
-  let transparent = 0;
-  for (const i of border) if (px[i * C + 3] < 20) transparent++;
-  if (transparent > border.length * 0.3) return { buf, ok: true, status: 'already-cutout' };
-
-  // Average opaque border color = background reference
-  let r = 0, g = 0, b = 0, n = 0;
-  for (const i of border) {
-    if (px[i * C + 3] < 20) continue;
-    r += px[i * C]; g += px[i * C + 1]; b += px[i * C + 2]; n++;
-  }
-  if (!n) return { buf, ok: false, status: 'no-background' };
-  r /= n; g /= n; b /= n;
-
-  const isBg = (i) =>
-    px[i * C + 3] >= 20 &&
-    Math.abs(px[i * C] - r) <= bgTol &&
-    Math.abs(px[i * C + 1] - g) <= bgTol &&
-    Math.abs(px[i * C + 2] - b) <= bgTol;
-
-  const lum = (i) => 0.299 * px[i * C] + 0.587 * px[i * C + 1] + 0.114 * px[i * C + 2];
-
-  // Colourfulness: 0 is a perfectly neutral grey
-  const sat = (i) =>
-    Math.max(px[i * C], px[i * C + 1], px[i * C + 2]) -
-    Math.min(px[i * C], px[i * C + 1], px[i * C + 2]);
-
-  // The most colour a chained pixel may carry, set by THIS image's backdrop
-  const maxSat = Math.max(r, g, b) - Math.min(r, g, b) + BG_GRAD_MAX_SAT;
-
-  // Can the fill spread onto j at all - light enough and neutral enough
-  const chainable = (j) => px[j * C + 3] >= 20 && lum(j) >= BG_GRAD_MIN_LUM && sat(j) <= maxSat;
-
-  // j continues a smooth, light, neutral gradient from already-background i
-  const chains = (i, j) =>
-    chainable(j) &&
-    Math.abs(px[j * C] - px[i * C]) <= BG_GRAD_TOL &&
-    Math.abs(px[j * C + 1] - px[i * C + 1]) <= BG_GRAD_TOL &&
-    Math.abs(px[j * C + 2] - px[i * C + 2]) <= BG_GRAD_TOL;
-
-  const visited = new Uint8Array(W * H);
-  const queue = [];
-  for (const i of border) {
-    if (!visited[i] && (isBg(i) || (useGradient && chainable(i)))) {
-      visited[i] = 1;
-      queue.push(i);
-    }
-  }
-  let knocked = 0;
-  const knockedIdx = [];
-  while (queue.length) {
-    const i = queue.pop();
-    knocked++;
-    knockedIdx.push(i);
-    const x = i % W;
-    for (const j of [i - 1, i + 1, i - W, i + W]) {
-      if (j < 0 || j >= W * H) continue;
-      if ((j === i - 1 && x === 0) || (j === i + 1 && x === W - 1)) continue;
-      if (!visited[j] && (isBg(j) || (useGradient && chains(i, j)))) { visited[j] = 1; queue.push(j); }
-    }
-  }
-  // A knockout that ate (almost) the whole frame leaked into the subject
-  if (knocked > W * H * 0.9) return { buf, ok: false, status: 'reverted' };
-
-  // A knockout that reached the MIDDLE of the frame also leaked into the
-  // subject - a product photo has the product in the centre, so the fill has
-  // no business there. The box is the centre 20%, not 40%: a wider box picks
-  // up legitimate background whenever the subject does not fill the frame,
-  // and the tighter box also separates the real cases more sharply (damaged
-  // 77-91%, healthy 0%). Without this, a JPEG whose pedal has light areas
-  // (silver bands, pale knobs) lets the gradient-follower walk in from the
-  // backdrop and hollow out the face, leaving only the dark parts: the pedal
-  // renders as a black blob. Measured over all 64 mirrored images, the split
-  // is unambiguous - healthy fills reach at most 0.49% of the centre box,
-  // damaged ones 4.48% and up (AW-3 and DD-7 hit 59%).
-  const cx0 = Math.floor(W * 0.4), cx1 = Math.ceil(W * 0.6);
-  const cy0 = Math.floor(H * 0.4), cy1 = Math.ceil(H * 0.6);
-  let centreKnocked = 0;
-  for (const i of knockedIdx) {
-    const x = i % W, y = (i / W) | 0;
-    if (x >= cx0 && x < cx1 && y >= cy0 && y < cy1) centreKnocked++;
-  }
-  if (centreKnocked > (cx1 - cx0) * (cy1 - cy0) * MAX_CENTRE_KNOCK_SHARE) {
-    return { buf, ok: false, status: 'subject-eaten' };
-  }
-
-  for (const i of knockedIdx) px[i * C + 3] = 0;
-
-  return {
-    buf: await sharp(px, { raw: { width: W, height: H, channels: C } }).png().toBuffer(),
-    ok: true,
-    status: 'knocked-out',
-  };
-}
+// General knockout and cleanup stages come from image-pipeline-adapter.js.
+// Catalogue-specific outline and gap repairs remain below as explicit,
+// reviewable per-pedal overrides.
 
 /**
  * Find the subject's outline by GLOBAL edge evidence rather than locally.
@@ -664,74 +532,6 @@ async function detectOutlineRect(buf) {
   }
 
   return { x0, x1, y0, y1, W, H };
-}
-
-/**
- * Drop opaque islands that are retained BACKDROP rather than subject.
- *
- * A cut-out should be one piece. When it is not, the extra pieces are of two
- * kinds and only one is damage: a pedal split by a thin slice the fill ate
- * through it (the halves are large and pedal-coloured, and must be KEPT), or
- * scraps of backdrop the fill could not reach (small, bright and neutral).
- *
- * Measured on the catalogue 2026-08-03, the two are far apart:
- *
- *   DD-7    blob 0 344331 lum 128   blob 1 151763 lum  83   <- both the pedal
- *           blob 2  29126 lum 195 sat 28                    <- backdrop scraps
- *   GEB-7   blob 0  34623 lum 116   blob 1  16614 lum  87   <- both the pedal
- *           blobs 2,3 of 4 and 2 px, lum 202-203            <- scraps
- *
- * So: drop an island only if it is a small fraction of the main blob AND
- * looks like backdrop. Nothing that could be a pedal half is touched.
- */
-const STRAY_MAX_SHARE = 0.1;
-const STRAY_MIN_LUM = 150;
-const STRAY_MAX_SAT = 40;
-
-async function dropStrayBackground(buf) {
-  const { data: px, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const { width: W, height: H, channels: C } = info;
-  const label = new Int32Array(W * H).fill(-1);
-  const stack = new Int32Array(W * H);
-  const blobs = [];
-  for (let s = 0; s < W * H; s++) {
-    if (label[s] !== -1 || px[s * C + 3] <= 200) continue;
-    const id = blobs.length;
-    let top = 0, n = 0, sl = 0, ss = 0;
-    stack[top++] = s;
-    label[s] = id;
-    while (top > 0) {
-      const i = stack[--top];
-      n++;
-      const r = px[i * C], g = px[i * C + 1], b = px[i * C + 2];
-      sl += 0.299 * r + 0.587 * g + 0.114 * b;
-      ss += Math.max(r, g, b) - Math.min(r, g, b);
-      const x = i % W;
-      for (const j of [i - 1, i + 1, i - W, i + W]) {
-        if (j < 0 || j >= W * H) continue;
-        if ((j === i - 1 && x === 0) || (j === i + 1 && x === W - 1)) continue;
-        if (label[j] === -1 && px[j * C + 3] > 200) { label[j] = id; stack[top++] = j; }
-      }
-    }
-    blobs.push({ id, n, lum: sl / n, sat: ss / n });
-  }
-  if (blobs.length < 2) return { buf, dropped: 0, blobs: blobs.length };
-  const main = blobs.reduce((a, b) => (b.n > a.n ? b : a));
-  const doomed = new Set(
-    blobs
-      .filter((b) => b.id !== main.id && b.n < main.n * STRAY_MAX_SHARE && b.lum > STRAY_MIN_LUM && b.sat < STRAY_MAX_SAT)
-      .map((b) => b.id)
-  );
-  if (!doomed.size) return { buf, dropped: 0, blobs: blobs.length };
-  let cleared = 0;
-  for (let i = 0; i < W * H; i++) {
-    if (doomed.has(label[i])) { px[i * C + 3] = 0; cleared++; }
-  }
-  return {
-    buf: await sharp(px, { raw: { width: W, height: H, channels: C } }).png().toBuffer(),
-    dropped: cleared,
-    blobs: blobs.length,
-  };
 }
 
 /**
@@ -862,8 +662,8 @@ async function trimBackground(buf, opts = {}) {
     // 51+ away from the backdrop and a strict match never touches them.
     // Top rows go 0-5% opaque -> 85-89%.
     let cut = opts.strict
-      ? await knockOutBackground(buf, false, opts.bgTol)
-      : await knockOutBackground(buf, true, opts.bgTol);
+      ? await knockOutBackground(buf, false, opts.bgTol, opts.allowRagged)
+      : await knockOutBackground(buf, true, opts.bgTol, opts.allowRagged);
     // A failed knockout must REJECT the candidate, never fall through. Trimming
     // an image that still has its background crops to the background's own
     // bounding box, so the pedal would render inside a white rectangle - the
@@ -876,7 +676,7 @@ async function trimBackground(buf, opts = {}) {
     // centre penetration from ~50-59% to 0% on most of them, recovering the
     // photo instead of falling back to a rect.
     if (!cut.ok && cut.status === 'subject-eaten') {
-      cut = await knockOutBackground(buf, false, opts.bgTol);
+      cut = await knockOutBackground(buf, false, opts.bgTol, opts.allowRagged);
     }
     if (!cut.ok) return { buf, type: null, trimmed: false, rejected: cut.status };
     if (opts.rect) {
@@ -914,6 +714,8 @@ async function trimBackground(buf, opts = {}) {
       const closed = await closeVerticalGaps(cut.buf);
       cut = { ...cut, buf: closed.buf };
     }
+    const matted = await clearLowAlphaMatte(cut.buf);
+    cut = { ...cut, buf: matted.buf };
     const swept = await dropStrayBackground(cut.buf);
     cut = { ...cut, buf: swept.buf };
     if (opts.edgeTrim) {
@@ -925,7 +727,16 @@ async function trimBackground(buf, opts = {}) {
     if (width < 40 || height < 40 || width * height < meta.width * meta.height * 0.02) {
       return { buf, type: null, trimmed: false };
     }
-    return { buf: trimmed.data, type: 'image/png', trimmed: true, dims: [width, height] };
+    return {
+      buf: trimmed.data,
+      type: 'image/png',
+      trimmed: true,
+      dims: [width, height],
+      cleanup: {
+        mattePixelsCleared: matted.cleared,
+        strayPixelsDropped: swept.dropped,
+      },
+    };
   } catch {
     return { buf, type: null, trimmed: false };
   }
@@ -938,8 +749,8 @@ async function trimBackground(buf, opts = {}) {
  * Wide lifestyle/angled hero shots fail this and are rejected - a clean
  * category-colored rect beats a squished photo.
  */
-const ASPECT_MIN = 0.65;
-const ASPECT_MAX = 1.5;
+const ASPECT_MIN = 0.8;
+const ASPECT_MAX = 1.25;
 
 async function acceptCandidate(url, physicalAspect, opts = {}) {
   const img = await fetchImage(url);
@@ -1072,6 +883,14 @@ async function main() {
         await sb.from('pedals').update({
           image_url: null, image_source_url: null, image_license: null,
           image_attribution: null, image_fetched_at: null,
+          image_processing_status: 'fallback',
+          image_processing_result: null,
+          image_processing_version: 0,
+          image_source_width: null, image_source_height: null,
+          image_output_width: null, image_output_height: null,
+          image_footprint_ratio: null,
+          image_rotation_quarter_turns: 0,
+          image_perspective_top: 0,
         }).eq('id', pedal.id);
       }
       continue;
@@ -1084,6 +903,7 @@ async function main() {
       rect: override.mode === 'rect',
       close: override.close === true,
       strict: override.strict === true,
+      allowRagged: override.allowRagged === true,
       bgTol: override.bgTol,
       edgeTrim: override.edgeTrim === true,
     };
@@ -1141,6 +961,16 @@ async function main() {
           image_license: null,
           image_attribution: null,
           image_fetched_at: null,
+          image_processing_status: 'fallback',
+          image_processing_result: null,
+          image_processing_version: 0,
+          image_source_width: null,
+          image_source_height: null,
+          image_output_width: null,
+          image_output_height: null,
+          image_footprint_ratio: null,
+          image_rotation_quarter_turns: 0,
+          image_perspective_top: 0,
         }).eq('id', pedal.id);
         report.cleared.push(pedal.name);
       }
@@ -1168,6 +998,18 @@ async function main() {
         image_license: license,
         image_attribution: attribution,
         image_fetched_at: new Date().toISOString(),
+        // Shared pixel semantics are now canonical, but catalogue images stay
+        // unreviewed until the batch contact-sheet pass promotes them.
+        image_processing_status: 'unreviewed',
+        image_processing_result: null,
+        image_processing_version: 0,
+        image_source_width: null,
+        image_source_height: null,
+        image_output_width: hit.dims[0],
+        image_output_height: hit.dims[1],
+        image_footprint_ratio: hit.ratio,
+        image_rotation_quarter_turns: 0,
+        image_perspective_top: 0,
       }).eq('id', pedal.id);
       if (dbErr) { report.missed.push(`${pedal.name} (db: ${dbErr.message})`); continue; }
     }
@@ -1208,6 +1050,7 @@ module.exports = {
   knockOutBackground,
   detectOutlineRect,
   closeVerticalGaps,
+  clearLowAlphaMatte,
   dropStrayBackground,
   trimBackgroundEdges,
   trimBackground,

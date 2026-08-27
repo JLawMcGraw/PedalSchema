@@ -8,6 +8,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  alphaQualityReport,
+  clearLowAlphaMatte,
+  dropStrayBackground,
   knockOutBackground,
   prepareSilhouette,
   trimTransparent,
@@ -23,6 +26,56 @@ import {
 
 const alphaAt = (img: RgbaImage, x: number, y: number) =>
   img.data[(y * img.width + x) * 4 + 3];
+
+describe('canonical alpha cleanup', () => {
+  it('clears a low-alpha matte before trimming an existing cutout', () => {
+    const img = image(20, 20, (x, y) =>
+      x >= 5 && x < 15 && y >= 5 && y < 15
+        ? [30, 30, 35, 255]
+        : [220, 220, 220, 12]
+    );
+
+    const { image: out, status, mattePixelsCleared, quality } = prepareSilhouette(img);
+
+    expect(status).toBe('already-cutout');
+    expect(mattePixelsCleared).toBe(300);
+    expect([out.width, out.height]).toEqual([10, 10]);
+    expect(quality.lowAlphaShare).toBe(0);
+  });
+
+  it('drops a small bright neutral backdrop island but keeps the main subject', () => {
+    const img = image(30, 30, (x, y) => {
+      if (x >= 10 && x < 20 && y >= 10 && y < 20) return [30, 30, 35, 255];
+      if (x >= 24 && x < 26 && y >= 24 && y < 26) return [245, 245, 245, 255];
+      return [0, 0, 0, 0];
+    });
+
+    const { image: out, strayPixelsDropped } = prepareSilhouette(img);
+
+    expect(strayPixelsDropped).toBe(4);
+    expect([out.width, out.height]).toEqual([10, 10]);
+    expect(alphaAt(out, 5, 5)).toBe(255);
+  });
+
+  it('exposes cleanup and quality stages independently for scraper parity', () => {
+    const img = image(10, 10, (x, y) =>
+      x === 5 && y === 5 ? [20, 20, 20, 255] : [200, 200, 200, 8]
+    );
+    const matte = clearLowAlphaMatte(img);
+    const swept = dropStrayBackground(matte.image);
+    const report = alphaQualityReport(swept.image);
+
+    expect(matte.cleared).toBe(99);
+    expect(swept.dropped).toBe(0);
+    expect(report).toMatchObject({
+      transparentShare: 0.99,
+      lowAlphaShare: 0,
+      opaqueShare: 0.01,
+      solidComponents: 1,
+      solidStrayShare: 0,
+    });
+  });
+});
 
 describe('knockOutBackground', () => {
   it('makes a white studio background transparent and leaves the body opaque', () => {

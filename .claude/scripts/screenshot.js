@@ -10,6 +10,8 @@
  *   --auth                Login first using VERIFY_EMAIL and VERIFY_PASSWORD from .env.local
  *   --wait <ms>           Additional wait time after page load (default: 1000)
  *   --full                Capture full page (default: viewport only)
+ *   --width <px>          Viewport width (default: 1440)
+ *   --height <px>         Viewport height (default: 900)
  *
  * Examples:
  *   node .claude/scripts/screenshot.js http://localhost:3000/login
@@ -46,7 +48,9 @@ function parseArgs(args) {
     output: null,
     auth: false,
     wait: 1000,
-    full: false
+    full: false,
+    width: 1440,
+    height: 900,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -59,6 +63,10 @@ function parseArgs(args) {
       result.output = args[++i];
     } else if (arg === '--wait') {
       result.wait = parseInt(args[++i], 10);
+    } else if (arg === '--width') {
+      result.width = parseInt(args[++i], 10);
+    } else if (arg === '--height') {
+      result.height = parseInt(args[++i], 10);
     } else if (!arg.startsWith('-') && !result.url) {
       result.url = arg;
     }
@@ -121,7 +129,7 @@ async function main() {
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
-    viewport: { width: 1440, height: 900 }
+    viewport: { width: args.width, height: args.height }
   });
   const page = await context.newPage();
 

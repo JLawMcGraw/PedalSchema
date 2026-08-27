@@ -35,6 +35,19 @@ const SIZE_DRIFT = 0.01;
 const OPAQUE_A = 200;
 const CLEAR_A = 20;
 
+// The canonical pipeline deliberately clears alpha 1..31 before trimming.
+// These are the only stored fingerprints expected to move in this rollout;
+// the check additionally requires the cleanup stage to report actual cleared
+// pixels, so this list cannot excuse an unrelated detector change.
+const EXPECTED_MATTE_CLEANUP = new Set([
+  'BOSS CS-3',
+  'BOSS FZ-1W',
+  'BOSS HM-2W',
+  'BOSS TU-3W',
+  'TC Electronic Ditto Looper',
+  'TC Electronic Polytune 3',
+]);
+
 async function measure(buf) {
   const { data: px, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width: W, height: H, channels: C } = info;
@@ -104,6 +117,7 @@ async function main() {
 
   const moved = [];
   const trivial = [];
+  const intentional = [];
   const unfetchable = [];
   let checked = 0;
 
@@ -124,6 +138,7 @@ async function main() {
       outline: PEDAL_OVERRIDES[key]?.mode === 'outline',
       close: PEDAL_OVERRIDES[key]?.close === true,
       strict: PEDAL_OVERRIDES[key]?.strict === true,
+      allowRagged: PEDAL_OVERRIDES[key]?.allowRagged === true,
       bgTol: PEDAL_OVERRIDES[key]?.bgTol,
       edgeTrim: PEDAL_OVERRIDES[key]?.edgeTrim === true,
     });
@@ -157,7 +172,17 @@ async function main() {
     if (sizeMoved) deltas.push(`size ${base.w}x${base.h} -> ${now.w}x${now.h}`);
     else if (base.w !== now.w || base.h !== now.h) trivial.push(`${key}: ${base.w}x${base.h} -> ${now.w}x${now.h}`);
 
-    if (deltas.length) moved.push(`${key}: ${deltas.join(', ')}`);
+    if (
+      deltas.length &&
+      EXPECTED_MATTE_CLEANUP.has(key) &&
+      processed.cleanup?.mattePixelsCleared > 0
+    ) {
+      intentional.push(
+        `${key}: cleared ${processed.cleanup.mattePixelsCleared} low-alpha pixels; ${deltas.join(', ')}`
+      );
+    } else if (deltas.length) {
+      moved.push(`${key}: ${deltas.join(', ')}`);
+    }
     process.stdout.write(deltas.length ? 'x' : '.');
   }
 
@@ -169,6 +194,10 @@ async function main() {
   if (trivial.length) {
     console.log(`\n--- size moved <=${100 * SIZE_DRIFT}%, trim landing the other side of an anti-aliased edge ---`);
     trivial.forEach((l) => console.log('  ' + l));
+  }
+  if (intentional.length) {
+    console.log('\n--- expected canonical matte cleanup ---');
+    intentional.forEach((l) => console.log('  ' + l));
   }
   console.log(`\n--- MOVED (>${100 * DRIFT}% in any share, or >${100 * SIZE_DRIFT}% in size) ---`);
   if (!moved.length) console.log('  none');
