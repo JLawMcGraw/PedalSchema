@@ -29,6 +29,35 @@ interface EditorToolbarProps {
 }
 
 /**
+ * Stops Firefox restoring a button's enabled/disabled state across a reload.
+ *
+ * Firefox, alone among browsers, remembers the DYNAMIC `disabled` state of a
+ * <button> when a page is reloaded and re-applies it to the fresh HTML before
+ * any script runs. `autocomplete="off"` is the documented way to opt a button
+ * out (MDN, <button>: "Firefox persists the dynamic disabled state of a
+ * <button> across page loads").
+ *
+ * It matters here because the server always renders Undo, Redo, Optimize and
+ * Save DISABLED - zustand hands React the store's initial state on the server
+ * and again for the hydration render, so that is true however dirty the store
+ * is (toolbar-hydration.test.tsx renders it both ways). Reload the editor with
+ * unsaved edits and Firefox re-enables exactly the three that were live -
+ * Undo, Optimize, Save - on top of that HTML. React then hydrates, finds
+ * `disabled` missing where it rendered it, and reports:
+ *
+ *     A tree hydrated but some attributes of the server rendered HTML didn't
+ *     match the client properties.   + disabled={true}   - disabled={null}
+ *
+ * "This won't be patched up" is literal: the attribute stays wrong. A board
+ * that loads clean shows a live Save and a live Undo until some later state
+ * change happens to rewrite them.
+ *
+ * Spread rather than written as a prop because @types/react only declares
+ * `autoComplete` on form fields, not on buttons.
+ */
+const NO_STATE_RESTORE = { autoComplete: 'off' } as React.ButtonHTMLAttributes<HTMLButtonElement>;
+
+/**
  * One item on the control rule.
  *
  * The rule has NO buttons in the shadcn sense - no fills, no borders, no
@@ -60,6 +89,7 @@ function RuleItem({
   return (
     <button
       type="button"
+      {...NO_STATE_RESTORE}
       onClick={onClick}
       disabled={disabled}
       className={cn(
@@ -405,6 +435,7 @@ export function EditorToolbar({ onSave }: EditorToolbarProps) {
             <button
               type="button"
               data-save-board
+              {...NO_STATE_RESTORE}
               onClick={onSave}
               disabled={isSaving || !isDirty || Boolean(saveConflict)}
               className={cn(
