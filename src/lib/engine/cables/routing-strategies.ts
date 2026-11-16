@@ -368,6 +368,57 @@ function dedupePath(path: Point[]): Point[] {
 }
 
 /**
+ * The free horizontal bands BETWEEN pedal rows that are wide enough to carry a
+ * cable, top to bottom.
+ *
+ * `ranges` must be sorted by `top`. Overlapping ranges are merged into one
+ * occupied band first, and a free band is the space between two occupied ones.
+ *
+ * This used to pair CONSECUTIVE ranges instead - `ranges[i + 1].top -
+ * ranges[i].bottom` - which is only the same thing when every pedal in a row
+ * is the same depth. Two pedals side by side at different depths tie on `top`,
+ * so the sort left them in whatever order the pedal array arrived in, and the
+ * answer depended on it:
+ *
+ *     A 0..200   B 0..217   C 230..430        the real corridor is 217..230
+ *
+ *     sorted A,B,C   C.top - B.bottom = 13    channel at 223.5, correct
+ *     sorted B,A,C   C.top - A.bottom = 30    channel at 215, INSIDE pedal B
+ *
+ * In the second order the rung proposed a line through a pedal, lost its turn
+ * in the cascade, and the cable fell through to A* or the perimeter. So the
+ * same board drew two different ways depending on the order of an array -
+ * and the optimizer scores candidates in chain order while the store keeps
+ * its own, so Optimize could report a board the canvas did not draw. Measured
+ * on 2026-11-16: a 13-pedal board scored 30.7in and 0 crossings, and was drawn
+ * at 73.2in with 2, until an unrelated re-sort of the array "fixed" it.
+ *
+ * Merging is a union, so it cannot depend on how ties were ordered.
+ * routing-order-independence.test.ts holds the whole router to that.
+ */
+function freeBandsBetween(
+  ranges: Array<{ top: number; bottom: number }>
+): Array<{ top: number; bottom: number }> {
+  const occupied: Array<{ top: number; bottom: number }> = [];
+  for (const range of ranges) {
+    const last = occupied[occupied.length - 1];
+    if (last && range.top <= last.bottom) {
+      last.bottom = Math.max(last.bottom, range.bottom);
+    } else {
+      occupied.push({ ...range });
+    }
+  }
+
+  const free: Array<{ top: number; bottom: number }> = [];
+  for (let i = 0; i < occupied.length - 1; i++) {
+    const top = occupied[i].bottom;
+    const bottom = occupied[i + 1].top;
+    if (bottom - top > OBSTACLE_MARGIN * 2) free.push({ top, bottom });
+  }
+  return free;
+}
+
+/**
  * Internal routing function (stub + core model).
  *
  * Routes the CORE between the two standoff points, treating every pedal
@@ -470,13 +521,10 @@ function routeCablePath(
     const yRanges = validBoxes.map(b => ({ top: b.y, bottom: b.y + b.height }));
     yRanges.sort((a, b) => a.top - b.top);
 
-    for (let i = 0; i < yRanges.length - 1; i++) {
-      const gap = yRanges[i + 1].top - yRanges[i].bottom;
-      if (gap > OBSTACLE_MARGIN * 2) {
-        const channelY = constrainY(yRanges[i].bottom + gap / 2, boardBounds);
-        const channel = candidateOk([s, { x: s.x, y: channelY }, { x: t.x, y: channelY }, t], 'channel');
-        if (channel) return channel;
-      }
+    for (const band of freeBandsBetween(yRanges)) {
+      const channelY = constrainY(band.top + (band.bottom - band.top) / 2, boardBounds);
+      const channel = candidateOk([s, { x: s.x, y: channelY }, { x: t.x, y: channelY }, t], 'channel');
+      if (channel) return channel;
     }
 
     // Strategy 4: Route above all pedals (but stay within board bounds)
