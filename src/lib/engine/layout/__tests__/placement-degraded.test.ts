@@ -165,6 +165,57 @@ describe('placement degradation is reported', () => {
       expect(p.y).toBeCloseTo(original.yInches, 5);
     }
   });
+
+  /*
+   * The SAME board through the optimizer's other path.
+   *
+   * The test above has six different categories, so there is nothing to
+   * reorder and the optimizer takes its nothing-to-search path. Make two
+   * neighbours the same category and it takes the search path instead - a
+   * different block of code, with its own `noLegalCandidate`, which until
+   * 2026-11-16 counted only what the search itself placed and ignored the
+   * incumbent. So this board, with this legal hand layout kept and returned,
+   * was reported as "Could not fit these pedals on this board" - and whether a
+   * user was told that or "Already optimal" depended on whether two of their
+   * pedals happened to share a category.
+   */
+  it('...whichever path the optimizer takes to get there', () => {
+    const build = (cats: string[]) => {
+      const byId: Record<string, Pedal> = {};
+      const placed: PlacedPedal[] = [];
+      for (let i = 0; i < 6; i++) {
+        const id = `p${i}`;
+        byId[id] = { ...pedal(id, 2.87, 5.08), id, name: id, category: cats[i], jacks: [] } as Pedal;
+        placed.push({
+          id, pedalId: id, pedal: byId[id],
+          xInches: (i % 3) * 2.9, yInches: Math.floor(i / 3) * 5.15,
+          rotationDegrees: 0, chainPosition: i + 1, rotationLocked: true,
+        } as unknown as PlacedPedal);
+      }
+      return { byId, placed };
+    };
+    const board = boardOf(10, 10.4);
+
+    const nothingToSearch = build(['overdrive', 'delay', 'reverb', 'tuner', 'fuzz', 'boost']);
+    const somethingToSearch = build(['overdrive', 'overdrive', 'reverb', 'tuner', 'fuzz', 'boost']);
+    expect(detectCollisions(somethingToSearch.placed, somethingToSearch.byId, board)).toEqual([]);
+
+    const plain = calculateOptimalLayoutJoint(nothingToSearch.placed, nothingToSearch.byId, board);
+    const searched = calculateOptimalLayoutJoint(somethingToSearch.placed, somethingToSearch.byId, board);
+
+    // The fixture really does exercise both paths.
+    expect(plain.swappableGroups).toHaveLength(0);
+    expect(searched.swappableGroups.map((g) => g.pedalIds.length)).toEqual([2]);
+
+    // And they agree: a legal layout exists, it is the user's, and it came back.
+    expect(searched.noLegalCandidate).toBe(false);
+    expect(searched.noLegalCandidate).toBe(plain.noLegalCandidate);
+    for (const p of searched.placements) {
+      const original = somethingToSearch.placed.find((q) => q.id === p.id)!;
+      expect(p.x).toBeCloseTo(original.xInches, 5);
+      expect(p.y).toBeCloseTo(original.yInches, 5);
+    }
+  });
 });
 
 describe('an overlapping layout is never preferred to a legal one', () => {

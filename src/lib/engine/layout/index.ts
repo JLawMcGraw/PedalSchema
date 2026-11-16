@@ -163,6 +163,28 @@ export function calculateGreedyPlacementWithDiagnostics(
   // of a dumped store state (see .claude/scripts/dump-state.js).
   const DEBUG_PLACEMENT = isDebugEnabled('debug');
 
+  /*
+   * The placer says when it had to degrade - but only to someone who asked.
+   *
+   * These used to be unconditional console.warns. That was fine when greedy
+   * placement ran once per click. It now runs once per CANDIDATE inside the
+   * optimizer's search, up to 200 times a click, and on a crowded board most
+   * candidates degrade - so one press of Optimize could write hundreds of
+   * warnings, from a worker, about arrangements that were never shown. Nothing
+   * is lost by keeping them for the debug flag: the fact itself is returned
+   * (`degraded`), carried to the optimizer result (`placementDegraded`) and
+   * shown in the summary.
+   *
+   * `narrate` is how a dry run stays quiet. That was done by REASSIGNING
+   * console.warn to a no-op for the duration and putting it back in a finally
+   * - a global, mutated from inside a pure function, in a worker that shares
+   * that global with anything else it runs.
+   */
+  let narrate = true;
+  const note = (message: string): void => {
+    if (DEBUG_PLACEMENT && narrate) console.warn(message);
+  };
+
   // Set by placePackedChain when it has to fall back to order-relaxed or
   // anywhere-on-board placement - the signal to retry with less corridor
   let placementDegraded = false;
@@ -430,7 +452,7 @@ export function calculateGreedyPlacementWithDiagnostics(
         if (!spot) {
           placementDegraded = true;
           if (DEBUG_PLACEMENT) console.log(`      advance FAILED too -> order-relax scan`);
-          console.warn(`[GREEDY] Order relaxed for ${placed.id} - no space without breaking chain order`);
+          note(`[GREEDY] Order relaxed for ${placed.id} - no space without breaking chain order`);
           for (let tryPos = rowPos; tryPos < rowOrder.length && !spot; tryPos++) {
             const tryRowY = rowYPositions[rowOrder[tryPos]] ?? board.depthInches * 0.5;
             spot = findValidPositionInRowStartingFrom(
@@ -445,7 +467,7 @@ export function calculateGreedyPlacementWithDiagnostics(
 
         if (!spot) {
           placementDegraded = true;
-          console.warn(`[GREEDY] Fallback placement for ${placed.id} - no valid spot`);
+          note(`[GREEDY] Fallback placement for ${placed.id} - no valid spot`);
           spot = findValidPositionInZone(
             width, depth, placedBoxes, board, rowYPositions,
             0, board.widthInches,
@@ -503,12 +525,11 @@ export function calculateGreedyPlacementWithDiagnostics(
       const placeMark = placements.length;
       const boxMark = placedBoxes.length;
       const degradedBefore = placementDegraded;
-      const warn = console.warn;
-      console.warn = () => {}; // a dry run must not narrate
+      narrate = false; // a dry run must not narrate
       try {
         runPass(chain.filter((p) => !straddlerIds.has(p.id)), new Set());
       } finally {
-        console.warn = warn;
+        narrate = true;
       }
       const dry = new Map(placements.slice(placeMark).map((p) => [p.id, { x: p.x, y: p.y }]));
       placements.length = placeMark;
@@ -1172,8 +1193,8 @@ export function calculateOptimalLayoutJoint(
      * "nothing legal was found" whenever greedy failed, however good the
      * baseline was. summarizeOptimization branches on this flag ahead of
      * everything else, so the user was told "Could not fit these pedals on
-     * this board" about a board that fits. The search path below has always
-     * used the right rule (`!anyLegalCandidate`); only this path did not.
+     * this board" about a board that fits. The search path below now applies
+     * the same rule - see the note at its return.
      */
     const noLegalCandidate = !Number.isFinite(greedyScore) && !Number.isFinite(baselineCandidate.score);
     return {
@@ -1475,7 +1496,21 @@ export function calculateOptimalLayoutJoint(
     // `best.cost` is the winner's own score object, not a recomputation, so
     // what the UI reports is literally what the search compared.
     cost: best.cost,
-    noLegalCandidate: !anyLegalCandidate,
+    /*
+     * The user's own layout is a candidate, here as in the nothing-to-search
+     * path above: it is the incumbent, and when it is legal it is what gets
+     * returned. So "nothing legal was found" needs BOTH to have failed.
+     *
+     * This read `!anyLegalCandidate` alone until 2026-11-16, and the note on
+     * the other path called that "the right rule". It was the weaker one: it
+     * counts only what the search placed. Same board, a legal hand layout the
+     * placer cannot reproduce - with no swappable group the summary said
+     * "Already optimal - nothing moved", and with one swappable pair it said
+     * "Could not fit these pedals on this board", about pedals that were
+     * sitting on it. Which of the two the user was told depended on whether
+     * two neighbours happened to share a category.
+     */
+    noLegalCandidate: !anyLegalCandidate && !baselineEligible,
     // The WINNER's flag, not any candidate's - the search may have degraded
     // its way through a dozen arrangements and still returned a clean one.
     placementDegraded: best.degraded,
