@@ -1203,6 +1203,31 @@ export interface ScoredJointOptimizationResult extends JointOptimizationResult {
   rowFit?: RowFit;
 }
 
+/**
+ * The least an arrangement must gain before Optimize will move a LEGAL board
+ * for it, in the score's own unit - inches of cable.
+ *
+ * Any strict improvement used to be enough: the threshold was 1e-9. Measured
+ * on the owner's 22-pedal board, 2026-11-16: one press moved seven pedals to
+ * take the score from 459.69 to 459.20. Half an inch of cable, bought with
+ * seven pedals that now have to be picked up and re-stuck, an undo entry, and
+ * a saved board marked unsaved.
+ *
+ * Nothing structural can be lost to this. Every other thing the score counts
+ * is priced far above it - a crossing is 8, a complex route 10, an unroutable
+ * cable 100 - so the only arrangements it declines are ones that differ from
+ * the user's by under an inch of cable and nothing else.
+ *
+ * It applies to one comparison only: the winner against the user's own
+ * layout, and only when that layout is legal. Inside the search candidates
+ * still beat each other on any strict improvement, and a board with
+ * overlapping pedals is always replaced.
+ *
+ * An inch is a judgement, not a measurement. It is the smallest round figure
+ * that is unmistakably less than the trouble of moving one pedal.
+ */
+const MIN_WORTHWHILE_GAIN_INCHES = 1;
+
 export function calculateOptimalLayoutJoint(
   placedPedals: PlacedPedal[],
   pedalsById: Record<string, Pedal>,
@@ -1297,7 +1322,11 @@ export function calculateOptimalLayoutJoint(
       : greedyCost.totalScore;
     // Ties keep the baseline, and if BOTH are illegal we keep the user's board
     // rather than replacing it with a different broken one.
-    const keepBaseline = baselineCandidate.score <= greedyScore + 1e-9;
+    // A legal baseline is also kept when greedy is better by less than is
+    // worth moving pedals for - see MIN_WORTHWHILE_GAIN_INCHES.
+    const keepBaseline =
+      baselineCandidate.score <= greedyScore + 1e-9 ||
+      (baselineEligible && baselineCandidate.score - greedyScore < MIN_WORTHWHILE_GAIN_INCHES);
     /*
      * BOTH, not just greedy. The user's own layout is a candidate - it is the
      * incumbent this path is comparing against - so a legal baseline means a
@@ -1569,6 +1598,17 @@ export function calculateOptimalLayoutJoint(
 
     if (best.score >= scoreAtPassStart - 1e-9) break; // a full pass changed nothing
     if (evaluations >= MAX_EVALUATIONS) break;
+  }
+
+  // The search is over. If all it found is worth less than moving pedals for,
+  // the user's legal layout stands - see MIN_WORTHWHILE_GAIN_INCHES.
+  if (
+    baselineEligible && best !== baselineCandidate &&
+    baselineCandidate.score - best.score < MIN_WORTHWHILE_GAIN_INCHES
+  ) {
+    best = baselineCandidate;
+    bestOrder = initialChainOrder;
+    bestRotations = new Map(baseRotations);
   }
 
   const changedRotations = [...bestRotations]
