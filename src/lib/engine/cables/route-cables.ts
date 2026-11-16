@@ -319,17 +319,17 @@ export function routeCablePaths(
   options?: { laneRouter?: boolean }
 ): RoutedPath[] {
   const laneRouter = options?.laneRouter ?? USE_LANE_ROUTER;
+  if (!laneRouter) return routeOnce(requests, obstacles, false);
 
-  const withLanes = routeOnce(requests, obstacles, laneRouter);
-  if (!laneRouter) return withLanes;
+  const { lanes: withLanes, cascade: plain } = routeBothWays(requests, obstacles);
 
   /*
    * THE CORRIDOR MODEL MUST NEVER DRAW A WORSE BOARD THAN THE CASCADE IT
    * REPLACED.
    *
    * The lane router coordinates runs so parallel cables sit in separate lanes,
-   * which is better nearly everywhere and occasionally worse: on a dense board
-   * its coordinated detours can cross each other more often than the cascade's
+   * which is better on some boards and worse on others: on a dense board its
+   * coordinated detours can cross each other more often than the cascade's
    * independent routes do. That was a TOLERANCE in lane-router.test.ts ("no
    * more than one extra crossing"), which is a hope rather than a guarantee,
    * and it was breached the moment a board got harder.
@@ -340,13 +340,18 @@ export function routeCablePaths(
    * is not a trade worth making. It works now because the cascade was made
    * orthogonal - the two pictures are finally comparable.
    *
+   * "WORSE" MEANS THE WHOLE PICTURE - see compareRoutingOutcomes. Until
+   * 2026-11-16 it meant crossings alone, and a guard that measures one thing
+   * guarantees one thing.
+   *
    * COST: two routing passes instead of one, on every derive AND inside the
    * optimizer's scoring loop. Paid in both places deliberately - scoring a
    * picture you do not draw is the P1.5 defect, and a guard that ran only when
    * drawing would rebuild it.
    */
-  const plain = routeOnce(requests, obstacles, false);
-  if (crossingCount(plain) >= crossingCount(withLanes)) return withLanes;
+  if (compareRoutingOutcomes(routingOutcome(withLanes), routingOutcome(plain)) <= 0) {
+    return withLanes;
+  }
 
   // The cascade won. Cables the corridor SERVED are relabelled 'outrouted' so
   // that "strategy is lane-router exactly when the corridor served it" keeps
@@ -357,6 +362,124 @@ export function routeCablePaths(
     const served = outcome === 'lane-routed' || outcome === 'shortcut';
     return { ...r, laneOutcome: served ? ('outrouted' as LaneOutcome) : outcome };
   });
+}
+
+/**
+ * The same cables routed by each router on its own: the corridor model (with
+ * the cascade as its per-cable fallback), and the cascade alone.
+ *
+ * routeCablePaths keeps one of these two and nothing else, so this is the
+ * whole of what it chooses between. Exported so that choice can be CHECKED -
+ * "the drawn board is never worse than either" is not testable when one of
+ * the two candidates can only be seen on the boards where it won.
+ */
+export function routeBothWays(
+  requests: LaneRouteRequest[],
+  obstacles: ObstacleSet
+): { lanes: RoutedPath[]; cascade: RoutedPath[] } {
+  return {
+    lanes: routeOnce(requests, obstacles, true),
+    cascade: routeOnce(requests, obstacles, false),
+  };
+}
+
+/**
+ * How good a routed board is, as the four things a person can see wrong with
+ * one - in the order they matter.
+ */
+export interface RoutingOutcome {
+  /** Cables with no legal route: drawn red, through pedals. */
+  invalid: number;
+  /** Places one cable crosses another. */
+  crossings: number;
+  /**
+   * Pairs of parallel runs from different cables close enough to read as one
+   * line - the same definition the config-matrix lane invariant judges by.
+   */
+  laneConflicts: number;
+  /** Total drawn length, in pixels. */
+  lengthPx: number;
+}
+
+/**
+ * Length differences smaller than this are arithmetic, not routing: both
+ * routers add up the same pixel segments in a different order. Below it the
+ * two boards are the same length and the tie rule decides.
+ */
+const LENGTH_TIE_PX = 0.5;
+
+export function routingOutcome(routed: RoutedPath[]): RoutingOutcome {
+  const runs: Array<LaneSegment & { cable: number }> = [];
+  let lengthPx = 0;
+  routed.forEach((r, cable) => {
+    for (let i = 0; i < r.path.length - 1; i++) {
+      const a = r.path[i];
+      const b = r.path[i + 1];
+      lengthPx += Math.hypot(b.x - a.x, b.y - a.y);
+      const seg = toLaneSegment(a, b);
+      if (seg) runs.push({ ...seg, cable });
+    }
+  });
+
+  let laneConflicts = 0;
+  for (let i = 0; i < runs.length; i++) {
+    for (let j = i + 1; j < runs.length; j++) {
+      const a = runs[i];
+      const b = runs[j];
+      if (a.cable === b.cable || a.horizontal !== b.horizontal) continue;
+      if (Math.abs(a.fixed - b.fixed) >= LANE_TOLERANCE) continue;
+      if (Math.min(a.hi, b.hi) - Math.max(a.lo, b.lo) > MIN_PARALLEL_OVERLAP) laneConflicts++;
+    }
+  }
+
+  return {
+    invalid: routed.filter((r) => !r.valid).length,
+    crossings: crossingCount(routed),
+    laneConflicts,
+    lengthPx,
+  };
+}
+
+/**
+ * Which of two routings of the SAME cables is the better board.
+ * Negative when `a` is better, positive when `b` is, zero when they tie.
+ *
+ * Judged in order, each one only breaking a tie on the one before:
+ *
+ *   1. invalid cables   a cable that cannot be wired outranks everything
+ *   2. crossings        the thing the guard was built to protect
+ *   3. lane conflicts   two runs drawn as one line - what the lane router is FOR
+ *   4. length           with everything else equal, less cable is a better board
+ *
+ * Only crossings were compared until 2026-11-16, with every tie going to the
+ * lane router. Measured that day over 216 boards, each router on its own:
+ *
+ *                         lane router    cascade
+ *   total drawn length      14,228in     9,365in
+ *   fewer crossings on      28 boards    88 boards     (tie on 100)
+ *   lane conflicts               8            4
+ *
+ * On the 100 ties the lane router's board was more than 3in longer on 93 -
+ * 19.4in on average - and on every one of those 93 the cascade had no lane
+ * conflict at all. So the guard was keeping the longer drawing on boards
+ * where the shorter one was just as clean. The three-pedal fixture shows the
+ * shape of it: the guitar cable left the board, ran along underneath it and
+ * came back, 20.1in where a plain L is 14.0in.
+ *
+ * And since finding 2 landed the same day, that length is no longer only a
+ * picture: it is the cable the shopping list tells you to buy.
+ *
+ * Lane conflicts sit ABOVE length on purpose. If they did not, the cascade
+ * would win a board by stacking two cables on one line, which is shorter and
+ * unreadable - the lane router's whole reason to exist is that case, and
+ * there it still wins.
+ */
+export function compareRoutingOutcomes(a: RoutingOutcome, b: RoutingOutcome): number {
+  if (a.invalid !== b.invalid) return a.invalid - b.invalid;
+  if (a.crossings !== b.crossings) return a.crossings - b.crossings;
+  if (a.laneConflicts !== b.laneConflicts) return a.laneConflicts - b.laneConflicts;
+  const length = a.lengthPx - b.lengthPx;
+  return Math.abs(length) < LENGTH_TIE_PX ? 0 : length;
 }
 
 /** How many places do these paths cross each other? */

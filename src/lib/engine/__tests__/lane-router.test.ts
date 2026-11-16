@@ -33,9 +33,10 @@ const cases: Array<[BoardKind, PedalSetKind, boolean, boolean]> = [
  *
  * BOTH THE TABLE AND THE DEFAULT ARE ZERO, and that is the whole point: the
  * corridor model is not permitted to draw a worse board than the cascade at
- * all. `routeAllCables` routes BOTH ways and keeps the picture with fewer
- * crossings (see the guard in cables/route-cables.ts), so this is a property
- * to enforce rather than a tolerance to budget.
+ * all. `routeAllCables` routes BOTH ways and keeps the better picture (see
+ * compareRoutingOutcomes in cables/route-cables.ts - crossings are the second
+ * thing it judges, after invalid cables), so this is a property to enforce
+ * rather than a tolerance to budget.
  *
  * It read `?? 1` until 2026-08-18 - a blanket allowance of one extra crossing
  * on every case, left behind when the per-case entries were deleted. That is
@@ -77,7 +78,7 @@ describe('lane router acceptance', () => {
   afterAll(() => { vi.restoreAllMocks(); });
 
   let totalCables = 0;
-  let laneRouted = 0;
+  let corridorServed = 0;
 
   for (const [boardKind, setKind, useEffectsLoop, use4CableMethod] of cases) {
     it(`${boardKind}/${setKind} loop=${useEffectsLoop} 4cm=${use4CableMethod}`, () => {
@@ -135,9 +136,25 @@ describe('lane router acceptance', () => {
       // the cables whose path differs from the no-lane run - because nothing
       // recorded which router actually served a cable. `laneOutcome` does, so
       // count it exactly instead of inferring it.
+      //
+      // 'outrouted' COUNTS, and has to since 2026-11-16. This tally asks whether
+      // the corridor graph can SERVE cables - whether it has silently stopped
+      // attaching, pathing or seating them - not whether its picture was the
+      // one kept. Those were the same number while the guard compared crossings
+      // alone and gave every tie to the lane router. Now that the guard also
+      // weighs lane conflicts and length, a board the corridor served perfectly
+      // well can still be drawn by the cascade, and its cables report
+      // 'outrouted': served, and beaten on merit. Measured on the day the guard
+      // changed: the corridor served 74 of these 74 cables, and only 14 of them
+      // were on boards where its picture was the one kept - so leaving
+      // 'outrouted' out read 0.19 and failed this check, reporting the corridor
+      // graph as broken when it had not moved.
       totalCables += withLanes.length;
       for (const rc of withLanes) {
-        if (rc.laneOutcome === 'lane-routed' || rc.laneOutcome === 'shortcut') laneRouted++;
+        if (
+          rc.laneOutcome === 'lane-routed' || rc.laneOutcome === 'shortcut' ||
+          rc.laneOutcome === 'outrouted'
+        ) corridorServed++;
         // Every cable must carry an outcome when the lane router ran at all.
         expect(rc.laneOutcome, `no laneOutcome on ${rc.cable.id}`).toBeDefined();
       }
@@ -158,6 +175,6 @@ describe('lane router acceptance', () => {
 
   it('corridor graph serves a meaningful share of cables', () => {
     expect(totalCables).toBeGreaterThan(0);
-    expect(laneRouted / totalCables).toBeGreaterThan(0.3);
+    expect(corridorServed / totalCables).toBeGreaterThan(0.3);
   });
 });

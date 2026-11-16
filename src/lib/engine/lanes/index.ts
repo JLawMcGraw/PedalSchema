@@ -97,7 +97,8 @@ export type LaneOutcome =
    * The corridor model routed this cable perfectly well, and the BOARD was
    * still drawn better without it - so the cascade's path is the one on
    * screen. Set by routeCablePaths' never-worse guard, which compares the two
-   * routers on total crossings and keeps the better picture.
+   * routers on the whole picture - invalid cables, crossings, lane conflicts,
+   * then length (see compareRoutingOutcomes) - and keeps the better one.
    *
    * A distinct value rather than reusing 'lane-routed', because the invariant
    * that a cable reports strategy 'lane-router' exactly when the corridor
