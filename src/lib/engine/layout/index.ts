@@ -185,6 +185,37 @@ export function calculateGreedyPlacementWithDiagnostics(
     if (DEBUG_PLACEMENT && narrate) console.warn(message);
   };
 
+  /*
+   * AN ATTEMPT THAT HAS DEGRADED IS ALREADY LOST - so stop making it.
+   *
+   * The retry loop at the end of this function tries one combination of
+   * clearance, ordering, padding and wrapping after another, and accepts the
+   * first that places every pedal WITHOUT degrading. A degraded attempt is
+   * never accepted there; its placements are wiped before the next one starts.
+   * But it used to be carried through to the end regardless - and the end is
+   * the expensive part, because once one pedal has no row the board is full
+   * and every pedal after it falls through to the last-resort scan of the
+   * whole board as well.
+   *
+   * Measured on the real 22-pedal board, 2026-11-16, after the scans
+   * themselves had been made cheaper: 3,994 last-resort scans in one press of
+   * Optimize, about fifty per candidate, nearly all of them inside attempts
+   * whose result was discarded.
+   *
+   * So the first degradation ends the attempt. Only the final fallback - the
+   * one whose result IS returned, degraded or not - runs to completion, and
+   * that is the only place the last resorts can affect the answer.
+   *
+   * Not during a dry run: that measures where the chain lands, restores the
+   * flag afterwards, and its degradation never counted.
+   */
+  const ABANDONED = Symbol('placement attempt abandoned');
+  let abandonWhenDegraded = false;
+  const degrade = (): void => {
+    placementDegraded = true;
+    if (abandonWhenDegraded && narrate) throw ABANDONED;
+  };
+
   // Set by placePackedChain when it has to fall back to order-relaxed or
   // anywhere-on-board placement - the signal to retry with less corridor
   let placementDegraded = false;
@@ -450,7 +481,7 @@ export function calculateGreedyPlacementWithDiagnostics(
         }
 
         if (!spot) {
-          placementDegraded = true;
+          degrade();
           if (DEBUG_PLACEMENT) console.log(`      advance FAILED too -> order-relax scan`);
           note(`[GREEDY] Order relaxed for ${placed.id} - no space without breaking chain order`);
           for (let tryPos = rowPos; tryPos < rowOrder.length && !spot; tryPos++) {
@@ -466,7 +497,7 @@ export function calculateGreedyPlacementWithDiagnostics(
         }
 
         if (!spot) {
-          placementDegraded = true;
+          degrade();
           note(`[GREEDY] Fallback placement for ${placed.id} - no valid spot`);
           spot = findValidPositionInZone(
             width, depth, placedBoxes, board, rowYPositions,
@@ -743,7 +774,15 @@ export function calculateGreedyPlacementWithDiagnostics(
         placementDegraded = false;
         placements.length = 0;
         placedBoxes.length = 0;
-        attemptPlacement();
+        abandonWhenDegraded = true;
+        try {
+          attemptPlacement();
+        } catch (stopped) {
+          // Left placementDegraded set, which is all the check below reads.
+          if (stopped !== ABANDONED) throw stopped;
+        } finally {
+          abandonWhenDegraded = false;
+        }
         // A split group is not good enough while an axis remains untried -
         // that is the outcome both the wrap and dropping the pad exist to
         // avoid. Only the final combination accepts one.
@@ -900,8 +939,11 @@ function findStripStart(
  * requirement progressively (0.5" -> 0.25" -> touching) before giving up.
  * Prevents the pedal-stacking failure mode where multiple pedals land on
  * the same clamped coordinate.
+ *
+ * Exported, like firstValidXScanningLeft below, only so placer-scans.test.ts
+ * can hold both to the plain quarter-inch walk they replaced.
  */
-function findAnyFreeSpot(
+export function findAnyFreeSpot(
   width: number,
   depth: number,
   placedBoxes: PlacedBox[],
@@ -910,15 +952,96 @@ function findAnyFreeSpot(
   const STEP = 0.25;
   for (const spacing of [COLLISION_SPACING, 0.25, 0]) {
     for (let y = 0; y <= board.depthInches - depth + 1e-6; y += STEP) {
-      for (let x = 0; x <= board.widthInches - width + 1e-6; x += STEP) {
+      for (let x = 0; x <= board.widthInches - width + 1e-6; ) {
         const candidate: PlacedBox = { x, y, width, height: depth };
-        if (
-          !placedBoxes.some((box) => boxesOverlap(candidate, box, spacing))
-        ) {
-          return { x, y };
-        }
+        const blocker = placedBoxes.find((box) => boxesOverlap(candidate, box, spacing));
+        if (!blocker) return { x, y };
+        // Skip the positions this same box also blocks - see stepsBlockedBy.
+        x += stepsBlockedBy(blocker.x + blocker.width + spacing - x, STEP) * STEP;
       }
     }
+  }
+  return null;
+}
+
+/**
+ * How many scan steps can be taken at once, having just been blocked by a box
+ * whose far edge (plus clearance) lies `distance` ahead in the scan direction.
+ *
+ * The placer's last resorts walk the board a quarter inch at a time, testing
+ * each position against every pedal already down. On a full board that is
+ * nearly all of the work Optimize does - measured on the real 22-pedal board,
+ * 2026-11-16:
+ *
+ *     Optimize, total                1,813ms
+ *     findValidPositionInZone        1,646ms   3,994 calls   <- 91%
+ *     all cable routing and scoring     80ms
+ *
+ * Most candidate orders do not pack on a board that full, each pedal with no
+ * row falls through to a scan of every position on the board (64 x 128 of
+ * them, against 21 boxes, then again at three spacings), and that happens per
+ * pedal, per retry, per candidate.
+ *
+ * But a position blocked by a box stays blocked by THAT box until the scan
+ * has moved clear of it, and how far that is follows from the box. So jump.
+ *
+ * It must be the SAME answer as stepping, to the bit - the optimizer's results
+ * are compared for exact equality all over the suite, and a placement that
+ * moved by an ulp would be a different board. Two things make it so:
+ *
+ * - The jump stops TWO steps short of where the box ends, never at it. The
+ *   positions skipped are then at least half an inch inside the blocked
+ *   range, which no floating-point rounding of the overlap test can undo; the
+ *   last step or two before clearing the box are taken one at a time and
+ *   judged by the very same test as before.
+ * - A jump of k steps lands exactly where k single steps would. Every scan
+ *   here either counts up from zero in quarters, or counts down through
+ *   non-negative values, and both are exact in binary floating point - the
+ *   left-to-right scan from an arbitrary start is the one that is not, which
+ *   is why findValidPositionInZone leaves that direction stepping.
+ *
+ * Verified by fingerprinting every placement the placer and optimizer produce
+ * on 436 fixture boards (1,320 placer calls, 466 of them degraded) and both
+ * real boards: identical before and after.
+ */
+function stepsBlockedBy(distance: number, step: number): number {
+  return Math.max(1, Math.floor(distance / step) - 1);
+}
+
+/**
+ * The first valid position in one row of the board, scanning from `startX`
+ * down to `minX` a step at a time - or null. Exactly
+ *
+ *     for (let x = startX; x >= minX; x -= STEP)
+ *       if (isValidPlacement({ x, y, width, height: depth }, placedBoxes, board)) return x;
+ *
+ * without visiting the positions it can prove are blocked.
+ */
+export function firstValidXScanningLeft(
+  width: number,
+  depth: number,
+  y: number,
+  startX: number,
+  minX: number,
+  step: number,
+  placedBoxes: PlacedBox[],
+  board: Board
+): number | null {
+  for (let x = startX; x >= minX; ) {
+    const candidate: PlacedBox = { x, y, width, height: depth };
+    // The two halves of isValidPlacement, apart, because only one of them
+    // names a box to jump past.
+    if (
+      candidate.x < 0 || candidate.x + candidate.width > board.widthInches ||
+      candidate.y < 0 || candidate.y + candidate.height > board.depthInches
+    ) {
+      x -= step;
+      continue;
+    }
+    const blocker = placedBoxes.find((box) =>
+      boxesOverlap(candidate, box, COLLISION_SPACING, MIN_ROW_CLEARANCE));
+    if (!blocker) return x;
+    x -= stepsBlockedBy(x - (blocker.x - width - COLLISION_SPACING), step) * step;
   }
   return null;
 }
@@ -952,12 +1075,8 @@ function findValidPositionInZone(
 
     if (direction === 'right-to-left') {
       // Scan from right to left within zone
-      for (let x = maxXForWidth; x >= safeMinX; x -= STEP) {
-        const candidate: PlacedBox = { x, y, width, height: depth };
-        if (isValidPlacement(candidate, placedBoxes, board)) {
-          return { x, y };
-        }
-      }
+      const x = firstValidXScanningLeft(width, depth, y, maxXForWidth, safeMinX, STEP, placedBoxes, board);
+      if (x !== null) return { x, y };
     } else {
       // Scan from left to right within zone
       for (let x = safeMinX; x <= maxXForWidth; x += STEP) {
@@ -972,12 +1091,8 @@ function findValidPositionInZone(
   // Fallback: scan entire zone
   for (let y = 0; y <= board.depthInches - depth; y += STEP) {
     if (direction === 'right-to-left') {
-      for (let x = maxXForWidth; x >= safeMinX; x -= STEP) {
-        const candidate: PlacedBox = { x, y, width, height: depth };
-        if (isValidPlacement(candidate, placedBoxes, board)) {
-          return { x, y };
-        }
-      }
+      const x = firstValidXScanningLeft(width, depth, y, maxXForWidth, safeMinX, STEP, placedBoxes, board);
+      if (x !== null) return { x, y };
     } else {
       for (let x = safeMinX; x <= maxXForWidth; x += STEP) {
         const candidate: PlacedBox = { x, y, width, height: depth };
