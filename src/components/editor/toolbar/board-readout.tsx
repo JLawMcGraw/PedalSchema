@@ -31,8 +31,8 @@ import { useDerivedConfiguration } from '@/store/derived';
  */
 export function BoardReadout() {
   const placedPedals = useConfigurationStore((s) => s.placedPedals);
-  const { cables, routedCables, crossings, collisions, power } = useDerivedConfiguration((d) => ({
-    cables: d.cables,
+  const { cableLengthInches, routedCables, crossings, collisions, power } = useDerivedConfiguration((d) => ({
+    cableLengthInches: d.cableLengthInches,
     routedCables: d.routedCables,
     crossings: d.crossings,
     collisions: d.collisions,
@@ -54,7 +54,11 @@ export function BoardReadout() {
    */
   const empty = placedPedals.length === 0;
 
-  const totalInches = cables.reduce((sum, c) => sum + (c.calculatedLengthInches || 0), 0);
+  // The length of the cables as DRAWN, from the one place that derives it.
+  // This used to sum each cable's purchase length here - a total of estimates
+  // rounded up to standard sizes, which read `174.0in` over a board whose
+  // cables measured 113.2in and stood still when Optimize saved a foot.
+  const totalInches = cableLengthInches;
   const unrouted = routedCables.filter((r) => !r.valid).length;
 
   /*

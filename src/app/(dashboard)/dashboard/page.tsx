@@ -10,7 +10,7 @@ import { resolvePage, DASHBOARD_PAGE_SIZE } from '@/lib/pagination';
 import { relativeTimeShort, relativeTimeLong } from '@/lib/relative-time';
 import { detectCollisions } from '@/lib/engine/collision';
 import { derivePowerPlan } from '@/lib/engine/power';
-import { calculateCables } from '@/lib/engine/cables';
+import { deriveCables } from '@/lib/engine/cables/derive-cables';
 import { loadConfiguration } from '@/lib/load-configuration';
 import type { Board, PedalCategory, Pedal, PlacedPedal, PowerSupply } from '@/types';
 
@@ -47,11 +47,17 @@ function RigField({
 /**
  * Total cable length for ONE board, derived exactly as the editor derives it.
  *
- * Its own round trip, and only for the hero. `calculateCables` needs the
+ * Its own round trip, and only for the hero. Deriving the cables needs the
  * signal topology, which needs every pedal's chain position AND its jacks -
  * neither of which the list query fetches, and fetching jacks for every board
  * on the page to render one number on one card is the wrong trade. For a
  * single board it is one cached-catalogue load.
+ *
+ * "Exactly as the editor derives it" is meant literally: `deriveCables` is the
+ * call store/derived makes, and `drawnLengthInches` is the toolbar's CABLE
+ * field. This used to sum `calculateCables`' straight-line estimates, which is
+ * a different number from a different function - so the card and the editor it
+ * opens could disagree about the same board.
  *
  * Returns null rather than 0 on failure. A board whose cable length could not
  * be read has an unknown length, and "0.0in" is a claim about a board nobody
@@ -64,16 +70,26 @@ async function heroCableInches(
   try {
     const loaded = await loadConfiguration(supabase, { id });
     if (!loaded) return null;
-    const cables = calculateCables(
-      loaded.placedPedals,
-      loaded.pedalsById,
-      loaded.board,
-      loaded.amp,
-      loaded.useEffectsLoop,
-      loaded.routingConfig as never,
-      loaded.use4CableMethod
-    );
-    return cables.reduce((sum, c) => sum + (c.calculatedLengthInches || 0), 0);
+    return deriveCables({
+      configurationId: id,
+      placedPedals: loaded.placedPedals,
+      pedalsById: loaded.pedalsById,
+      board: loaded.board,
+      amp: loaded.amp,
+      useEffectsLoop: loaded.useEffectsLoop,
+      use4CableMethod: loaded.use4CableMethod,
+      // Filled out the way the store's initConfiguration fills it, so the card
+      // derives from the same config the editor will. The loaded value is a
+      // Partial and used to be passed through with an `as never` cast; the
+      // topology iterates `pedalConfigs`, so a row missing that key would
+      // throw and the card would fall back to a dash.
+      routingConfig: {
+        useLoopPedals: loaded.routingConfig?.useLoopPedals ?? true,
+        pedalConfigs: loaded.routingConfig?.pedalConfigs ?? [],
+        useEffectsLoop: loaded.useEffectsLoop,
+        use4CableMethod: loaded.use4CableMethod,
+      },
+    }).drawnLengthInches;
   } catch {
     return null;
   }

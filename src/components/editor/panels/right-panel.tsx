@@ -45,8 +45,9 @@ export function RightPanel({ availableAmps }: { availableAmps: Amp[] }) {
         use4CableMethod: s.use4CableMethod,
       }))
     );
-  const { cables, power } = useDerivedConfiguration((d) => ({
+  const { cables, cableLengthInches, power } = useDerivedConfiguration((d) => ({
     cables: d.cables,
+    cableLengthInches: d.cableLengthInches,
     power: d.power,
   }));
 
@@ -70,7 +71,8 @@ export function RightPanel({ availableAmps }: { availableAmps: Amp[] }) {
   const toggle = (id: Exclude<OpenDrawer, null>) =>
     setOpenDrawer((current) => (current === id ? null : id));
 
-  const totalInches = cables.reduce((sum, c) => sum + (c.calculatedLengthInches || 0), 0);
+  // Same number as the toolbar's CABLE field, from the same derivation.
+  const totalInches = cableLengthInches;
 
   const routingLabel = use4CableMethod
     ? '4-cable'

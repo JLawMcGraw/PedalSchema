@@ -15,7 +15,13 @@ import {
 // Standard patch cable lengths in inches
 const STANDARD_CABLE_LENGTHS = [6, 12, 18, 24, 36, 48, 72, 120];
 
-// Overhead factor for cable routing (cables don't go in straight lines)
+// Overhead factor for cable routing (cables don't go in straight lines).
+//
+// This makes `calculatedLengthInches` on a CableConnection an ESTIMATE: jack to
+// jack as the crow flies, plus a fifth. It is all that can be known before the
+// cable is routed, and it is NOT what the app shows any more - deriveCables in
+// ./derive-cables replaces it with the length of the route actually drawn, and
+// keeps this only for a cable that could not be routed.
 const ROUTING_OVERHEAD = 1.2;
 
 interface JackPosition {
@@ -50,16 +56,26 @@ function calculateDistance(p1: JackPosition, p2: JackPosition): number {
 }
 
 /**
- * Round up to the nearest standard cable length
+ * Round up to the nearest standard cable length.
+ *
+ * Exported because the length a cable is LISTED at is decided twice: here,
+ * from a straight-line estimate, before anything is routed - and again in
+ * ./derive-cables once the real route is known. Both must round the same way
+ * or the list would quote lengths nobody sells.
+ *
+ * The epsilon is for the second caller. A routed path is a sum of pixel
+ * segments divided by the scale, so a run that is exactly 6in arrives as
+ * 6.000000000000001 and would otherwise be sold a 12in cable.
  */
-function roundToStandardLength(lengthInches: number): number {
+export function roundToStandardLength(lengthInches: number): number {
+  const EPSILON = 1e-6;
   for (const standard of STANDARD_CABLE_LENGTHS) {
-    if (lengthInches <= standard) {
+    if (lengthInches <= standard + EPSILON) {
       return standard;
     }
   }
   // For very long cables, round up to nearest 12 inches
-  return Math.ceil(lengthInches / 12) * 12;
+  return Math.ceil((lengthInches - EPSILON) / 12) * 12;
 }
 
 /**

@@ -28,8 +28,8 @@ import type {
 import { useShallow } from 'zustand/react/shallow';
 import { detectCollisions } from '@/lib/engine/collision';
 import { signalChainEngine } from '@/lib/engine/signal-chain';
-import { calculateCables } from '@/lib/engine/cables';
-import { routeAllCables, type RoutedCable } from '@/lib/engine/cables/route-cables';
+import { deriveCables } from '@/lib/engine/cables/derive-cables';
+import type { RoutedCable } from '@/lib/engine/cables/route-cables';
 import { detectCableCrossings } from '@/lib/engine/pathfinding';
 import { derivePowerSummary, derivePowerPlan, describePowerPlan, type PowerSummary, type SupplyPlan } from '@/lib/engine/power';
 import { useConfigurationStore } from './configuration-store';
@@ -38,10 +38,24 @@ import { useConfigurationStore } from './configuration-store';
 export const INCHES_TO_PIXELS = 40;
 
 export interface DerivedBoardState {
-  /** Cable topology (who connects to whom) */
+  /**
+   * Cable topology (who connects to whom). `calculatedLengthInches` is the
+   * standard length to BUY for the route the cable is drawn on - not a
+   * straight-line estimate. See engine/cables/derive-cables.
+   */
   cables: Cable[];
   /** Routed cable paths in pixels (same order as cables) */
   routedCables: RoutedCable[];
+  /**
+   * Total length of the cables as drawn, in inches - exact, not rounded.
+   *
+   * This is the CABLE field. It used to be re-summed in each component from
+   * the per-cable purchase lengths, which made it a total of rounded-up
+   * estimates: it could not agree with the canvas, and it did not move when
+   * Optimize reported a saving. One number, derived once, and the same one
+   * the layout cost function scores.
+   */
+  cableLengthInches: number;
   /**
    * How many places the drawn cables cross one another.
    *
@@ -95,6 +109,7 @@ export interface SourceSlice {
 const EMPTY: DerivedBoardState = {
   cables: [],
   routedCables: [],
+  cableLengthInches: 0,
   crossings: 0,
   collisions: [],
   warnings: [],
@@ -132,39 +147,21 @@ export function deriveBoardState(s: SourceSlice): DerivedBoardState {
   } else {
     const collisions = detectCollisions(s.placedPedals, s.pedalsById, s.board);
 
-    const connections = calculateCables(
-      s.placedPedals,
-      s.pedalsById,
-      s.board,
-      s.amp,
-      s.useEffectsLoop,
-      s.routingConfig,
-      s.use4CableMethod
-    );
-
-    const cables: Cable[] = connections.map((c, index) => ({
-      id: `cable-${index}`,
-      configurationId: s.id || '',
-      fromType: c.fromType,
-      fromPedalId: c.fromPedalId,
-      fromJack: c.fromJackType,
-      toType: c.toType,
-      toPedalId: c.toPedalId,
-      toJack: c.toJackType,
-      calculatedLengthInches: c.calculatedLengthInches,
-      cableType: c.cableType,
-      sortOrder: c.sortOrder,
-      createdAt: '',
-    }));
-
-    const fxLoopActive = s.useEffectsLoop && !!s.amp?.hasEffectsLoop;
-    const routedCables = routeAllCables(
-      cables,
-      s.placedPedals,
-      s.pedalsById,
-      s.board,
-      INCHES_TO_PIXELS,
-      fxLoopActive
+    // Topology, routes and lengths in one call - the dashboard's hero card
+    // makes the same call, which is what keeps its CABLE number the same as
+    // the toolbar's.
+    const { cables, routedCables, drawnLengthInches } = deriveCables(
+      {
+        configurationId: s.id,
+        placedPedals: s.placedPedals,
+        pedalsById: s.pedalsById,
+        board: s.board,
+        amp: s.amp,
+        useEffectsLoop: s.useEffectsLoop,
+        use4CableMethod: s.use4CableMethod,
+        routingConfig: s.routingConfig,
+      },
+      INCHES_TO_PIXELS
     );
 
     const crossings = detectCableCrossings(
@@ -181,7 +178,8 @@ export function deriveBoardState(s: SourceSlice): DerivedBoardState {
     const { warnings, suggestions } = signalChainEngine.analyze(s.placedPedals, s.pedalsById, context);
 
     result = {
-      cables, routedCables, crossings, collisions, warnings, suggestions,
+      cables, routedCables, cableLengthInches: drawnLengthInches,
+      crossings, collisions, warnings, suggestions,
       power: derivePowerSummary(s.placedPedals, s.pedalsById),
       powerPlan: s.powerSupply
         ? derivePowerPlan(s.placedPedals, s.pedalsById, s.powerSupply)
