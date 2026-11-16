@@ -59,6 +59,18 @@ interface Traversal {
   /** Along-coordinates of this cable's run through the corridor (for lane ordering) */
   alongLo: number;
   alongHi: number;
+  /**
+   * The furthest this run can possibly reach along the corridor, whichever
+   * lanes its neighbours end up in.
+   *
+   * `alongLo`/`alongHi` say where the run ends if the corridors either side of
+   * it seat this cable dead centre. They may not: a run in THIS corridor ends
+   * on the cable's lane in the NEXT one, and that lane is not chosen yet. So
+   * two runs cannot be said to miss each other on the nominal ends alone -
+   * this is the range that is safe to reason with. See reachOf.
+   */
+  reachLo: number;
+  reachHi: number;
   /** Assigned perpendicular lane coordinate (filled by assignLanes) */
   lane: number;
 }
@@ -125,12 +137,16 @@ export type LaneOutcome =
   /** A lane was seated; the realized path then hit a pedal. */
   | 'validation-failed';
 
-/** A corridor that was asked to seat more cables than it can hold. */
+/** A corridor that was asked to seat more cables SIDE BY SIDE than it can hold. */
 interface CorridorPressure {
   corridorId: number;
   /** Lanes the corridor can seat at MIN_LANE_SPACING. */
   capacity: number;
-  /** Cables that wanted to traverse it, before any eviction. */
+  /**
+   * The most cables that wanted the same stretch of it at once, before any
+   * eviction - NOT how many cables used the corridor in total. Two cables at
+   * opposite ends of a corridor demand one lane between them.
+   */
   demanded: number;
   /** How many were evicted to bring demand within capacity. */
   evicted: number;
@@ -385,6 +401,41 @@ function corridorCapacity(corridor: Corridor): number {
 }
 
 /**
+ * Two runs may share a lane only with at least this much clear corridor
+ * between the end of one and the start of the other, in pixels. Less than
+ * that and they read as one cable with a nick in it.
+ */
+const SHARED_LANE_GAP = MIN_LANE_SPACING;
+
+/** Do these two runs need different lanes? */
+function contend(a: Traversal, b: Traversal): boolean {
+  return a.reachLo - b.reachHi < SHARED_LANE_GAP && b.reachLo - a.reachHi < SHARED_LANE_GAP;
+}
+
+/**
+ * The runs wanting the busiest stretch of one corridor at the same time.
+ *
+ * Runs along a corridor are intervals, and intervals that pairwise overlap all
+ * share a common point - so the biggest set that must each have its own lane
+ * is simply the deepest pile-up along the corridor, found by walking the
+ * interval ends in order. Its size is the number of lanes the corridor needs.
+ */
+function busiestStretch(list: Traversal[]): Traversal[] {
+  // Each run claims its reach plus half the shared-lane gap either side, so
+  // two claims overlap exactly when the runs contend.
+  const pad = SHARED_LANE_GAP / 2;
+  const starts = [...list].sort((a, b) => (a.reachLo - b.reachLo) || (a.cableIndex - b.cableIndex));
+  let best: Traversal[] = [];
+  for (const candidate of starts) {
+    const at = candidate.reachLo - pad;
+    // Strict on the far side: claims that only touch do not contend.
+    const here = list.filter((t) => t.reachLo - pad <= at && at < t.reachHi + pad);
+    if (here.length > best.length) best = here;
+  }
+  return best;
+}
+
+/**
  * Seat every cable's runs in a lane, evicting only what genuinely will not fit.
  *
  * This used to return a boolean, and ONE over-capacity corridor anywhere on the
@@ -394,15 +445,27 @@ function corridorCapacity(corridor: Corridor): number {
  * this, and not tolerable once the layout cost function scores through it
  * (P1.5). Measured on the real Classic Jr board it meant 1 of 11 cables served.
  *
- * Now a corridor that cannot seat n cables evicts the fewest it can and the
- * rest keep their lanes. An evicted cable falls back to the strategy cascade
- * exactly as an unplannable one already does.
+ * Then it evicted per corridor, which fixed the cliff and left a smaller one:
+ * CAPACITY WAS COUNTED PER CORRIDOR, NOT PER STRETCH OF IT. A corridor's
+ * capacity is how many cables fit side by side, and it was compared against
+ * how many cables used the corridor anywhere along its length. The corridor
+ * between two rows runs the whole width of the board and, at the designed
+ * 14px, seats one lane - so it carried one cable, total, however far apart
+ * the cables were. Measured on 2026-11-16: two cables hopping rows at opposite
+ * ends of a 32in board, 890px apart, and one was evicted for want of a lane
+ * the other was not using.
  *
- * Eviction order is by SHORTEST traversal first: a cable barely clipping a
- * corridor loses least by routing around it, while one running its whole length
- * depends on it. Ties break on cableIndex so the result is deterministic -
- * config-matrix asserts determinism and idempotence, and a Set iteration order
- * would quietly violate both.
+ * Now a corridor is over capacity only where more cables want the same STRETCH
+ * than it has lanes. Where a corridor has more cables than lanes but they do
+ * not all meet, the ones that do not meet share a lane instead of one of them
+ * being evicted.
+ *
+ * Eviction takes the shortest run out of the busiest stretch: a cable barely
+ * clipping a corridor loses least by routing around it, while one running its
+ * whole length depends on it - and evicting a cable that is not in the pile-up
+ * would not relieve it. Ties break on cableIndex so the result is
+ * deterministic - config-matrix asserts determinism and idempotence, and a Set
+ * iteration order would quietly violate both.
  *
  * @returns the cable indices that could not be seated and must fall back, plus
  *          the corridors that were over capacity. The pressure record is what
@@ -415,11 +478,6 @@ function assignLanes(
   traversals: Traversal[]
 ): { evicted: Set<number>; pressure: CorridorPressure[] } {
   const evicted = new Set<number>();
-  /** Demand per corridor BEFORE any eviction, so pressure is not self-erasing. */
-  const initialDemand = new Map<number, number>();
-  for (const t of traversals) {
-    initialDemand.set(t.corridorId, (initialDemand.get(t.corridorId) ?? 0) + 1);
-  }
   const evictedFrom = new Map<number, number>();
 
   const groupRemaining = (): Map<number, Traversal[]> => {
@@ -432,20 +490,26 @@ function assignLanes(
     return byCorridor;
   };
 
+  /** Peak demand per corridor BEFORE any eviction, so pressure is not self-erasing. */
+  const initialDemand = new Map<number, number>();
+  for (const [corridorId, list] of groupRemaining()) {
+    initialDemand.set(corridorId, busiestStretch(list).length);
+  }
+
   // Evicting a cable removes it from EVERY corridor it crossed, which can
   // relieve pressure elsewhere, so this has to re-check rather than sweep once.
   for (;;) {
     const byCorridor = groupRemaining();
-    let worst: { corridorId: number; over: number; list: Traversal[] } | null = null;
+    let worst: { corridorId: number; over: number; pileUp: Traversal[] } | null = null;
 
     for (const corridorId of [...byCorridor.keys()].sort((a, b) => a - b)) {
-      const list = byCorridor.get(corridorId)!;
-      const over = list.length - corridorCapacity(corridors[corridorId]);
-      if (over > 0 && (!worst || over > worst.over)) worst = { corridorId, over, list };
+      const pileUp = busiestStretch(byCorridor.get(corridorId)!);
+      const over = pileUp.length - corridorCapacity(corridors[corridorId]);
+      if (over > 0 && (!worst || over > worst.over)) worst = { corridorId, over, pileUp };
     }
     if (!worst) break;
 
-    const victim = [...worst.list].sort((a, b) => {
+    const victim = [...worst.pileUp].sort((a, b) => {
       const lenA = a.alongHi - a.alongLo;
       const lenB = b.alongHi - b.alongLo;
       return lenA !== lenB ? lenA - lenB : a.cableIndex - b.cableIndex;
@@ -457,15 +521,24 @@ function assignLanes(
   for (const [corridorId, list] of groupRemaining()) {
     const corridor = corridors[corridorId];
     const width = corridor.hi - corridor.lo;
-    const n = list.length;
+    const capacity = corridorCapacity(corridor);
 
-    let spacing = LANE_SPACING;
-    if (n > 1 && (n - 1) * spacing > width) {
-      // Guaranteed >= MIN_LANE_SPACING now: eviction ran first.
-      spacing = width / (n - 1);
-    }
+    // Give each run the lowest-numbered lane no contending run already has.
+    const seat = (order: Traversal[]): { track: Map<Traversal, number>; used: number } => {
+      const track = new Map<Traversal, number>();
+      let used = 0;
+      for (const t of order) {
+        const taken = new Set<number>();
+        for (const [other, k] of track) if (contend(t, other)) taken.add(k);
+        let k = 0;
+        while (taken.has(k)) k++;
+        track.set(t, k);
+        used = Math.max(used, k + 1);
+      }
+      return { track, used };
+    };
 
-    // Keep parallel flows parallel: order lanes by run midpoint.
+    // Keep parallel flows parallel: order by run midpoint.
     //
     // The cableIndex tie-break is a no-op TODAY - traversals are pushed in
     // cable order, so a stable sort already leaves equal midpoints in that
@@ -475,11 +548,45 @@ function assignLanes(
     list.sort((a, b) =>
       ((a.alongLo + a.alongHi) - (b.alongLo + b.alongHi)) || (a.cableIndex - b.cableIndex));
 
+    let seated: { track: Map<Traversal, number>; used: number };
+    if (list.length <= capacity) {
+      /*
+       * ROOM FOR EVERYONE: one lane each, in midpoint order, exactly as it has
+       * always been - even for runs that never meet and COULD share.
+       *
+       * Sharing wherever it is possible was built first and measured, and it
+       * is worse. Putting two runs on one line frees a lane nobody needed and
+       * throws away the ordering: which side of its neighbours a run sits on
+       * is what keeps its two legs from crossing them. Over 216 boards the
+       * lane router's own crossings went from 307 to 410 and the boards it
+       * gave the better picture on from 34 to 27.
+       *
+       * So a lane is shared only when the alternative is evicting a cable.
+       */
+      seated = { track: new Map(list.map((t, i) => [t, i])), used: list.length };
+    } else {
+      // More cables than lanes, but never more than `capacity` of them in the
+      // same stretch (eviction saw to that): runs that do not meet share.
+      seated = seat(list);
+
+      // Midpoint order is the pretty one, not the frugal one: on runs that
+      // only partly overlap it can spend a lane more than the pile-up needs.
+      // When that does not fit, seat in order of where each run STARTS, which
+      // never uses more lanes than the busiest stretch.
+      if (seated.used > capacity) {
+        seated = seat([...list].sort((a, b) => (a.reachLo - b.reachLo) || (a.cableIndex - b.cableIndex)));
+      }
+    }
+
+    const lanes = seated.used;
+    let spacing = LANE_SPACING;
+    if (lanes > 1 && (lanes - 1) * spacing > width) {
+      // Guaranteed >= MIN_LANE_SPACING now: eviction ran first.
+      spacing = width / (lanes - 1);
+    }
     const center = (corridor.lo + corridor.hi) / 2;
-    const first = center - ((n - 1) * spacing) / 2;
-    list.forEach((t, i) => {
-      t.lane = first + i * spacing;
-    });
+    const first = center - ((lanes - 1) * spacing) / 2;
+    for (const t of list) t.lane = first + seated.track.get(t)! * spacing;
   }
 
   // Only corridors that were genuinely over subscribed. Reported against
@@ -585,19 +692,60 @@ export function routeCablesWithLanes(
   });
 
   // --- Register traversals for lane assignment --------------------------------
+  // How many cables each corridor will be asked to seat - needed before any
+  // run's reach can be stated, see below.
+  const demandOn = new Map<number, number>();
+  for (const plan of planned) {
+    if (!plan) continue;
+    for (const cid of plan.corridors) demandOn.set(cid, (demandOn.get(cid) ?? 0) + 1);
+  }
+
+  /**
+   * Where a cable's lane in `corridor` can end up, before lanes are assigned.
+   *
+   * Lanes are laid out around the corridor's centre at no more than
+   * LANE_SPACING apart, and a corridor never uses more lanes than it has
+   * cables. So with n cables wanting it, every lane lies within
+   * (n - 1) x LANE_SPACING / 2 of the centre - and a cable alone in a corridor
+   * is known to sit exactly on the centre line.
+   */
+  const laneRange = (corridor: Corridor): [number, number] => {
+    const center = (corridor.lo + corridor.hi) / 2;
+    const spread = (((demandOn.get(corridor.id) ?? 1) - 1) * LANE_SPACING) / 2;
+    return [Math.max(corridor.lo, center - spread), Math.min(corridor.hi, center + spread)];
+  };
+
   planned.forEach((plan, index) => {
     if (!plan) return;
     plan.corridors.forEach((cid, i) => {
       const corridor = corridors[cid];
+      const first = i === 0;
+      const last = i === plan.corridors.length - 1;
+      const stubAlong = (stub: Point) => (corridor.horizontal ? stub.x : stub.y);
+
       // Approximate along-extent: from previous crossing to next crossing
-      const prevPt = i === 0 ? plan.fromStub : crossingCenter(corridors[plan.corridors[i - 1]], corridor);
-      const nextPt = i === plan.corridors.length - 1 ? plan.toStub : crossingCenter(corridor, corridors[plan.corridors[i + 1]]);
+      const prevPt = first ? plan.fromStub : crossingCenter(corridors[plan.corridors[i - 1]], corridor);
+      const nextPt = last ? plan.toStub : crossingCenter(corridor, corridors[plan.corridors[i + 1]]);
       const along = corridor.horizontal ? [prevPt.x, nextPt.x] : [prevPt.y, nextPt.y];
+
+      // A run starts on the cable's lane in the corridor it came from and ends
+      // on its lane in the corridor it turns into (corridors alternate
+      // orientation, so a neighbour's lane IS a position along this one). At
+      // the two ends of the cable it starts or ends on the stub, exactly.
+      const entry: [number, number] = first
+        ? [stubAlong(plan.fromStub), stubAlong(plan.fromStub)]
+        : laneRange(corridors[plan.corridors[i - 1]]);
+      const exit: [number, number] = last
+        ? [stubAlong(plan.toStub), stubAlong(plan.toStub)]
+        : laneRange(corridors[plan.corridors[i + 1]]);
+
       traversals.push({
         cableIndex: index,
         corridorId: cid,
         alongLo: Math.min(along[0], along[1]),
         alongHi: Math.max(along[0], along[1]),
+        reachLo: Math.min(entry[0], exit[0]),
+        reachHi: Math.max(entry[1], exit[1]),
         lane: 0,
       });
     });
