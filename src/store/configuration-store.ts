@@ -749,7 +749,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
 
       optimizeLayout: async () => {
         const {
-          board, placedPedals, pedalsById, routingConfig,
+          board, amp, placedPedals, pedalsById, routingConfig,
           useEffectsLoop, use4CableMethod, isOptimizing, mutationVersion,
         } = get();
 
@@ -761,13 +761,30 @@ export const useConfigurationStore = create<ConfigurationState>()(
         const runId = ++optimizeGeneration;
         set({ isOptimizing: true });
 
+        /*
+         * The loop the optimizer plans for is the loop the canvas will draw.
+         *
+         * The canvas treats the effects loop as on only when the flag is set
+         * AND the amp has one (`fxLoopActive` in engine/cables/derive-cables).
+         * The optimizer was handed the bare flag, and builds its own stand-in
+         * amp from it - so with the flag set against an amp without a loop (or
+         * no amp at all) it scored a board with the amp input at the low jack
+         * position the loop uses, while the canvas drew it at the middle one.
+         * setAmp clears the flag when the amp changes, but loading a board
+         * does not check, so a saved row can arrive in that state.
+         *
+         * Passing the effective value makes it impossible to score one rig and
+         * draw another, whichever way the state got there.
+         */
+        const fxLoopActive = useEffectsLoop && !!amp?.hasEffectsLoop;
+
         let result;
         try {
           result = await runOptimize({
             placedPedals,
             pedalsById,
             board,
-            routingConfig: { ...routingConfig, useEffectsLoop, use4CableMethod },
+            routingConfig: { ...routingConfig, useEffectsLoop: fxLoopActive, use4CableMethod },
           });
         } catch (error) {
           console.error('[optimizeLayout] failed:', error);
@@ -810,6 +827,58 @@ export const useConfigurationStore = create<ConfigurationState>()(
         };
 
         const chainOrderValid = validateChainOrder(result.chainOrder, placedPedals);
+        const appliesChainOrder = chainOrderValid && result.swappableGroups.length > 0;
+
+        // What the optimizer traded off, derived from the same dimension list
+        // that scored the layouts. Null when there is nothing to say.
+        const summary =
+          result.baselineCost && result.cost
+            ? summarizeOptimization(
+                result.baselineCost,
+                result.cost,
+                result.noLegalCandidate,
+                result.rowFit,
+                result.placementDegraded
+              )
+            : null;
+
+        /*
+         * DOES THE RESULT CHANGE THE BOARD? Often it does not: the board was
+         * already the best the search could find, or nothing legal was found
+         * and the user's layout was kept. Both come back as the user's own
+         * positions, rotations and order.
+         *
+         * Applying that anyway was not harmless. It pushed an undo entry for
+         * a step that undoes nothing, threw away the redo stack, and marked a
+         * saved board as having unsaved changes - so pressing Optimize on a
+         * finished board and being told "Already optimal - nothing moved"
+         * left the Save button lit and "Unsaved - 1 edit" beside it. Measured
+         * on 2026-11-16: undo entries 1 -> 2, isDirty false -> true, pedal
+         * state byte-identical.
+         *
+         * A press that moves nothing is not an edit. It still reports.
+         */
+        const SAME_PLACE = 1e-9;
+        const current = new Map(placedPedals.map((p) => [p.id, p]));
+        const changesBoard =
+          result.placements.some((placement) => {
+            const pedal = current.get(placement.id);
+            return !!pedal && (
+              Math.abs(pedal.xInches - placement.x) > SAME_PLACE ||
+              Math.abs(pedal.yInches - placement.y) > SAME_PLACE
+            );
+          }) ||
+          (result.rotations ?? []).some((rotation) => {
+            const pedal = current.get(rotation.id);
+            return !!pedal && pedal.rotationDegrees !== rotation.rotationDegrees;
+          }) ||
+          (appliesChainOrder &&
+            result.chainOrder.some((id, index) => current.get(id)?.chainPosition !== index + 1));
+
+        if (!changesBoard) {
+          set((state) => { state.lastOptimization = summary; });
+          return;
+        }
 
         // Only a result that will actually be applied earns an undo entry.
         recordHistory();
@@ -834,7 +903,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
           }
 
           // Apply chain order changes only if valid and swappable groups exist
-          if (chainOrderValid && result.swappableGroups.length > 0) {
+          if (appliesChainOrder) {
             for (let i = 0; i < result.chainOrder.length; i++) {
               const pedal = state.placedPedals.find((p) => p.id === result.chainOrder[i]);
               if (pedal) {
@@ -843,18 +912,7 @@ export const useConfigurationStore = create<ConfigurationState>()(
             }
           }
 
-          // What the optimizer traded off, derived from the same dimension
-          // list that scored the layouts. Null when there is nothing to say.
-          state.lastOptimization =
-            result.baselineCost && result.cost
-              ? summarizeOptimization(
-                  result.baselineCost,
-                  result.cost,
-                  result.noLegalCandidate,
-                  result.rowFit,
-                  result.placementDegraded
-                )
-              : null;
+          state.lastOptimization = summary;
 
           markDirty(state);
         });
