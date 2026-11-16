@@ -34,7 +34,8 @@ import {
   findPathViolations,
 } from '../geometry';
 
-import { findPathAStar, getStandoffPoint } from '../pathfinding';
+import { getStandoffPoint } from '../pathfinding';
+import { findOrthogonalPath } from '../pathfinding/sparse-grid';
 
 import type { ObstacleSet } from '../obstacles';
 import { getBoxForPedal } from '../obstacles';
@@ -240,7 +241,7 @@ export const ROUTING_STRATEGIES = [
   'above',            // over the top of every pedal
   'below',            // under the bottom of every pedal
   'safe-lane',        // a lane just outside the obstacle rows
-  'astar',            // grid pathfinding
+  'astar',            // exact search on the sparse pedal-edge grid
   'perimeter',        // around the outside of the board - see routeAroundBoard
   'fallback-invalid', // nothing worked; renderer draws this red
 ] as const;
@@ -549,11 +550,22 @@ function routeCablePath(
     }
   }
 
-  // Strategy 7: A* pathfinding between standoffs with board bounds.
-  // No exclusions: standoffs sit outside every pedal's margin zone.
-  const astarPath = findPathAStar(s, t, boxes, -1, -1, boardBounds ?? undefined);
-  if (astarPath.length > 0) {
-    const astar = candidateOk(astarPath, 'astar');
+  // Strategy 7: exact search between the standoffs, on the sparse grid of
+  // lines the pedals themselves define (see pathfinding/sparse-grid).
+  //
+  // Every rung above tries ONE shape. This one finds the shortest legal route
+  // of any shape, through any gap however thin, or reports that there is none
+  // - which is the honest precondition for the two rungs below it. It keeps
+  // the 'astar' label because that is still what it is; what changed is the
+  // grid. The dense 8px one it replaced could not pass a gap narrower than
+  // about 0.9in on a board packed at 0.5in, so it took 84% of Optimize's time
+  // to draw 2 cables in 1,962.
+  //
+  // No exclusions: standoffs sit outside every pedal's margin zone, so the
+  // cable's own pedals are obstacles like any other.
+  const searched = findOrthogonalPath(s, t, boxes, { boardBounds, allowOffBoard });
+  if (searched) {
+    const astar = candidateOk(searched, 'astar');
     if (astar) return astar;
   }
 

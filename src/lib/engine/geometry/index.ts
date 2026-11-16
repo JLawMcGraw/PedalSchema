@@ -111,9 +111,6 @@ export function sharesAxis(a: Point, b: Point): boolean {
   return Math.abs(a.x - b.x) < ORTHOGONAL_EPSILON || Math.abs(a.y - b.y) < ORTHOGONAL_EPSILON;
 }
 
-/** Grid resolution for A* pathfinding, in pixels. */
-export const GRID_CELL_SIZE = 8;
-
 /**
  * Perpendicular distance between adjacent parallel cable runs, in pixels.
  *
