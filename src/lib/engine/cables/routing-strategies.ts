@@ -277,7 +277,20 @@ const SIMPLE_ROUTES = new Set<string>([
 ]);
 
 /**
- * Whether a cable's route should be charged COMPLEX_ROUTING_PENALTY_INCHES.
+ * What a complex route costs, in inches of cable.
+ *
+ * Lives here, beside the classification it prices, because TWO things charge
+ * it and they must charge the same: the layout cost function, when it scores a
+ * candidate board, and the router's own choice between its two pictures of one
+ * board (compareRoutingOutcomes in route-cables). It used to be private to the
+ * cost function, and the router compared bare length - so the router could
+ * pick the picture the optimizer was about to score as the worse one. See the
+ * note on compareRoutingOutcomes for the board that showed it.
+ */
+export const COMPLEX_ROUTE_PENALTY_INCHES = 10;
+
+/**
+ * Whether a cable's route should be charged COMPLEX_ROUTE_PENALTY_INCHES.
  *
  * This replaces `path.length > 3` in routing-cost.ts, which was the same
  * statement before P1.5 and stopped being one after it. Measured on both saved

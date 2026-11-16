@@ -17,7 +17,9 @@ import type { Board, Cable, Pedal, PlacedPedal } from '@/types';
 import type { Point } from '../geometry';
 import { LANE_SPACING, LANE_TOLERANCE, manhattanize } from '../geometry';
 import { generateObstacles, type ObstacleSet } from '../obstacles';
-import { routeCableWithObstacles, type RoutingStrategy } from './routing-strategies';
+import {
+  routeCableWithObstacles, isComplexRoute, COMPLEX_ROUTE_PENALTY_INCHES, type RoutingStrategy,
+} from './routing-strategies';
 import { getExternalEndpointPx, getPedalJackPx, type ExternalEndpointType } from './endpoints';
 import { isPathValid, type ValidationResult } from './validation';
 import { routeCablesWithLanes, type LaneRouteRequest, type LaneOutcome } from '../lanes';
@@ -349,7 +351,7 @@ export function routeCablePaths(
    * picture you do not draw is the P1.5 defect, and a guard that ran only when
    * drawing would rebuild it.
    */
-  if (compareRoutingOutcomes(routingOutcome(withLanes), routingOutcome(plain)) <= 0) {
+  if (compareRoutingOutcomes(routingOutcome(withLanes), routingOutcome(plain), obstacles.scale) <= 0) {
     return withLanes;
   }
 
@@ -384,8 +386,8 @@ export function routeBothWays(
 }
 
 /**
- * How good a routed board is, as the four things a person can see wrong with
- * one - in the order they matter.
+ * How good a routed board is: the things a person can see wrong with one, in
+ * the order they matter, and what its cables cost.
  */
 export interface RoutingOutcome {
   /** Cables with no legal route: drawn red, through pedals. */
@@ -397,6 +399,12 @@ export interface RoutingOutcome {
    * line - the same definition the config-matrix lane invariant judges by.
    */
   laneConflicts: number;
+  /**
+   * Cables that needed a complex route - down a row corridor, over or under
+   * everything, a search, or around the outside of the board. Whatever
+   * isComplexRoute says, which is what the layout cost function charges for.
+   */
+  complexRoutes: number;
   /** Total drawn length, in pixels. */
   lengthPx: number;
 }
@@ -436,6 +444,7 @@ export function routingOutcome(routed: RoutedPath[]): RoutingOutcome {
     invalid: routed.filter((r) => !r.valid).length,
     crossings: crossingCount(routed),
     laneConflicts,
+    complexRoutes: routed.filter((r) => isComplexRoute(r.strategy)).length,
     lengthPx,
   };
 }
@@ -449,7 +458,9 @@ export function routingOutcome(routed: RoutedPath[]): RoutingOutcome {
  *   1. invalid cables   a cable that cannot be wired outranks everything
  *   2. crossings        the thing the guard was built to protect
  *   3. lane conflicts   two runs drawn as one line - what the lane router is FOR
- *   4. length           with everything else equal, less cable is a better board
+ *   4. cable cost       with everything else equal, the cheaper board: its
+ *                       length, plus COMPLEX_ROUTE_PENALTY_INCHES for every
+ *                       cable that needed a complex route
  *
  * Only crossings were compared until 2026-11-16, with every tie going to the
  * lane router. Measured that day over 216 boards, each router on its own:
@@ -469,17 +480,46 @@ export function routingOutcome(routed: RoutedPath[]): RoutingOutcome {
  * And since finding 2 landed the same day, that length is no longer only a
  * picture: it is the cable the shopping list tells you to buy.
  *
- * Lane conflicts sit ABOVE length on purpose. If they did not, the cascade
+ * Lane conflicts sit ABOVE cost on purpose. If they did not, the cascade
  * would win a board by stacking two cables on one line, which is shorter and
  * unreadable - the lane router's whole reason to exist is that case, and
  * there it still wins.
+ *
+ * WHY STEP 4 IS NOT BARE LENGTH - it was, for a few hours, and the first real
+ * board through it showed why not. On the owner's nine-pedal board one layout
+ * routed both ways tied on everything above:
+ *
+ *   lane router   65.1in, 3 crossings, every cable on the board
+ *   cascade       54.1in, 3 crossings, THREE cables sent around the outside
+ *
+ * Bare length took the cascade: 11in shorter. But a cable around the outside
+ * of the board is the cascade's own last resort, and the cost function
+ * charges 10in for each - so the optimizer scored the picture it was handed
+ * at 118.1 where the other was 89.1, concluded this layout was a poor one,
+ * and settled on a different layout drawing 78.7in. Old code had drawn that
+ * board at 65.1in. The router and the optimizer were each right by their own
+ * rule and the rules disagreed.
+ *
+ * So when everything above ties, the two pictures are compared on exactly
+ * what the cost function would then charge them: with invalid cables and
+ * crossings level, that is length plus the complex-route penalty and nothing
+ * else. The first three steps are deliberately NOT a weighted sum - "never
+ * more crossings than either router alone" is a guarantee the owner asked
+ * for, and a guarantee cannot be traded for inches.
  */
-export function compareRoutingOutcomes(a: RoutingOutcome, b: RoutingOutcome): number {
+export function compareRoutingOutcomes(
+  a: RoutingOutcome,
+  b: RoutingOutcome,
+  /** The scale the paths were routed at; converts the penalty into pixels. */
+  pixelsPerInch: number = 40
+): number {
   if (a.invalid !== b.invalid) return a.invalid - b.invalid;
   if (a.crossings !== b.crossings) return a.crossings - b.crossings;
   if (a.laneConflicts !== b.laneConflicts) return a.laneConflicts - b.laneConflicts;
-  const length = a.lengthPx - b.lengthPx;
-  return Math.abs(length) < LENGTH_TIE_PX ? 0 : length;
+  const penaltyPx = COMPLEX_ROUTE_PENALTY_INCHES * pixelsPerInch;
+  const cost =
+    (a.lengthPx + a.complexRoutes * penaltyPx) - (b.lengthPx + b.complexRoutes * penaltyPx);
+  return Math.abs(cost) < LENGTH_TIE_PX ? 0 : cost;
 }
 
 /** How many places do these paths cross each other? */

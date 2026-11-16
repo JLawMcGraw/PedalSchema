@@ -1,7 +1,7 @@
 /**
  * What counts as "complex routing" - and why it stopped being `path.length > 3`.
  *
- * `routing-cost.ts` charges COMPLEX_ROUTING_PENALTY_INCHES per cable that
+ * `routing-cost.ts` charges COMPLEX_ROUTE_PENALTY_INCHES per cable that
  * "needs complex routing (channel/perimeter/A*) instead of simple L-path". It
  * implemented that as `path.length > 3`, which was the same statement until
  * P1.5 unified the routers. It is not the same statement now: the corridor

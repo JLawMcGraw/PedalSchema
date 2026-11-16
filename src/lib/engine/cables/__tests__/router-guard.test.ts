@@ -23,7 +23,9 @@
  * the drawn length, so the detour was a cable you were told to buy.
  *
  * The guard now compares the whole outcome, in order: invalid cables,
- * crossings, lane conflicts, length. See compareRoutingOutcomes.
+ * crossings, lane conflicts, then what the cables cost - their length plus
+ * the optimizer's own charge for each complex route. See
+ * compareRoutingOutcomes, including why that last step is not bare length.
  *
  * Everything below the two unit blocks was run against the old rule first:
  * 8 of the 9 boards fail there, every one on length alone with invalid cables,
@@ -44,7 +46,7 @@ import {
 } from '../route-cables';
 
 const outcome = (partial: Partial<RoutingOutcome>): RoutingOutcome => ({
-  invalid: 0, crossings: 0, laneConflicts: 0, lengthPx: 1000, ...partial,
+  invalid: 0, crossings: 0, laneConflicts: 0, complexRoutes: 0, lengthPx: 1000, ...partial,
 });
 
 describe('compareRoutingOutcomes', () => {
@@ -74,6 +76,32 @@ describe('compareRoutingOutcomes', () => {
     expect(compareRoutingOutcomes(outcome({ lengthPx: 1400 }), outcome({ lengthPx: 1000 }))).toBeGreaterThan(0);
   });
 
+  it('charges for a complex route what the optimizer will charge for it', () => {
+    // The owner's nine-pedal board, one layout, routed both ways - level on
+    // invalid cables, crossings and lane conflicts.
+    const lanes = outcome({ crossings: 3, lengthPx: 65.1 * 40, complexRoutes: 0 });
+    const cascade = outcome({ crossings: 3, lengthPx: 54.1 * 40, complexRoutes: 4 });
+    // 11in shorter, but three cables go around the outside of the board and
+    // one down a row corridor: 54.1 + 4 x 10 against 65.1.
+    expect(compareRoutingOutcomes(lanes, cascade)).toBeLessThan(0);
+    expect(compareRoutingOutcomes(cascade, lanes)).toBeGreaterThan(0);
+  });
+
+  it('still prefers the shorter board when neither needed a complex route', () => {
+    // The three-pedal board: a plain L against a loop under the board.
+    const lanes = outcome({ lengthPx: 32.5 * 40 });
+    const cascade = outcome({ lengthPx: 20.1 * 40 });
+    expect(compareRoutingOutcomes(cascade, lanes)).toBeLessThan(0);
+  });
+
+  it('does not let a cheap route buy back a crossing', () => {
+    // Crossings are a guarantee, not a price: one more is worse however much
+    // cable and however many complex routes it saves.
+    const fewerCrossings = outcome({ crossings: 2, lengthPx: 4000, complexRoutes: 5 });
+    const cheaper = outcome({ crossings: 3, lengthPx: 1000, complexRoutes: 0 });
+    expect(compareRoutingOutcomes(fewerCrossings, cheaper)).toBeLessThan(0);
+  });
+
   it('calls a sub-pixel length difference a tie', () => {
     // Both routers sum the same segments in a different order; that is
     // arithmetic, not a shorter board.
@@ -88,13 +116,24 @@ describe('routingOutcome', () => {
     fromPedalId: null, toPedalId: null,
   });
 
+  it('counts the routes the cost function calls complex', () => {
+    const result = routingOutcome([
+      { ...path([0, 0], [100, 0]), strategy: 'l-horizontal' as const },
+      { ...path([0, 20], [100, 20]), strategy: 'lane-router' as const },
+      { ...path([0, 40], [100, 40]), strategy: 'channel' as const },
+      { ...path([0, 60], [100, 60]), strategy: 'perimeter' as const },
+      { ...path([0, 80], [100, 80]), strategy: 'astar' as const },
+    ]);
+    expect(result.complexRoutes).toBe(3);
+  });
+
   it('measures length, crossings and invalid cables', () => {
     const result = routingOutcome([
       path([0, 50], [200, 50]),
       path([100, 0], [100, 100]),
       { ...path([300, 0], [300, 40]), valid: false },
     ]);
-    expect(result).toEqual({ invalid: 1, crossings: 1, laneConflicts: 0, lengthPx: 340 });
+    expect(result).toEqual({ invalid: 1, crossings: 1, laneConflicts: 0, complexRoutes: 0, lengthPx: 340 });
   });
 
   it('counts two cables drawn on one line as a lane conflict', () => {
