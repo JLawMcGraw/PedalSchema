@@ -71,6 +71,8 @@ interface Traversal {
    */
   reachLo: number;
   reachHi: number;
+  /** Where across the corridor this cable would run if it had it to itself - see preferredLane. */
+  prefer: number;
   /** Assigned perpendicular lane coordinate (filled by assignLanes) */
   lane: number;
 }
@@ -401,6 +403,76 @@ function corridorCapacity(corridor: Corridor): number {
 }
 
 /**
+ * How far inside a corridor's edge a lane may sit, in pixels. A corridor's
+ * edges are EXACTLY one margin from the pedals either side, and the validation
+ * policy counts a run on the margin as touching - so a lane on the edge is an
+ * illegal lane. Half a pixel clears it.
+ */
+const LANE_EDGE_INSET = 0.5;
+
+/** The band of a corridor lanes may occupy. A corridor too thin to inset keeps its centre line. */
+function laneBand(corridor: Corridor): [number, number] {
+  const inset = Math.min(LANE_EDGE_INSET, (corridor.hi - corridor.lo) / 2);
+  return [corridor.lo + inset, corridor.hi - inset];
+}
+
+/**
+ * Where across a corridor a cable would run if it had the corridor to itself.
+ *
+ * A cable's length does not depend on where it crosses a corridor so long as
+ * that is somewhere BETWEEN its two ends, measured across the corridor: any
+ * such line costs the same, and any line outside that span costs twice the
+ * overshoot. So the cable has a span of free positions, and this picks the
+ * one nearest the corridor's centre line - away from the pedals - or, when the
+ * span misses the corridor altogether, the edge nearest to it.
+ *
+ * Lanes used to be laid out around the centre line regardless. A corridor is
+ * often much wider than a cable needs - the strip above the back row runs
+ * from 40px off the board to the pedals - and its centre can be far from
+ * where the cable is going. On the three-pedal fixture that put the amp cable
+ * at y=123 on its way to a jack at y=250: up, across, and back down the face
+ * of the amp.
+ */
+function preferredLane(corridor: Corridor, from: Point, to: Point): number {
+  const across = (p: Point) => (corridor.horizontal ? p.y : p.x);
+  const [lo, hi] = laneBand(corridor);
+  const spanLo = Math.min(across(from), across(to));
+  const spanHi = Math.max(across(from), across(to));
+  if (spanHi < lo) return lo;
+  if (spanLo > hi) return hi;
+  const center = (corridor.lo + corridor.hi) / 2;
+  return Math.min(Math.max(center, Math.max(lo, spanLo)), Math.min(hi, spanHi));
+}
+
+/**
+ * Seat one lane per cable, each as near its preferred line as the others allow.
+ *
+ * `list` is in the order the lanes must keep across the corridor (by run
+ * midpoint - what keeps parallel flows parallel). Walk it once pushing each
+ * lane at least a spacing clear of the one before, then walk back pulling any
+ * that overshot the far edge into the corridor.
+ */
+function placeByPreference(corridor: Corridor, list: Traversal[]): void {
+  const n = list.length;
+  let [lo, hi] = laneBand(corridor);
+  let spacing = LANE_SPACING;
+  if (n > 1 && (n - 1) * spacing > hi - lo) {
+    // Too many for full spacing: use the whole corridor, edge to edge, as the
+    // centred layout always has. Guaranteed >= MIN_LANE_SPACING - eviction ran.
+    [lo, hi] = [corridor.lo, corridor.hi];
+    spacing = (hi - lo) / (n - 1);
+  }
+  for (let i = 0; i < n; i++) {
+    const least = i === 0 ? lo : list[i - 1].lane + spacing;
+    list[i].lane = Math.max(least, Math.min(list[i].prefer, hi));
+  }
+  for (let i = n - 1; i >= 0; i--) {
+    const most = i === n - 1 ? hi : list[i + 1].lane - spacing;
+    list[i].lane = Math.min(list[i].lane, most);
+  }
+}
+
+/**
  * Two runs may share a lane only with at least this much clear corridor
  * between the end of one and the start of the other, in pixels. Less than
  * that and they read as one cable with a nick in it.
@@ -563,7 +635,8 @@ function assignLanes(
        *
        * So a lane is shared only when the alternative is evicting a cable.
        */
-      seated = { track: new Map(list.map((t, i) => [t, i])), used: list.length };
+      placeByPreference(corridor, list);
+      continue;
     } else {
       // More cables than lanes, but never more than `capacity` of them in the
       // same stretch (eviction saw to that): runs that do not meet share.
@@ -692,27 +765,36 @@ export function routeCablesWithLanes(
   });
 
   // --- Register traversals for lane assignment --------------------------------
-  // How many cables each corridor will be asked to seat - needed before any
-  // run's reach can be stated, see below.
-  const demandOn = new Map<number, number>();
-  for (const plan of planned) {
-    if (!plan) continue;
-    for (const cid of plan.corridors) demandOn.set(cid, (demandOn.get(cid) ?? 0) + 1);
-  }
+  // Each cable's preferred lane in each corridor it crosses, and per corridor
+  // the spread of those preferences - needed before any run's reach can be
+  // stated, see laneRange.
+  const preferIn = new Map<string, number>();
+  const wanted = new Map<number, { lo: number; hi: number; count: number }>();
+  planned.forEach((plan, index) => {
+    if (!plan) return;
+    plan.corridors.forEach((cid, i) => {
+      const prefer = preferredLane(corridors[cid], plan.fromStub, plan.toStub);
+      preferIn.set(`${index}:${i}`, prefer);
+      const w = wanted.get(cid);
+      if (!w) wanted.set(cid, { lo: prefer, hi: prefer, count: 1 });
+      else { w.lo = Math.min(w.lo, prefer); w.hi = Math.max(w.hi, prefer); w.count++; }
+    });
+  });
 
   /**
    * Where a cable's lane in `corridor` can end up, before lanes are assigned.
    *
-   * Lanes are laid out around the corridor's centre at no more than
-   * LANE_SPACING apart, and a corridor never uses more lanes than it has
-   * cables. So with n cables wanting it, every lane lies within
-   * (n - 1) x LANE_SPACING / 2 of the centre - and a cable alone in a corridor
-   * is known to sit exactly on the centre line.
+   * Every lane starts from a preferred line and is moved only to keep clear
+   * of the others, each of which can push it by at most one spacing. So with
+   * n cables wanting the corridor, every lane lies within (n - 1) spacings of
+   * the span their preferences cover - and a cable alone in a corridor is
+   * known to sit exactly on its preferred line.
    */
   const laneRange = (corridor: Corridor): [number, number] => {
-    const center = (corridor.lo + corridor.hi) / 2;
-    const spread = (((demandOn.get(corridor.id) ?? 1) - 1) * LANE_SPACING) / 2;
-    return [Math.max(corridor.lo, center - spread), Math.min(corridor.hi, center + spread)];
+    const w = wanted.get(corridor.id);
+    if (!w) return [corridor.lo, corridor.hi];
+    const slack = (w.count - 1) * LANE_SPACING;
+    return [Math.max(corridor.lo, w.lo - slack), Math.min(corridor.hi, w.hi + slack)];
   };
 
   planned.forEach((plan, index) => {
@@ -746,6 +828,7 @@ export function routeCablesWithLanes(
         alongHi: Math.max(along[0], along[1]),
         reachLo: Math.min(entry[0], exit[0]),
         reachHi: Math.max(entry[1], exit[1]),
+        prefer: preferIn.get(`${index}:${i}`)!,
         lane: 0,
       });
     });
