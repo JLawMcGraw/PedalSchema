@@ -4,79 +4,49 @@ A visual pedalboard planning and layout tool for guitarists. Design your pedalbo
 
 ## Features
 
-- **Visual Pedalboard Editor** - Drag and drop pedals onto a virtual pedalboard
-- **Signal Chain Visualization** - See cable routing between pedals with smart pathfinding
-- **Layout Optimization** - Automatically arrange pedals, and say what the arrangement
-  traded off ("fewer signal-flow reversals, 91in less cable length")
-- **Real Pedal Photos** - Pedals render as background-free silhouettes; custom uploads get
-  the same treatment client-side before upload
-- **Effects Loop Support** - Configure and visualize amp effects loop routing with dedicated send/return jacks
-- **Clean or Dirty Modulation** - Put chorus, flanger and phaser in the amp's loop, or in
-  front of the drives so the modulated signal is what hits the dirt. The switch moves
-  cables *and* pedals
-- **4-Cable Method** - NS-2 style hub pedals gate the drives while time effects run
-  post-preamp
-- **Collision Detection** - Flags overlapping and off-board pedals; Optimize rejects
-  layouts with either problem
-- **Power Budget** - Total current draw per board, split by voltage, with high-draw pedals
-  flagged. Pedals whose draw was never recorded are counted separately rather than as
-  zero, so an unknown never reads as free
-- **Power Supply Planning** - Assign pedals to a supply's outputs and see which output is
-  over its rating
-- **Undo/Redo** - Board edits are reversible, including optimization
-- **Conflict-Safe Saves** - A board save is one database transaction, with revision
-  checks that stop an older browser tab from overwriting newer work
-- **Public Share Links** - Publish a read-only board at `/s/[slug]` without exposing
-  private configurations
-- **Multiple Board Sizes** - Support for various pedalboard dimensions
-- **Responsive Design** - Works on desktop and mobile with collapsible panels
+- **Visual editor** - drag pedals onto a board; cables are routed between their real jack
+  positions as you move them
+- **Signal chain** - pedals are ordered by category rules, with warnings and suggestions
+- **Optimize** - one button arranges the board and says what it traded off
+  ("2 fewer cable crossings, 1in less cable length"). It leaves a legal board alone
+  unless the alternative is at least an inch better, and never returns overlapping or
+  off-board pedals
+- **Cable shopping list** - each cable is listed at the shortest standard length that
+  covers the route actually drawn; the CABLE readout is the total of those routes
+- **Effects loop, clean or dirty modulation, 4-cable method** - including NS-2 style hub
+  pedals with their own send/return loop
+- **Power planning** - current draw by voltage, assignment to supply outputs, and
+  unknown draws counted as unknown rather than zero
+- **Real pedal photos** - rendered as background-free cut-outs (see Image Rights)
+- **Undo/redo, conflict-safe saves, public read-only share links** at `/s/[slug]`
 
-## Cable Routing
+## How cables are routed
 
-Routing runs in `src/lib/engine`, not in the renderer — the canvas is handed finished
-polylines. Two routers, and **both of them run**:
+Routing lives in `src/lib/engine`; the canvas only draws finished paths. Every board is
+routed by two routers and one picture is kept:
 
-1. **Lane router** (`engine/lanes`) — a Manhattan corridor model that assigns cables to
-   lanes with coordinated spacing, so parallel runs stay individually traceable.
-2. **Strategy cascade** (`engine/cables/routing-strategies.ts`) for anything the corridor
-   model can't serve — ten rungs, cheapest sufficient first: facing jacks → direct →
-   L-path → channel between rows → above → below → safe lane → A\* → **around the
-   outside of the board**, then an explicitly invalid path the renderer draws red.
+1. **Lane router** (`engine/lanes`) - a corridor model that seats parallel cables in
+   separate lanes, each as close as it can to where its cable is going.
+2. **Strategy cascade** (`engine/cables/routing-strategies.ts`) - tries fixed shapes
+   cheapest first (facing jacks, straight, L, along a row gap, over, under), then an
+   exact search for any legal path, then **around the outside of the board**, and
+   finally an explicitly invalid path drawn red.
 
-The whole board is then routed a second time with the corridor model switched off, and
-whichever result has **fewer cable crossings** is the one drawn. The corridor model is
-better nearly everywhere and occasionally worse on a dense board, so "the lane router
-never draws a worse board than the cascade" is enforced rather than hoped for.
+The kept picture is the better one on, in order: unroutable cables, crossings, cables
+drawn too close together, then cable cost (length plus the optimizer's charge for each
+detour). The optimizer scores exactly what is drawn. Every cable turns at right angles.
 
-**Every cable turns at right angles.** A patch cable leaves a jack square-on, so a
-diagonal line is a picture of a cable that cannot exist — the corridor model guarantees
-it by construction and the cascade is held to it by test.
-
-Every cable records which rung produced it, so an unexpected shape is diagnosable without
-re-tracing the cascade by hand. Four appearances carry meaning on the canvas:
-
-| | |
+| On the canvas | Meaning |
 |---|---|
-| solid orange | instrument cable — guitar to board, board to amp |
-| solid green | patch cable — pedal to pedal |
-| **dashed** | no room between the rows; run this one underneath the board |
-| **red** | no route exists at this spacing, with the reason named |
+| solid green | instrument cable - guitar to board, board to amp |
+| solid grey | patch cable - pedal to pedal |
+| **dashed** | no room between the rows; run this one under or around the board |
+| **red** | no route exists at this spacing |
 
-- **Collision Avoidance** - Cables route around every pedal except their own endpoints
-- **Standoff Points** - Cables exit a jack perpendicular to the pedal edge before turning
-- **Jack-Aware Routing** - Cables connect to actual input/output jack positions
-- **Effects Loop Routing** - Amp send/return connections approach pedals through the channel
-- **Shared Geometry** - Clearances live in `engine/geometry` as documented contracts that
-  a test asserts, so routing, validation and the optimizer cannot disagree about them —
-  nor can a cable be asked to fit through a gap narrower than the one the placer designs
-
-## Effects Loop
-
-When an amp with effects loop is selected, the signal chain splits:
-- **Front Chain**: Guitar → pedals → Amp Input (bottom jack)
-- **Loop Chain**: Amp Send (middle jack) → time/modulation pedals → Amp Return (top jack)
-
-The amp panel visualization shows three jacks (RTN, SND, IN) when effects loop is enabled.
+Clearances are shared constants in `engine/geometry`, asserted by test, so the placer,
+the router and the optimizer cannot disagree about how much room a cable needs. The
+2026-11 audit of this pipeline, with every measurement behind it, is in
+`.claude/docs/audit-2026-11-16.md`.
 
 ## Getting Started
 
@@ -147,9 +117,9 @@ otherwise the landing page directs visitors to sign up.
 │   │   │   ├── geometry/       # Shared clearance constants and intersection math
 │   │   │   ├── topology/       # Signal topology (who connects to whom)
 │   │   │   ├── signal-chain/   # Ordering rules, warnings, and suggestions
-│   │   │   ├── cables/         # Cable generation, routing strategies, and validation
+│   │   │   ├── cables/         # Cable list and lengths, routing strategies, validation
 │   │   │   ├── lanes/          # Manhattan corridor router
-│   │   │   ├── pathfinding/    # A* grid search (one rung of the cascade)
+│   │   │   ├── pathfinding/    # Exact orthogonal search; jack standoff points
 │   │   │   ├── obstacles/      # Obstacle-set construction
 │   │   │   ├── collision/      # Collision detection and rail snapping
 │   │   │   ├── power/          # Current totals and supply-output planning
@@ -179,79 +149,49 @@ npm run check:dead-code
 
 # Build for production
 npm run build
-
-# Take verification screenshot
-node .claude/scripts/screenshot.js http://localhost:3000/editor/new --auth
 ```
 
 The production build uses `next/font/google`, so its first run needs access to Google
 Fonts unless the Geist font response is already cached.
 
-### Verification scripts
+### Browser verification
 
-`.claude/scripts/` drives the real app with Playwright. They read the editor's
-machine-readable state (`window.__getPedalSchemaSnapshot()`) rather than scraping the DOM,
-via the shared helpers in `.claude/scripts/lib/twin.js`.
+`.claude/scripts/` drives the real app with Playwright and reads the editor's
+machine-readable state (`window.__getPedalSchemaSnapshot()`) rather than scraping the DOM.
 
 ```bash
-node .claude/scripts/verify-twin-parity.js     # twin agrees with what the canvas drew
-node .claude/scripts/verify-photo-knockout.js  # photo pipeline, in real Chromium
-node .claude/scripts/verify-chain-direction.js # positions + optimizer rationale
-
-# Run every read-only browser gate (development server must already be running)
-bash .claude/scripts/verify-all.sh
-
-# Also run gates that write temporary data and restore it afterward
-bash .claude/scripts/verify-all.sh --all
+npx playwright install chromium            # once
+bash .claude/scripts/verify-all.sh         # every read-only gate; dev server must be running
+bash .claude/scripts/verify-all.sh --all   # also gates that write temporary data and restore it
 ```
 
-Install Chromium once with `npx playwright install chromium` if Playwright has not
-already downloaded it. Authenticated gates read `VERIFY_EMAIL` and `VERIFY_PASSWORD`
-from `.env.local`; database-level gates also require `SUPABASE_SERVICE_ROLE_KEY`.
+Authenticated gates sign in with `VERIFY_EMAIL` / `VERIFY_PASSWORD` from `.env.local`;
+database-level gates also need `SUPABASE_SERVICE_ROLE_KEY`. These run against your real
+Supabase project, so mind its request quota.
 
 ## Image Rights
 
-Pedal photographs shown on the board are **mirrored from manufacturer sources** so the
-app can render a pedal as a recognisable cut-out instead of a coloured rectangle. They
-are used to identify the product being planned. We claim no ownership of them, and the
-MIT licence below covers this project's **code, not these images**.
+Pedal, amp and board photographs are **mirrored from manufacturer sources** so the app
+can show a recognisable product instead of a coloured rectangle. They identify the
+product being planned; we claim no ownership of them, and the MIT licence covers this
+project's **code, not these images**.
 
-The same applies to the **amplifier and pedalboard photographs** on the `/amps` and
-`/boards` library pages, mirrored by `scraper/mirror-gear-images.js` under identical
-terms.
+Every served image records its origin: the `pedals`, `amps` and `boards` tables carry
+`image_source_url`, `image_license`, `image_attribution` and `image_fetched_at`, written
+in the same statement as `image_url`. The mirror scripts (`scraper/mirror-*.js`) enforce
+three rules:
 
-Every image we serve records where it came from. The `pedals`, `amps` and `boards`
-tables each carry `image_source_url`, `image_license`, `image_attribution` and
-`image_fetched_at` alongside `image_url`, written in the same statement — so there is
-no row whose origin we cannot name, and a request about any single photo can be
-answered directly from the database.
-
-Three rules follow from that, and the tooling enforces all three:
-
-- **Nothing is served without a recorded origin.** The mirror scripts write provenance
-  with the image and clear it with the image.
-- **Encumbered sources are referenced, not copied.** Where a licence would reach our
-  output, we store the pointer and no bytes, and the board falls back to a category
-  rectangle. The Klon Centaur is the current example: its only good source is CC BY-SA
-  2.0, and our pipeline knocks out the background — which would make our copy a
-  derivative and pull share-alike onto it. So we link the source and mirror nothing.
-- **We mirror the manufacturer's own photograph, not a third party's.** Where a product
-  page hosts someone else's render we skip it: Pedaltrain's board listings include a
-  2000×2000 dimension diagram watermarked `PEDALBOARDPLANNER.COM`, which is that
-  company's work and not Pedaltrain's to redistribute. We take the product elevation
-  instead.
-
-Where no manufacturer photograph exists, the row keeps **no image at all** rather than
-borrowing a similar product's. The Marshall JCM2000 DSL is the current example — long
-discontinued, no page on marshall.com and no Wayback capture — and its card renders as
-text. `scraper/mirror-gear-images.js` records the reason in `UNSOURCED` so the search
-is not repeated.
+- **Nothing is served without a recorded origin.**
+- **Encumbered sources are referenced, not copied.** The Klon Centaur's only good photo
+  is CC BY-SA 2.0, and our background knockout would make a derivative, so we store the
+  link and no bytes.
+- **Only the manufacturer's own photograph** - never a third party's render, and never a
+  similar product's photo when none exists (the item renders as text instead).
 
 **Rights holders:** if you own an image here and want it removed, open an issue or
-contact the repository owner. Removal is a single `UPDATE` clearing `image_url` on the
-relevant row (the app already renders the fallback for any pedal, amp or board without
-a photo), plus dropping the object from the `pedal-images` bucket. We will also add the
-source to the mirror script's exclusion path so it is not re-fetched on the next run.
+contact the repository owner. Removal clears `image_url` on the row (the app already
+renders a fallback) and drops the object from the `pedal-images` bucket, and the source
+is excluded from future mirror runs.
 
 ## License
 
