@@ -208,6 +208,49 @@ const snapshot = (pedals: PlacedPedal[]) =>
 beforeAll(() => { vi.spyOn(console, 'warn').mockImplementation(() => {}); });
 afterAll(() => { vi.restoreAllMocks(); });
 
+/**
+ * Seventy-two orders: three groups of 3, 2 and 3. Few enough to try them all,
+ * and until 2026-11-17 the search did not - the cut-off was 48, so this board
+ * went to the group-by-group walk, which stopped at 62.76 where the best of
+ * its 72 orders is 60.51.
+ */
+const SEVENTY_TWO: Fixture = {
+  name: 'three groups: 3, 2 and 3',
+  groups: [3, 2, 3],
+  useEffectsLoop: false,
+  modulationInLoop: false,
+  specs: [
+    ['p0-delay', 'delay', 2.87, 5.08, 'side'], ['p1-boost', 'boost', 3.98, 5.43, 'top'],
+    ['p2-eq', 'eq', 2.4, 4.4, 'top'], ['p3-boost', 'boost', 3.98, 5.43, 'top'],
+    ['p4-eq', 'eq', 4.7, 3.7, 'top'], ['p5-tuner', 'tuner', 3.98, 5.43, 'top'],
+    ['p6-delay', 'delay', 2.87, 5.08, 'side'], ['p7-filter', 'filter', 3.98, 5.43, 'top'],
+    ['p8-delay', 'delay', 3.98, 5.43, 'top'], ['p9-boost', 'boost', 2.6, 4.8, 'side'],
+    ['p10-tuner', 'tuner', 3.98, 5.43, 'top'],
+  ],
+};
+
+describe('a board with few enough orders to try them all', () => {
+  it('tries every one of its 72 orders', () => {
+    const built = build(SEVENTY_TWO);
+    scoredCandidates.length = 0;
+    const layout = optimize(built);
+    expect(layout.swappableGroups.map((g) => g.pedalIds.length)).toEqual(SEVENTY_TWO.groups);
+
+    const ordersTried = new Set(scoredCandidates.slice(1).map((c) => c.split('#')[0]));
+    expect(ordersTried.size).toBeGreaterThanOrEqual(72);
+  });
+
+  it('returns the best of them, and a second press changes nothing', () => {
+    const built = build(SEVENTY_TWO);
+    const once = apply(built.pedals, optimize(built));
+    const again = optimize(built, once);
+    expect(snapshot(apply(once, again))).toEqual(snapshot(once));
+    // 60.51 is the best of the 72 at the starting rotations, found by trying
+    // them all; it was 62.76 when the search stopped at 48.
+    expect(again.baselineCost!.totalScore).toBeLessThanOrEqual(60.52);
+  });
+});
+
 describe('the fixtures are the hard case', () => {
   for (const fixture of FIXTURES) {
     it(`${fixture.name}: more orders than can be listed`, () => {
@@ -215,8 +258,8 @@ describe('the fixtures are the hard case', () => {
       expect(layout.swappableGroups.map((g) => g.pedalIds.length)).toEqual(fixture.groups);
       const factorial = (n: number): number => (n <= 1 ? 1 : n * factorial(n - 1));
       const orders = fixture.groups.reduce((product, size) => product * factorial(size), 1);
-      // 48 is where the search stops listing every order and starts walking.
-      expect(orders).toBeGreaterThan(48);
+      // 72 is where the search stops listing every order and starts walking.
+      expect(orders).toBeGreaterThan(72);
     });
   }
 });

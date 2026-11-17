@@ -1461,7 +1461,23 @@ export function calculateOptimalLayoutJoint(
    * arrangements whole is what gets through that; swaps are kept only for a
    * group too big to list (see arrangementsOf).
    */
-  const ORDER_ENUMERATION_LIMIT = 48;
+  /*
+   * 72, not 48 - measured, not chosen.
+   *
+   * At 48 a board with 72 orders (three groups of 3, 2 and 3) went to the
+   * group-by-group walk, which stops where no single group can be improved -
+   * and on such a board that stop can miss: 62.76 where the best of its 72
+   * orders is 60.51. Over 516 boards, 72 made three boards better and none
+   * worse, at no measurable cost in time.
+   *
+   * Do not raise it further on the same argument. 96 was measured too, and it
+   * made two boards WORSE (one 67.12 -> 99.50) and broke idempotence: listing
+   * every order once is not the whole cost, because each pass re-walks the
+   * list whenever a rotation changes, and two walks of 96 plus rotations
+   * overrun MAX_EVALUATIONS mid-pass. Two walks of 72 leave 56 evaluations
+   * for rotations, which every board measured stayed inside.
+   */
+  const ORDER_ENUMERATION_LIMIT = 72;
   const everyOrderFits =
     countChainOrders(swappableGroups, ORDER_ENUMERATION_LIMIT) <= ORDER_ENUMERATION_LIMIT;
   const candidateOrders = !hasOrderSearch
