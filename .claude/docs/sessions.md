@@ -4,6 +4,55 @@ This file tracks work completed across coding sessions. Read this at session sta
 
 ---
 
+## Session: 2026-11-16/17 - audit of Optimize and cable routing, and everything it found
+
+### Summary
+Audited the Optimize pipeline and cable display by running the engine, not reading it: 216
+fixture and seeded boards, then the two saved boards offline and in a browser. Seven findings,
+all fixed, plus three product changes the real boards called for. Full write-up, with every
+measurement: `.claude/docs/audit-2026-11-16.md`. Branch `fix/audit-2026-11-16`, not pushed.
+
+### What changed, in the user's terms
+- The same board no longer draws two ways depending on the order pedals were added (finding 1).
+- "What to buy", the CABLE readout and the dashboard quote the cable actually drawn (finding 2).
+- The router keeps the better of its two pictures on everything visible, not crossings alone (3).
+- Optimize is 4-9x faster on full boards; the dense A* that could not pass a 0.5in gap is gone (4, section 10).
+- A second click on Optimize no longer finds a better board; candidates are never scored twice (5).
+- Cables in a corridor are only evicted where they actually meet (6).
+- A no-op Optimize is not an edit; "could not fit" means it; the effects-loop flag the optimizer uses matches the canvas (7).
+- Optimize will not rearrange a legal board for under an inch of cable.
+- Lanes run where their cable is going, not on the corridor's centre line.
+- Toolbar buttons opt out of Firefox restoring their disabled state on reload (hydration report).
+
+### Technical decisions worth keeping
+1. **Replay the real boards before trusting a corpus.** The fixtures missed two things the saved
+   boards showed in minutes: a wrong tie-break in the router guard, and that the 5.9x speed-up did
+   nothing for a 22-pedal board (91% of its time was the placer). `dump-configs-offline.js` does not
+   dump the amp or `routing_config`; one extra `configurations` select fetches both.
+2. **Byte-identical, proven.** The placer speed-up was checked by fingerprinting every placement on
+   436 boards before and after (same sha256), and `placer-scans.test.ts` mutation-fails when the
+   jump is one step too long.
+3. **Two things built first and measured worse, then replaced:** swaps-only order search (one board
+   235.15 vs 81.82), and sharing lanes wherever runs do not meet (crossings 307 -> 410). Both are
+   recorded where the code is.
+4. **The owner asked for care with database requests** (free tier). Everything was verified offline
+   first; the real-board checks cost about 7 JSON requests plus 9 per browser pass, images blocked.
+
+### Verification
+809 tests / 4 skipped (was 548 at the start), `tsc`, `eslint`, `knip` clean, `next build` exit 0.
+Browser pass on both saved boards: 0 worker fallbacks, 0 page errors, 0 hydration messages.
+
+### Next Tasks
+- **Firefox hydration**: confirm with the owner which browser reported it; the fix is a diagnosis by elimination.
+- **Lane router geometry** (audit finding 3, second half): direct column-to-row-end corridors and a
+  standoff on external endpoints. Re-run the lanes-vs-cascade table first; it now wins 89 of 216 boards.
+- **One board got worse under finding 5** (75.04 -> 78.44, 72 orders). Raising the list-everything
+  limit above 48 would fix it; it competes with rotation for the 200-evaluation budget.
+- **Tuning left alone, with numbers in the audit:** no slack on purchase lengths, the 1in
+  worthwhile-gain threshold, `MAX_EVALUATIONS = 200`.
+
+---
+
 ## Session: 2026-08-22 — three design handoffs, built
 
 ### Summary
