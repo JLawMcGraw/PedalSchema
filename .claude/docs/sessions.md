@@ -43,11 +43,13 @@ measurement: `.claude/docs/audit-2026-11-16.md`. Branch `fix/audit-2026-11-16`, 
 Browser pass on both saved boards: 0 worker fallbacks, 0 page errors, 0 hydration messages.
 
 ### Next Tasks
-- **Firefox hydration**: confirm with the owner which browser reported it; the fix is a diagnosis by elimination.
-- **Lane router geometry** (audit finding 3, second half): direct column-to-row-end corridors and a
-  standoff on external endpoints. Re-run the lanes-vs-cascade table first; it now wins 89 of 216 boards.
-- **One board got worse under finding 5** (75.04 -> 78.44, 72 orders). Raising the list-everything
-  limit above 48 would fix it; it competes with rotation for the 200-evaluation budget.
+- ~~**Firefox hydration**~~: the owner confirmed on 2026-11-17 it was Firefox, which is what the fix assumed.
+- **Lane router geometry** (audit finding 3, second half). Measured 2026-11-17: 82% of its extra
+  length over the cascade (1,790 of 2,175in) is on guitar/amp cables, 308 of them taking 5 corners
+  where the cascade takes 3 - the external column only reaches a pedal via a horizontal corridor.
+  Fix that first; then the 45 cables whose pedal stub attaches to no corridor (all top/bottom jacks).
+- ~~**One board got worse under finding 5**~~: fixed 2026-11-17 by listing every order up to 72
+  (3 boards better, 0 worse over 516; 96 measured and rejected - see the note at ORDER_ENUMERATION_LIMIT).
 - **Tuning left alone, with numbers in the audit:** no slack on purchase lengths, the 1in
   worthwhile-gain threshold, `MAX_EVALUATIONS = 200`.
 
